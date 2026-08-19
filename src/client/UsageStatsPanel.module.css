@@ -1,22 +1,23 @@
 /**
- * Usage statistics panel styles — the DSH port of reasonix's
- * UsageStatsPanel.css, remapped onto the DSH semantic theme tokens
- * (--dsw-alias-* colors, --dsw-font-* typography, --ds-* motion). Every
- * visual value rides the theme; no static palette values, no theme
- * selectors. The heatmap's 5 levels come from the brand accent via
- * color-mix; model colours are the fixed --dsw-chart-1..5 series (rank
- * order by token volume) plus the gray --dsw-chart-other step, light/dark
- * variants defined below from GitHub Primer's data-viz tokens (PR #7503).
+ * Usage statistics panel styles — a DSH-native CSS Module. Every visual
+ * value rides the DSH semantic tokens (--dsw-alias-* colors, --dsw-font-*
+ * typography, --ds-* motion); no static palette values, no theme selectors.
+ * The heatmap's 5 levels come from the brand accent via color-mix; model
+ * colours are the fixed --dsw-chart-1..5 series (rank order by token
+ * volume) plus the gray --dsw-chart-other step, light/dark variants defined
+ * below from GitHub Primer's data-viz tokens.
  */
 
-.usage-stats {
+.panel {
   display: flex;
   flex-direction: column;
   gap: 18px;
   min-width: 0;
 }
 
-.usage-stats__toolbar {
+/* ── toolbar ───────────────────────────────────────────────────────────── */
+
+.toolbar {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -24,7 +25,7 @@
 }
 
 /* Each picker (time range) lives in a framed group. */
-.usage-stats__group {
+.group {
   display: inline-flex;
   flex-wrap: wrap;
   align-items: center;
@@ -35,53 +36,61 @@
   background: var(--dsw-alias-bg-layer-1);
 }
 
-.usage-stats__group .provider-add-segmented__item {
-  min-height: 28px;
-  padding: 0 12px;
+/* A range-preset chip: ghost Button inside the group, active state tinted
+   with the interactive-active fill. */
+.segItem {
   border-radius: 6px;
 }
 
-.usage-stats__custom {
+.segItem:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.segActive,
+.segActive:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-active);
+  color: var(--dsw-alias-label-primary);
+}
+
+.customRange {
   display: inline-flex;
   align-items: center;
   gap: 6px;
 }
 
-.usage-stats__custom .mem-input {
+.dateInput {
   width: 150px;
   flex: 0 0 auto;
 }
 
-.usage-stats__custom-sep {
+.customSep {
   color: var(--dsw-alias-label-tertiary);
 }
 
-.usage-stats__refresh {
+.refresh {
   margin-left: auto;
   flex: 0 0 auto;
-  min-height: 30px;
-  padding: 4px 12px;
-  border: 1px solid var(--dsw-alias-border-l2);
+}
+
+/* ── states ────────────────────────────────────────────────────────────── */
+
+.errorBanner {
+  padding: 10px 14px;
+  border: 1px solid var(--dsw-alias-state-warn-primary);
   border-radius: 8px;
-  background: var(--dsw-alias-bg-base);
-  color: var(--dsw-alias-label-primary);
-  font: inherit;
+  background: color-mix(in srgb, var(--dsw-alias-state-warn-primary) 12%, transparent);
+  color: var(--dsw-alias-state-warn-label);
   font-size: var(--dsw-font-base-16-font-size);
-  cursor: pointer;
 }
 
-.usage-stats__refresh:hover:not(:disabled) {
-  border-color: var(--dsw-alias-brand-primary);
-}
-
-.usage-stats__loading {
+.loading {
   padding: 24px;
   text-align: center;
   color: var(--dsw-alias-label-tertiary);
   font-size: var(--dsw-font-base-16-font-size);
 }
 
-.usage-stats__empty {
+.empty {
   padding: 24px;
   text-align: center;
   color: var(--dsw-alias-label-tertiary);
@@ -92,13 +101,13 @@
 
 /* ── numeric cards ─────────────────────────────────────────────────────── */
 
-.usage-stats__cards {
+.cards {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: 10px;
 }
 
-.usage-stats__card {
+.card {
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -109,18 +118,18 @@
   min-width: 0;
 }
 
-.usage-stats__card-head {
+.cardHead {
   display: flex;
   align-items: center;
   gap: 6px;
 }
 
-.usage-stats__card-icon {
+.cardIcon {
   color: var(--dsw-alias-label-tertiary);
   flex: 0 0 auto;
 }
 
-.usage-stats__card-label {
+.cardLabel {
   color: var(--dsw-alias-label-secondary);
   font-size: var(--dsw-font-base-16-font-size);
   overflow: hidden;
@@ -128,30 +137,30 @@
   white-space: nowrap;
 }
 
-.usage-stats__card-value {
+.cardValue {
   color: var(--dsw-alias-label-primary);
   font-weight: 600;
   line-height: 1.15;
 }
 
-.usage-stats__card-value--sm {
+.cardValueSm {
   font-size: 14px;
 }
 
-.usage-stats__card-value--wrap {
+.cardValueWrap {
   word-break: break-word;
 }
 
 /* ── sections / chart chrome ───────────────────────────────────────────── */
 
-.usage-stats__section {
+.section {
   display: flex;
   flex-direction: column;
   gap: 10px;
   min-width: 0;
 }
 
-.usage-stats__section-head {
+.sectionHead {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
@@ -159,36 +168,36 @@
   flex-wrap: wrap;
 }
 
-.usage-stats__section-title {
+.sectionTitle {
   margin: 0;
   font-size: var(--dsw-font-l-20-font-size);
   font-weight: 600;
   color: var(--dsw-alias-label-primary);
 }
 
-.usage-stats__trend-note {
+.trendNote {
   font-size: var(--dsw-font-base-16-font-size);
   color: var(--dsw-alias-label-tertiary);
 }
 
-.usage-stats__chart-wrap {
+.chartWrap {
   position: relative;
   min-width: 0;
 }
 
 /* ── heatmap ───────────────────────────────────────────────────────────── */
 
-.usage-stats__heatmap-wrap {
+.heatWrap {
   position: relative;
   overflow-x: auto;
   min-width: 0;
 }
 
-.usage-stats__heatmap {
+.heatmap {
   display: block;
 }
 
-.usage-stats__heatmap-legend {
+.heatLegend {
   display: inline-flex;
   align-items: center;
   gap: 3px;
@@ -196,7 +205,7 @@
   color: var(--dsw-alias-label-tertiary);
 }
 
-.usage-stats__heat-cell {
+.heatCell {
   display: inline-block;
   width: 13px;
   height: 13px;
@@ -205,79 +214,79 @@
 
 /* The five heat levels: brand accent blended toward the base surface so the
    pure accent sits softly on the card in every theme. */
-.usage-stats__heat-cell--0 {
+.heatLevel0 {
   background: var(--dsw-alias-bg-mask-1);
 }
 
-.usage-stats__heat-cell--1 {
+.heatLevel1 {
   background: color-mix(in srgb, var(--dsw-alias-brand-primary) 20%, var(--dsw-alias-bg-base));
 }
 
-.usage-stats__heat-cell--2 {
+.heatLevel2 {
   background: color-mix(in srgb, var(--dsw-alias-brand-primary) 40%, var(--dsw-alias-bg-base));
 }
 
-.usage-stats__heat-cell--3 {
+.heatLevel3 {
   background: color-mix(in srgb, var(--dsw-alias-brand-primary) 65%, var(--dsw-alias-bg-base));
 }
 
-.usage-stats__heat-cell--4 {
+.heatLevel4 {
   background: color-mix(in srgb, var(--dsw-alias-brand-primary) 85%, var(--dsw-alias-bg-base));
 }
 
-.usage-stats__heat-cell--5 {
+.heatLevel5 {
   background: var(--dsw-alias-brand-primary);
 }
 
 /* ── daily trend ───────────────────────────────────────────────────────── */
 
-.usage-stats__chart {
+.chart {
   display: block;
 }
 
-.usage-stats__grid {
+.grid {
   stroke: var(--dsw-alias-border-l1);
   stroke-width: 1;
 }
 
-.usage-stats__axis {
+.axis {
   fill: var(--dsw-alias-label-tertiary);
   font-size: 10px;
 }
 
-.usage-stats__axis--rate {
+.axisRate {
   fill: var(--dsw-alias-label-tertiary);
 }
 
-.usage-stats__bar {
+.bar {
   transition: opacity 0.12s ease;
 }
 
-.usage-stats__bar--dim {
+.barDim {
   opacity: 0.35;
 }
 
-.usage-stats__bar-hit {
+.barHit {
   fill: transparent;
 }
 
 /* cache hit-rate trend curve: brand accent shifted slightly toward the
    foreground so it stays distinct from the pure-accent top model bars. */
-.usage-stats__trend {
+.trend {
   stroke: color-mix(in srgb, var(--dsw-alias-brand-primary) 80%, var(--dsw-alias-label-primary));
   stroke-width: 2;
   opacity: 0.9;
   pointer-events: none;
 }
 
-.usage-stats__trend-dot {
+.trendDot {
   fill: color-mix(in srgb, var(--dsw-alias-brand-primary) 80%, var(--dsw-alias-label-primary));
   stroke: var(--dsw-alias-bg-layer-1);
   stroke-width: 2;
   pointer-events: none;
 }
 
-.usage-stats__legend {
+.legend {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
@@ -285,21 +294,21 @@
   color: var(--dsw-alias-label-secondary);
 }
 
-.usage-stats__legend-item {
+.legendItem {
   display: inline-flex;
   align-items: center;
   gap: 5px;
   cursor: default;
 }
 
-.usage-stats__legend-swatch {
+.legendSwatch {
   display: inline-block;
   width: 10px;
   height: 10px;
   border-radius: 2px;
 }
 
-.usage-stats__legend-swatch--trend {
+.legendTrend {
   background: color-mix(in srgb, var(--dsw-alias-brand-primary) 80%, var(--dsw-alias-label-primary));
   width: 14px;
   height: 3px;
@@ -308,7 +317,7 @@
 
 /* ── per-model donut + list ────────────────────────────────────────────── */
 
-.usage-stats__models {
+.models {
   display: flex;
   gap: 24px;
   align-items: flex-start;
@@ -316,35 +325,35 @@
   min-width: 0;
 }
 
-.usage-stats__donut-wrap {
+.donutWrap {
   position: relative;
   flex: 0 0 auto;
 }
 
-.usage-stats__donut-track {
+.donutTrack {
   stroke: var(--dsw-alias-bg-mask-1);
 }
 
-.usage-stats__donut-seg {
+.donutSeg {
   transition: stroke-width 0.12s ease;
 }
 
-.usage-stats__donut-seg--dim {
+.donutDim {
   opacity: 0.35;
 }
 
-.usage-stats__donut-center {
+.donutCenter {
   fill: var(--dsw-alias-label-primary);
   font-size: 24px;
   font-weight: 600;
 }
 
-.usage-stats__donut-label {
+.donutLabel {
   fill: var(--dsw-alias-label-tertiary);
   font-size: 12px;
 }
 
-.usage-stats__model-list {
+.modelList {
   list-style: none;
   margin: 0;
   padding: 0;
@@ -356,7 +365,7 @@
   overflow: hidden;
 }
 
-.usage-stats__model-row {
+.modelRow {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -365,19 +374,19 @@
   border-bottom: 1px solid var(--dsw-alias-border-l1);
 }
 
-.usage-stats__model-row:last-child {
+.modelRow:last-child {
   border-bottom: none;
 }
 
 /* "Other" aggregate row: the entire row is clickable to expand/collapse the
    detail list. The chevron button inside it stops propagation so
    double-firing is avoided. */
-.usage-stats__model-row--expandable {
+.modelRowExpandable {
   cursor: pointer;
 }
 
 /* "Other" row toggle (chevron) that expands the aggregated tail models. */
-.usage-stats__model-toggle {
+.modelToggle {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -390,8 +399,8 @@
   vertical-align: middle;
 }
 
-/* Expanded "Other" detail rows: indented, slightly recessed, caption size. */
-.usage-stats__model-row--sub {
+/* Expanded "Other" detail rows: indented, slightly recessed. */
+.modelRowSub {
   padding-left: 28px;
   background: color-mix(in srgb, var(--dsw-alias-bg-layer-2) 55%, transparent);
   font-size: var(--dsw-font-base-16-font-size);
@@ -399,17 +408,17 @@
 
 /* "Other" details expand with an accordion: the wrapper is a grid whose
    single track animates 0fr → 1fr. */
-.usage-stats__model-other-wrap {
+.modelOtherWrap {
   display: grid;
   grid-template-rows: 0fr;
   transition: grid-template-rows 0.25s ease;
 }
 
-.usage-stats__model-other-wrap--open {
+.modelOtherOpen {
   grid-template-rows: 1fr;
 }
 
-.usage-stats__model-other-list {
+.modelOtherList {
   overflow: hidden;
   min-height: 0;
   list-style: none;
@@ -417,7 +426,7 @@
   padding: 0;
 }
 
-.usage-stats__model-name {
+.modelName {
   color: var(--dsw-alias-label-primary);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -426,19 +435,19 @@
   min-width: 0;
 }
 
-.usage-stats__model-provider {
+.modelProvider {
   color: var(--dsw-alias-label-tertiary);
   font-size: var(--dsw-font-base-16-font-size);
   flex: 0 0 auto;
 }
 
-.usage-stats__model-tokens {
+.modelTokens {
   color: var(--dsw-alias-label-secondary);
   font-variant-numeric: tabular-nums;
   flex: 0 0 auto;
 }
 
-.usage-stats__model-pct {
+.modelPct {
   color: var(--dsw-alias-label-tertiary);
   font-variant-numeric: tabular-nums;
   width: 52px;
@@ -448,7 +457,7 @@
 
 /* ── tooltips ──────────────────────────────────────────────────────────── */
 
-.usage-stats__tip {
+.tip {
   position: absolute;
   z-index: 20;
   pointer-events: none;
@@ -461,16 +470,16 @@
   white-space: nowrap;
 }
 
-.usage-stats__tip--screen {
+.tipScreen {
   position: fixed;
 }
 
-.usage-stats__tip-title {
+.tipTitle {
   font-weight: 600;
   margin-bottom: 4px;
 }
 
-.usage-stats__tip-row {
+.tipRow {
   display: flex;
   align-items: center;
   gap: 5px;
@@ -478,26 +487,26 @@
 
 /* Hover tooltip breakdown rows for the "Other" aggregate: indented, muted,
    same gray swatch as the Other step. */
-.usage-stats__tip-row--other {
+.tipRowOther {
   padding-left: 8px;
   color: var(--dsw-alias-label-secondary);
 }
 
-.usage-stats__tip-breakdown {
+.tipBreakdown {
   border-top: 1px solid var(--dsw-alias-border-l1);
   margin-top: 4px;
   padding-top: 4px;
 }
 
-.usage-stats__foot {
+.foot {
   font-size: var(--dsw-font-base-16-font-size);
   color: var(--dsw-alias-label-tertiary);
 }
 
-/* ── chart palette (PR #7503: GitHub Primer data-viz two-set) ───────────── */
+/* ── chart palette (GitHub Primer data-viz two-set) ────────────────────── */
 
 /* Light variant (the theme's default). */
-.usage-stats {
+.panel {
   --dsw-chart-1: #1f883d;
   --dsw-chart-2: #1a7f37;
   --dsw-chart-3: #9a6700;
@@ -507,7 +516,7 @@
 }
 
 @media (prefers-color-scheme: dark) {
-  .usage-stats {
+  .panel {
     --dsw-chart-1: #3fb950;
     --dsw-chart-2: #2ea043;
     --dsw-chart-3: #d29922;

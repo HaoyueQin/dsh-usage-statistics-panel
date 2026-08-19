@@ -14,7 +14,14 @@ function memoryDomain(): UsageStorageDomain {
     entries: () => records.entries() as IterableIterator<[string, UsageDayRow]>,
     put: async (k, v) => { records.set(k, v) },
     update: async (k, fn) => {
-      const next = fn(records.get(k) ?? (undefined as unknown as UsageDayRow))
+      // Mirror the real storage-domain KvTable.update contract: it requires
+      // an existing record and throws otherwise (the store retries by
+      // seeding the row with put()).
+      const cur = records.get(k)
+      if (cur === undefined) {
+        throw new Error(`domain 'usage_history' table 'days' has no record '${k}' to update`)
+      }
+      const next = fn(cur)
       records.set(k, next)
       return next
     },

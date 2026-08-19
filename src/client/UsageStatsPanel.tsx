@@ -3,48 +3,40 @@
  * the aggregate from the host (via the fenced /usage/api route) and draws
  * three charts by hand in SVG — a GitHub-style activity heatmap, a stacked
  * per-day token trend with a cache hit-rate curve, and a per-model donut +
- * list — so no chart library is needed. Model colours come from a fixed
- * two-set categorical palette (--chart-1..5 plus the gray --chart-other,
- * light/dark variants from GitHub Primer's data-viz tokens, defined in this
- * plugin's module css): a model's colour is its rank among the top five by
- * token volume, and everything beyond collapses into one gray "Other" step.
+ * list. No chart library; model colours come from a fixed two-set palette
+ * (--dsw-chart-1..5 + the gray --dsw-chart-other, light/dark variants from
+ * GitHub Primer's data-viz tokens, defined in this plugin's module css).
  *
- * This is the DSH port of the reasonix usage stats panel (PR #7238 with the
- * PR #7503 palette and Other-row semantics); the data layer reads the DSH
- * session logs instead of reasonix's daily JSONL.
+ * The panel follows the DSH client conventions: component styles are a CSS
+ * Module (hashed class map imported as `css`), interactive atoms use the
+ * ui-primitives Button/Input, and every visual value rides the --dsw-alias-*
+ * semantic tokens. The functionality replicates the reasonix usage stats
+ * feature; the implementation is DSH-native.
  */
-import {
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-  type KeyboardEvent as ReactKeyboardEvent,
-} from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
+import clsx from 'clsx'
 import { Activity, CalendarDays, ChevronDown, ChevronRight, Coins, Cpu, MessageSquare, MessagesSquare } from 'lucide-react'
+import { Button, Input } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { DailyTokenUsage, ModelTokenUsage, UsageStatsRange, UsageStatsRequest } from '../wire.ts'
 import { fetchRange, UsageApiError } from './api.ts'
 import { formatTokens, formatCompact, formatPercent, cacheRate, cacheRateText, daysBetween, localDay, indexOfDay, shortDay, providerOf, smoothPath, niceTicks } from './format.ts'
 import type { UsageStatsKey } from './locales.ts'
 import type { UsageStatsTranslator } from './index.tsx'
+import css from './UsageStatsPanel.module.css'
 
 type Translator = UsageStatsTranslator
 
 const RANGE_PRESETS = ['7', '14', '30', '90'] as const
-// DSH records usage from every entry point (web, cli, headless, remote); the
-// panel filters by the aggregated whole unless a source label is configured.
-const SOURCES = ['all'] as const
 
 // The heatmap always shows a fixed 40-week window regardless of the range
-// preset (it only follows the source filter).
+// preset.
 const HEAT_WEEKS = 40
 
 /** The trend chart caps its visible window at 180 days (mirrors reasonix). */
 const TREND_MAX_DAYS = 180
 
 /** The top-5 models keep a distinct rank colour; everything beyond collapses
- *  into the gray "Other" step (PR #7503 semantics). */
+ *  into the gray "Other" step. */
 const TOP_MODELS = 5
 const OTHER_MODEL = '\u0000other' // sentinel; cannot collide with a real model ref
 const OTHER_COLOR = 'var(--dsw-chart-other)'
@@ -54,7 +46,7 @@ const OTHER_COLOR = 'var(--dsw-chart-other)'
 type GroupedDaily = DailyTokenUsage & { otherByModel: Record<string, number> }
 type GroupedModel = ModelTokenUsage & { items?: ModelTokenUsage[] }
 
-export function UsageStatsPanel({ t, backfill }: { t: Translator; backfill?: () => void }): JSX.Element {
+export function UsageStatsPanel({ t }: { t: Translator }): JSX.Element {
   const [range, setRange] = useState<string>('30')
   const [customFrom, setCustomFrom] = useState('')
   const [customTo, setCustomTo] = useState('')
@@ -113,8 +105,7 @@ export function UsageStatsPanel({ t, backfill }: { t: Translator; backfill?: () 
   }, [load])
 
   // Colours follow the order models were first used (walking the daily series
-  // chronologically); the hash hue is only a fallback for models that somehow
-  // escape the aggregate.
+  // chronologically).
   const modelOrder = useMemo(() => {
     const seen: string[] = []
     for (const d of stats?.daily ?? []) {
@@ -132,7 +123,6 @@ export function UsageStatsPanel({ t, backfill }: { t: Translator; backfill?: () 
     if (model === OTHER_MODEL) return OTHER_COLOR
     const rank = modelOrder.indexOf(model)
     if (rank >= 0 && rank < TOP_MODELS) return `var(--dsw-chart-${rank + 1})`
-    // Beyond the top five (or an unlisted model): the gray Other step.
     return OTHER_COLOR
   }, [modelOrder])
 
@@ -174,43 +164,45 @@ export function UsageStatsPanel({ t, backfill }: { t: Translator; backfill?: () 
   const trendModels = groupedStats?.models ?? []
 
   return (
-    <div className="usage-stats">
-      <div className="usage-stats__toolbar">
-        <div className="usage-stats__group" role="group" aria-label={t('range')}>
+    <div className={css.panel}>
+      <div className={css.toolbar}>
+        <div className={css.group} role="group" aria-label={t('range')}>
           {RANGE_PRESETS.map((r) => (
-            <button
+            <Button
               key={r}
-              type="button"
-              className={`provider-add-segmented__item${range === r ? ' provider-add-segmented__item--active' : ''}`}
+              size="sm"
+              variant="ghost"
+              className={clsx(css.segItem, range === r && css.segActive)}
               aria-pressed={range === r}
               onClick={() => setRange(r)}
             >
               {t(`rangePreset.${r}` as UsageStatsKey)}
-            </button>
+            </Button>
           ))}
-          <button
-            type="button"
-            className={`provider-add-segmented__item${range === 'custom' ? ' provider-add-segmented__item--active' : ''}`}
+          <Button
+            size="sm"
+            variant="ghost"
+            className={clsx(css.segItem, range === 'custom' && css.segActive)}
             aria-pressed={range === 'custom'}
             onClick={() => setRange('custom')}
           >
             {t('rangeCustom')}
-          </button>
+          </Button>
         </div>
         {range === 'custom' && (
-          <div className="usage-stats__custom">
-            <input
+          <div className={css.customRange}>
+            <Input
               type="date"
-              className="mem-input"
+              className={css.dateInput}
               value={customFrom}
               max={customTo || undefined}
               onChange={(e) => setCustomFrom(e.target.value)}
               aria-label={t('from')}
             />
-            <span className="usage-stats__custom-sep">–</span>
-            <input
+            <span className={css.customSep}>–</span>
+            <Input
               type="date"
-              className="mem-input"
+              className={css.dateInput}
               value={customTo}
               min={customFrom || undefined}
               max={localDay(0)}
@@ -219,19 +211,19 @@ export function UsageStatsPanel({ t, backfill }: { t: Translator; backfill?: () 
             />
           </div>
         )}
-        <button
-          type="button"
-          className="usage-stats__refresh"
-          onClick={() => { void load(); void loadHeat(); }}
+        <Button
+          size="sm"
+          variant="outline"
+          className={css.refresh}
+          onClick={() => { void load(); void loadHeat() }}
           disabled={loading}
-          aria-label={t('refresh')}
         >
           {t('refresh')}
-        </button>
+        </Button>
       </div>
 
-      {error && <div className="provider-fetch-banner provider-fetch-banner--warn">{error}</div>}
-      {loading && !stats && <div className="usage-stats__loading">{t('refresh')}…</div>}
+      {error && <div className={css.errorBanner}>{error}</div>}
+      {loading && !stats && <div className={css.loading}>{t('refresh')}…</div>}
       {!loading && stats && (
         <>
           <StatCards stats={stats} t={t} />
@@ -239,14 +231,14 @@ export function UsageStatsPanel({ t, backfill }: { t: Translator; backfill?: () 
           <DailyTrend stats={stats} models={trendModels} daily={trendDaily} t={t} colorForModel={colorForModel} />
           <ModelUsage models={trendModels} t={t} colorForModel={colorForModel} />
           {stats.to && (
-            <div className="usage-stats__foot">
+            <div className={css.foot}>
               {t('asOf')} {stats.to}
             </div>
           )}
         </>
       )}
       {!loading && !error && stats && stats.tokens === 0 && (
-        <div className="usage-stats__empty">{t('empty')}</div>
+        <div className={css.empty}>{t('empty')}</div>
       )}
     </div>
   )
@@ -265,19 +257,19 @@ function StatCards({ stats, t }: { stats: UsageStatsRange; t: Translator }) {
     { icon: Cpu, label: t('topModel'), value: topModel, sm: true, wrap: true, hint: t('topModelHint') },
   ]
   return (
-    <div className="usage-stats__cards">
+    <div className={css.cards}>
       {cards.map((c) => (
-        <div className="usage-stats__card" key={c.label} title={c.hint}>
-          <div className="usage-stats__card-head">
-            <c.icon className="usage-stats__card-icon" size={14} strokeWidth={2} aria-hidden="true" />
-            <span className="usage-stats__card-label">{c.label}</span>
+        <div className={css.card} key={c.label} title={c.hint}>
+          <div className={css.cardHead}>
+            <c.icon className={css.cardIcon} size={14} strokeWidth={2} aria-hidden="true" />
+            <span className={css.cardLabel}>{c.label}</span>
           </div>
           {c.wrap ? (
-            <div className="usage-stats__card-value usage-stats__card-value--sm usage-stats__card-value--wrap">{c.value}</div>
+            <div className={clsx(css.cardValue, css.cardValueSm, css.cardValueWrap)}>{c.value}</div>
           ) : (
             <FitText
               text={c.value}
-              className={`usage-stats__card-value${c.sm ? ' usage-stats__card-value--sm' : ''}`}
+              className={clsx(css.cardValue, c.sm && css.cardValueSm)}
               maxSize={c.sm ? 14 : 22}
             />
           )}
@@ -334,14 +326,19 @@ function Heatmap({ daily, from, to, t }: { daily: DailyTokenUsage[]; from: strin
     const update = () => {
       const avail = Math.max(1, el.clientWidth - 2)
       const baseCols = Math.max(1, Math.floor((avail + HEAT_GAP) / (HEAT_BASE + HEAT_GAP)))
+      let next: { size: number; cols: number }
       if (baseCols >= HEAT_WEEKS) {
         const so = (indexOfDay(from) + 1) % 7
         const totalWeeks = Math.ceil((HEAT_WEEKS * 7 + so) / 7)
         const size = Math.max(HEAT_BASE, avail / totalWeeks - HEAT_GAP)
-        setGeom({ size, cols: HEAT_WEEKS })
+        next = { size, cols: HEAT_WEEKS }
       } else {
-        setGeom({ size: HEAT_BASE, cols: baseCols })
+        next = { size: HEAT_BASE, cols: baseCols }
       }
+      // Only commit when the geometry actually changed — the heatmap SVG
+      // width follows `geom.size`, and committing an identical value on
+      // every ResizeObserver callback would feed a render loop and jitter.
+      setGeom((prev) => (prev.size === next.size && prev.cols === next.cols ? prev : next))
     }
     update()
     const ro = new ResizeObserver(update)
@@ -365,21 +362,21 @@ function Heatmap({ daily, from, to, t }: { daily: DailyTokenUsage[]; from: strin
   const tipY = tip ? (tipAbove ? tip.top - 10 : tip.bottom + 10) : 0
 
   return (
-    <section className="usage-stats__section">
-      <div className="usage-stats__section-head">
-        <h3 className="usage-stats__section-title">{t('heatmap')}</h3>
-        <div className="usage-stats__heatmap-legend">
+    <section className={css.section}>
+      <div className={css.sectionHead}>
+        <h3 className={css.sectionTitle}>{t('heatmap')}</h3>
+        <div className={css.heatLegend}>
           <span>{t('heatLess')}</span>
-          <i className="usage-stats__heat-cell usage-stats__heat-cell--1" style={{ width: geom.size, height: geom.size }} />
-          <i className="usage-stats__heat-cell usage-stats__heat-cell--2" style={{ width: geom.size, height: geom.size }} />
-          <i className="usage-stats__heat-cell usage-stats__heat-cell--3" style={{ width: geom.size, height: geom.size }} />
-          <i className="usage-stats__heat-cell usage-stats__heat-cell--4" style={{ width: geom.size, height: geom.size }} />
-          <i className="usage-stats__heat-cell usage-stats__heat-cell--5" style={{ width: geom.size, height: geom.size }} />
+          <i className={clsx(css.heatCell, css.heatCell1)} style={{ width: geom.size, height: geom.size }} />
+          <i className={clsx(css.heatCell, css.heatCell2)} style={{ width: geom.size, height: geom.size }} />
+          <i className={clsx(css.heatCell, css.heatCell3)} style={{ width: geom.size, height: geom.size }} />
+          <i className={clsx(css.heatCell, css.heatCell4)} style={{ width: geom.size, height: geom.size }} />
+          <i className={clsx(css.heatCell, css.heatCell5)} style={{ width: geom.size, height: geom.size }} />
           <span>{t('heatMore')}</span>
         </div>
       </div>
-      <div className="usage-stats__heatmap-wrap" ref={wrapRef}>
-        <svg className="usage-stats__heatmap" width={weeks * (geom.size + HEAT_GAP) + HEAT_GAP} height={rows * (geom.size + HEAT_GAP) + HEAT_GAP} role="img" aria-label={t('heatmap')}>
+      <div className={css.heatWrap} ref={wrapRef}>
+        <svg className={css.heatmap} width={weeks * (geom.size + HEAT_GAP) + HEAT_GAP} height={rows * (geom.size + HEAT_GAP) + HEAT_GAP} role="img" aria-label={t('heatmap')}>
           {days.map((day, i) => {
             const col = Math.floor((i + startOffset) / 7)
             const row = (i + startOffset) % 7
@@ -391,7 +388,7 @@ function Heatmap({ daily, from, to, t }: { daily: DailyTokenUsage[]; from: strin
             return (
               <rect
                 key={day}
-                className={`usage-stats__heat-cell usage-stats__heat-cell--${level}`}
+                className={clsx(css.heatCell, level === 0 && css.heatLevel0, level === 1 && css.heatLevel1, level === 2 && css.heatLevel2, level === 3 && css.heatLevel3, level === 4 && css.heatLevel4, level === 5 && css.heatLevel5)}
                 x={x}
                 y={y}
                 width={geom.size}
@@ -410,8 +407,8 @@ function Heatmap({ daily, from, to, t }: { daily: DailyTokenUsage[]; from: strin
           })}
         </svg>
         {tip && (
-          <div className="usage-stats__tip usage-stats__tip--chart" style={{ transform: `translate(${tipX}px, ${tipY}px) translate(-50%, ${tipAbove ? '-100%' : '0'})` }}>
-            <div className="usage-stats__tip-title">{tip.day}</div>
+          <div className={clsx(css.tip, css.tipChart)} style={{ transform: `translate(${tipX}px, ${tipY}px) translate(-50%, ${tipAbove ? '-100%' : '0'})` }}>
+            <div className={css.tipTitle}>{tip.day}</div>
             <div>{t('tokens')}: {formatTokens(tip.tokens)}</div>
             <div>{t('requests')}: {tip.requests}</div>
             <div>{t('cacheHitRate')}: {cacheRateText(tip.cacheHit, tip.cacheMiss)}</div>
@@ -445,12 +442,14 @@ function DailyTrend({ stats, models, daily, t, colorForModel }: { stats: UsageSt
     if (!el || daily.length === 0) return
     const update = () => {
       const avail = Math.max(1, el.clientWidth)
+      let next: { avail: number; trimN: number | null }
       if (avail >= W) {
-        setView({ avail, trimN: null })
-        return
+        next = { avail, trimN: null }
+      } else {
+        const maxN = Math.max(1, Math.floor((avail - padL - padR) / MIN_COL) + 1)
+        next = { avail, trimN: Math.min(daily.length, maxN) }
       }
-      const maxN = Math.max(1, Math.floor((avail - padL - padR) / MIN_COL) + 1)
-      setView({ avail, trimN: Math.min(daily.length, maxN) })
+      setView((prev) => (prev.avail === next.avail && prev.trimN === next.trimN ? prev : next))
     }
     update()
     const ro = new ResizeObserver(update)
@@ -508,19 +507,19 @@ function DailyTrend({ stats, models, daily, t, colorForModel }: { stats: UsageSt
   if (tip && !tipAbove && tipY + tipH > cBottom - 8) tipY = tip.top - 10
 
   return (
-    <section className="usage-stats__section">
-      <div className="usage-stats__section-head">
-        <h3 className="usage-stats__section-title">{t('dailyTrend')}</h3>
-        {trendCapped && <span className="usage-stats__trend-note">{t('trendLimited')}</span>}
+    <section className={css.section}>
+      <div className={css.sectionHead}>
+        <h3 className={css.sectionTitle}>{t('dailyTrend')}</h3>
+        {trendCapped && <span className={css.trendNote}>{t('trendLimited')}</span>}
       </div>
-      <div className="usage-stats__chart-wrap" ref={wrapRef}>
-        <svg className="usage-stats__chart" width="100%" height={H} viewBox={`0 0 ${plotWUsed} ${H}`} onMouseLeave={() => { setTip(null); setHover(null); }}>
+      <div className={css.chartWrap} ref={wrapRef}>
+        <svg className={css.chart} width="100%" height={H} viewBox={`0 0 ${plotWUsed} ${H}`} onMouseLeave={() => { setTip(null); setHover(null) }}>
           {ticks.map((tk) => {
             const y = padT + plotH - (tk / maxTotal) * plotH
             return (
               <g key={tk}>
-                <line className="usage-stats__grid" x1={padL} y1={y} x2={padL + (n - 1) * step + barW} y2={y} />
-                <text className="usage-stats__axis" x={padL - 6} y={y + 3} textAnchor="end">{formatCompact(tk)}</text>
+                <line className={css.grid} x1={padL} y1={y} x2={padL + (n - 1) * step + barW} y2={y} />
+                <text className={css.axis} x={padL - 6} y={y + 3} textAnchor="end">{formatCompact(tk)}</text>
               </g>
             )
           })}
@@ -541,7 +540,7 @@ function DailyTrend({ stats, models, daily, t, colorForModel }: { stats: UsageSt
                 {bars.map((b) => (
                   <rect
                     key={`${d.day}-${b.model}`}
-                    className={`usage-stats__bar${b.dimmed ? ' usage-stats__bar--dim' : ''}`}
+                    className={clsx(css.bar, b.dimmed && css.barDim)}
                     x={b.x}
                     y={b.y}
                     width={barW}
@@ -551,7 +550,7 @@ function DailyTrend({ stats, models, daily, t, colorForModel }: { stats: UsageSt
                   />
                 ))}
                 <rect
-                  className="usage-stats__bar-hit"
+                  className={css.barHit}
                   x={x}
                   y={padT}
                   width={barW}
@@ -563,46 +562,46 @@ function DailyTrend({ stats, models, daily, t, colorForModel }: { stats: UsageSt
                   onMouseLeave={() => setTip(null)}
                 />
                 {(i % Math.max(1, Math.floor(n / 8)) === 0 || i === n - 1) && (
-                  <text className="usage-stats__axis" x={padL + barHalf + i * step} y={H - 8} textAnchor="middle">{shortDay(d.day)}</text>
+                  <text className={css.axis} x={padL + barHalf + i * step} y={H - 8} textAnchor="middle">{shortDay(d.day)}</text>
                 )}
               </g>
             )
           })}
-          <path className="usage-stats__trend" d={trendPath} fill="none" strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
+          <path className={css.trend} d={trendPath} fill="none" strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
           {trendTipPt && (
-            <circle className="usage-stats__trend-dot" cx={trendTipPt.x} cy={trendTipPt.y} r={4} />
+            <circle className={css.trendDot} cx={trendTipPt.x} cy={trendTipPt.y} r={4} />
           )}
           {rateTicks.map((p) => {
             const y = padT + plotH - (p / 100) * plotH
             return (
               <g key={`rate-${p}`}>
-                <text className="usage-stats__axis usage-stats__axis--rate" x={padL + (n - 1) * step + barW + 8} y={y + 3}>{p}%</text>
+                <text className={clsx(css.axis, css.axisRate)} x={padL + (n - 1) * step + barW + 8} y={y + 3}>{p}%</text>
               </g>
             )
           })}
         </svg>
         {tip && (
-          <div className="usage-stats__tip usage-stats__tip--chart usage-stats__tip--screen" style={{ transform: `translate(${tipX}px, ${tipY}px) translate(-50%, ${tipAbove ? '-100%' : '0'})` }}>
-            <div className="usage-stats__tip-title">{tip.day}</div>
+          <div className={clsx(css.tip, css.tipChart, css.tipScreen)} style={{ transform: `translate(${tipX}px, ${tipY}px) translate(-50%, ${tipAbove ? '-100%' : '0'})` }}>
+            <div className={css.tipTitle}>{tip.day}</div>
             <div>{t('total')}: {formatTokens(tip.total)}</div>
             {legendModels.filter((m) => tip.byModel[m] !== undefined).map((m) => (
-              <div key={m} className="usage-stats__tip-row"><i className="usage-stats__legend-swatch" style={{ background: colorForModel(m) }} />{m === OTHER_MODEL ? t('other') : m}: {formatTokens(tip.byModel[m]!)}</div>
+              <div key={m} className={css.tipRow}><i className={css.legendSwatch} style={{ background: colorForModel(m) }} />{m === OTHER_MODEL ? t('other') : m}: {formatTokens(tip.byModel[m]!)}</div>
             ))}
             {tip.otherByModel && Object.entries(tip.otherByModel).sort((a, b) => b[1] - a[1]).map(([m, v]) => (
-              <div key={m} className="usage-stats__tip-row usage-stats__tip-row--other"><i className="usage-stats__legend-swatch" style={{ background: OTHER_COLOR }} />{m}: {formatTokens(v)}</div>
+              <div key={m} className={clsx(css.tipRow, css.tipRowOther)}><i className={css.legendSwatch} style={{ background: OTHER_COLOR }} />{m}: {formatTokens(v)}</div>
             ))}
             <div>{t('cacheHitRate')}: {cacheRateText(tip.cacheHit, tip.cacheMiss)}</div>
           </div>
         )}
-        <div className="usage-stats__legend">
+        <div className={css.legend}>
           {legendModels.map((model) => (
-            <span key={model} className="usage-stats__legend-item" onMouseEnter={() => setHover(model)} onMouseLeave={() => setHover(null)}>
-              <i className="usage-stats__legend-swatch" style={{ background: colorForModel(model) }} />
+            <span key={model} className={css.legendItem} onMouseEnter={() => setHover(model)} onMouseLeave={() => setHover(null)}>
+              <i className={css.legendSwatch} style={{ background: colorForModel(model) }} />
               {model === OTHER_MODEL ? t('other') : model}
             </span>
           ))}
-          <span className="usage-stats__legend-item" aria-hidden="true">
-            <i className="usage-stats__legend-swatch usage-stats__legend-swatch--trend" />
+          <span className={css.legendItem} aria-hidden="true">
+            <i className={clsx(css.legendSwatch, css.legendTrend)} />
             {t('hitRateLegend')}
           </span>
         </div>
@@ -637,12 +636,12 @@ function ModelUsage({ models, t, colorForModel }: { models: GroupedModel[]; t: T
   const tipY = tip ? (tipAbove ? tip.y - 14 : tip.y + 14) : 0
 
   return (
-    <section className="usage-stats__section">
-      <h3 className="usage-stats__section-title">{t('modelUsage')}</h3>
-      <div className="usage-stats__models">
-        <div className="usage-stats__donut-wrap" ref={donutRef}>
-          <svg className="usage-stats__donut" width={CX * 2} height={CX * 2} viewBox={`0 0 ${CX * 2} ${CX * 2}`} role="img" aria-label={t('modelUsage')}>
-            <circle className="usage-stats__donut-track" cx={CX} cy={CX} r={R} fill="none" strokeWidth={SW} />
+    <section className={css.section}>
+      <h3 className={css.sectionTitle}>{t('modelUsage')}</h3>
+      <div className={css.models}>
+        <div className={css.donutWrap} ref={donutRef}>
+          <svg className={css.donut} width={CX * 2} height={CX * 2} viewBox={`0 0 ${CX * 2} ${CX * 2}`} role="img" aria-label={t('modelUsage')}>
+            <circle className={css.donutTrack} cx={CX} cy={CX} r={R} fill="none" strokeWidth={SW} />
             {models.map((m) => {
               const frac = m.tokens / total
               const dash = frac * CIRC
@@ -650,7 +649,7 @@ function ModelUsage({ models, t, colorForModel }: { models: GroupedModel[]; t: T
               const el = (
                 <circle
                   key={m.model}
-                  className={`usage-stats__donut-seg${hover !== null && !active ? ' usage-stats__donut-seg--dim' : ''}`}
+                  className={clsx(css.donutSeg, hover !== null && !active && css.donutDim)}
                   cx={CX}
                   cy={CX}
                   r={R}
@@ -673,31 +672,31 @@ function ModelUsage({ models, t, colorForModel }: { models: GroupedModel[]; t: T
               offset += dash
               return el
             })}
-            <text className="usage-stats__donut-center" x={CX} y={CX + 8} textAnchor="middle">{formatCompact(total)}</text>
-            <text className="usage-stats__donut-label" x={CX} y={CX + 26} textAnchor="middle">{t('tokens')}</text>
+            <text className={css.donutCenter} x={CX} y={CX + 8} textAnchor="middle">{formatCompact(total)}</text>
+            <text className={css.donutLabel} x={CX} y={CX + 26} textAnchor="middle">{t('tokens')}</text>
           </svg>
           {tip && (
-            <div className="usage-stats__tip usage-stats__tip--chart" style={{ transform: `translate(${tipX}px, ${tipY}px) translate(-50%, ${tipAbove ? '-100%' : '0'})` }}>
-              <div className="usage-stats__tip-title">{tip.model === OTHER_MODEL ? t('other') : tip.model}</div>
+            <div className={clsx(css.tip, css.tipChart)} style={{ transform: `translate(${tipX}px, ${tipY}px) translate(-50%, ${tipAbove ? '-100%' : '0'})` }}>
+              <div className={css.tipTitle}>{tip.model === OTHER_MODEL ? t('other') : tip.model}</div>
               <div>{t('total')}: {formatTokens(tip.tokens)}</div>
               <div>{t('percent')}: {formatPercent(tip.percent)}</div>
               {tip.items && tip.items.length > 0 && (
-                <div className="usage-stats__tip-breakdown">
+                <div className={css.tipBreakdown}>
                   {tip.items.map((it) => (
-                    <div key={it.model} className="usage-stats__tip-row usage-stats__tip-row--other"><i className="usage-stats__legend-swatch" style={{ background: OTHER_COLOR }} />{it.model}: {formatTokens(it.tokens)}</div>
+                    <div key={it.model} className={clsx(css.tipRow, css.tipRowOther)}><i className={css.legendSwatch} style={{ background: OTHER_COLOR }} />{it.model}: {formatTokens(it.tokens)}</div>
                   ))}
                 </div>
               )}
             </div>
           )}
         </div>
-        <ul className="usage-stats__model-list">
+        <ul className={css.modelList}>
           {models.map((m) => {
             const isOther = m.model === OTHER_MODEL
             return (
               <li
                 key={m.model}
-                className={`usage-stats__model-row${isOther ? ' usage-stats__model-row--expandable' : ''}`}
+                className={clsx(css.modelRow, isOther && css.modelRowExpandable)}
                 onMouseEnter={() => setHover(m.model)}
                 onMouseLeave={() => setHover(null)}
                 {...(isOther
@@ -715,12 +714,12 @@ function ModelUsage({ models, t, colorForModel }: { models: GroupedModel[]; t: T
                     }
                   : {})}
               >
-                <i className="usage-stats__legend-swatch" style={{ background: colorForModel(m.model) }} />
-                <span className="usage-stats__model-name">
+                <i className={css.legendSwatch} style={{ background: colorForModel(m.model) }} />
+                <span className={css.modelName}>
                   {isOther && (
                     <button
                       type="button"
-                      className="usage-stats__model-toggle"
+                      className={css.modelToggle}
                       onClick={(e) => { e.stopPropagation(); setExpandedOther(!expandedOther) }}
                       aria-expanded={expandedOther}
                       aria-label={t('other')}
@@ -730,22 +729,22 @@ function ModelUsage({ models, t, colorForModel }: { models: GroupedModel[]; t: T
                   )}
                   {isOther ? t('other') : m.model}
                 </span>
-                <span className="usage-stats__model-provider">{isOther ? '' : providerOf(m.model)}</span>
-                <span className="usage-stats__model-tokens">{formatTokens(m.tokens)}</span>
-                <span className="usage-stats__model-pct">{formatPercent(m.percent)}</span>
+                <span className={css.modelProvider}>{isOther ? '' : providerOf(m.model)}</span>
+                <span className={css.modelTokens}>{formatTokens(m.tokens)}</span>
+                <span className={css.modelPct}>{formatPercent(m.percent)}</span>
               </li>
             )
           })}
           {other?.items && other.items.length > 0 && (
-            <li className={`usage-stats__model-other-wrap${expandedOther ? ' usage-stats__model-other-wrap--open' : ''}`}>
-              <ul className="usage-stats__model-other-list">
+            <li className={clsx(css.modelOtherWrap, expandedOther && css.modelOtherOpen)}>
+              <ul className={css.modelOtherList}>
                 {other.items.map((it) => (
-                  <li key={it.model} className="usage-stats__model-row usage-stats__model-row--sub">
-                    <i className="usage-stats__legend-swatch" style={{ background: OTHER_COLOR }} />
-                    <span className="usage-stats__model-name">{it.model}</span>
-                    <span className="usage-stats__model-provider">{providerOf(it.model)}</span>
-                    <span className="usage-stats__model-tokens">{formatTokens(it.tokens)}</span>
-                    <span className="usage-stats__model-pct">{formatPercent(it.percent)}</span>
+                  <li key={it.model} className={clsx(css.modelRow, css.modelRowSub)}>
+                    <i className={css.legendSwatch} style={{ background: OTHER_COLOR }} />
+                    <span className={css.modelName}>{it.model}</span>
+                    <span className={css.modelProvider}>{providerOf(it.model)}</span>
+                    <span className={css.modelTokens}>{formatTokens(it.tokens)}</span>
+                    <span className={css.modelPct}>{formatPercent(it.percent)}</span>
                   </li>
                 ))}
               </ul>

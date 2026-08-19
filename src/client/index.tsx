@@ -13,6 +13,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type { InjectFace, PropsLocale, PropsRuntime, TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import { UsageStatsPanel } from './UsageStatsPanel.tsx'
+import { registerSettingsNavIcon } from './settings-nav-icon.ts'
 import { LOCALE_NS, en, zh, zhTW, type UsageStatsKey } from './locales.ts'
 
 export interface UsageStatsInjected {
@@ -52,6 +53,14 @@ export function apply(ctx: ClientContext): void {
   }, 'dsh-usage-statistics-panel: dictionaries')
 
   const t = ctx.locale.bind(LOCALE_NS)
+
+  // The Settings shell has no public icon field for third-party sections;
+  // swap the fallback gear for a lucide BarChart3 on our localized nav row
+  // (marker + inject, HMR-safe).
+  ctx.effect(
+    () => registerSettingsNavIcon(() => t('nav')),
+    'dsh-usage-statistics-panel: settings navigation icon',
+  )
 
   // The "Usage statistics" settings section: appears in the DSH Settings
   // shell once the shell's declaration is on the ledger (slots.inject waits

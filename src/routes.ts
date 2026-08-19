@@ -86,7 +86,10 @@ export async function aggregateRange(store: UsageStore, from: string, to: string
   return aggregateSamples(samples, { from, to, source })
 }
 
-export function buildUsageRoutes(ctx: Context, deps: RoutesDeps): UsageWebRoute[] {
+/** Build the single fenced prefix route serving the /usage/api JSON RPC.
+ *  The host mounts it via `ctx.webServer.register` (which takes ONE WebRoute,
+ *  not an array — matching the real dsh-host-webserver contract). */
+export function buildUsageRoute(ctx: Context, deps: RoutesDeps): UsageWebRoute {
   const fence: TrustFence = createTrustFence(deps.trustedHosts)
   const handler = async (req: UsageHttpRequest, res: UsageHttpResponse): Promise<void> => {
     if (!fence.isTrusted(req)) {
@@ -112,7 +115,7 @@ export function buildUsageRoutes(ctx: Context, deps: RoutesDeps): UsageWebRoute[
       writeError(res, err)
     }
   }
-  return [{ kind: 'prefix', path: '/usage/api', handler }]
+  return { kind: 'prefix', path: '/usage/api', handler }
 }
 
 export type { BackfillStatus, UsageStatsRange, UsageStatsRequest }

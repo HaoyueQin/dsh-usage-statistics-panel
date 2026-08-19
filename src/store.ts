@@ -18,6 +18,13 @@ import { dayKey } from './query.ts'
 import type { UsageSample } from './query.ts'
 import { z } from 'zod'
 
+/** True when a KvTable.update() failure is the "no record to update" miss
+ *  (the storage-domain error for an absent key) — the retry path seeds the
+ *  row and re-applies. */
+function isMissingRecord(err: unknown): boolean {
+  return err instanceof Error && /no record .* to update/.test(err.message)
+}
+
 /** One row: a model's usage on one local calendar day. */
 export interface UsageDayRow {
   day: string // "YYYY-MM-DD"
@@ -85,32 +92,26 @@ export class UsageStore {
 
   /** Fold one atomic usage sample (a completed call or a turn marker) into
    *  the day's row. Turn markers carry no model attribution (reasonix
-   *  records them per source, not per model). */
+   *  records them per source, not per model).
+   *
+   *  KvTable.update() requires an existing key ("no record to update"
+   *  otherwise), so a miss is retried once after seeding the row with put().
+   *  The put/update pair is not atomic against a concurrent writer for the
+   *  same key, but the collector's fold dedupes by (turn, step) and the live
+   *  listener + backfill never write the same key twice concurrently; the
+   *  retry covers the first-writer race. */
   async record(sample: UsageSample): Promise<void> {
     await this.ready
     const table = this.requireTable()
     const day = sample.day
-    if (sample.turn) {
-      // A turn marker: count it on the day across models by folding into the
-      // "(unknown)" row? No — reasonix counts turns per day independent of
-      // model. We track turns on the provider/model row only when the turn
-      // marker follows a call sample; standalone markers (empty turns) land
-      // on a synthetic "(unknown)" row so the daily total stays right.
-      const provider = 'default'
-      const model = '(turns)'
-      const key = dayRowKey(day, provider, model)
-      await table.update(key, (cur) => ({
-        ...(cur ?? emptyRow(day, provider, model)),
-        turns: (cur?.turns ?? 0) + 1,
-        lastSeen: Date.now(),
-      }))
-      return
-    }
-    const model = sample.model && sample.model !== '' ? sample.model : '(unknown)'
-    const provider = providerOf(model)
+    const provider = sample.turn ? 'default' : providerOf(sample.model && sample.model !== '' ? sample.model : '(unknown)')
+    const model = sample.turn ? '(turns)' : sample.model && sample.model !== '' ? sample.model : '(unknown)'
     const key = dayRowKey(day, provider, model)
-    await table.update(key, (cur) => {
+    const apply = (cur: UsageDayRow | undefined): UsageDayRow => {
       const base = cur ?? emptyRow(day, provider, model)
+      if (sample.turn) {
+        return { ...base, turns: base.turns + 1, lastSeen: Date.now() }
+      }
       return {
         ...base,
         inputTokens: base.inputTokens + sample.inputTokens,
@@ -120,7 +121,17 @@ export class UsageStore {
         requests: base.requests + (sample.inputTokens + sample.outputTokens > 0 ? 1 : 0),
         lastSeen: Date.now(),
       }
-    })
+    }
+    try {
+      await table.update(key, apply)
+    } catch (err) {
+      if (isMissingRecord(err)) {
+        await table.put(key, emptyRow(day, provider, model))
+        await table.update(key, apply)
+        return
+      }
+      throw err
+    }
   }
 
   /** All rows whose day intersects [from, to] (inclusive). */

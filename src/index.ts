@@ -14,7 +14,7 @@
 import type { Context } from './context-types.ts'
 import { UsageStore } from './store.ts'
 import { UsageCollector } from './collector.ts'
-import { buildUsageRoutes } from './routes.ts'
+import { buildUsageRoute } from './routes.ts'
 import { settingsNamespace } from '@deepseek-ai/dsh-settings'
 
 export const name = 'dsh-usage-statistics-panel'
@@ -48,11 +48,10 @@ export function apply(ctx: Context, config: UsageStatsConfig = {}): void {
     return rt?.trustedHosts ?? []
   }
 
-  // Mount the fenced route table. The disposer runs on fiber teardown
-  // (HMR-safe).
+  // Mount the fenced route. The disposer runs on fiber teardown (HMR-safe).
   ctx.effect(() => {
-    const routes = buildUsageRoutes(ctx, { store, collector, trustedHosts })
-    const dispose = ctx.webServer.register(routes as never)
+    const route = buildUsageRoute(ctx, { store, collector, trustedHosts })
+    const dispose = ctx.webServer.register(route as never)
     return dispose
   }, 'dsh-usage-statistics-panel: routes')
 

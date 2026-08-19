@@ -96,6 +96,14 @@ export function aggregateSamples(samples: Iterable<UsageSample>, filter: RangeFi
   const modelTotals = new Map<string, number>()
   const providerTotals = new Map<string, number>()
   const active = new Set<string>()
+  // Per-day accumulation (the reasonix dayTotals): the stacked trend chart
+  // reads daily.byModel / daily.byProvider, so every token-bearing sample
+  // must land in its day's map — not just in the range totals.
+  const dayByModel = new Map<string, Map<string, number>>()
+  const dayTotals = new Map<string, number>()
+  const dayRequests = new Map<string, number>()
+  const dayCacheHit = new Map<string, number>()
+  const dayCacheMiss = new Map<string, number>()
 
   for (const sample of samples) {
     if (sample.day < from || sample.day > to) continue
@@ -115,21 +123,41 @@ export function aggregateSamples(samples: Iterable<UsageSample>, filter: RangeFi
     providerTotals.set(providerOf(model), (providerTotals.get(providerOf(model)) ?? 0) + total)
     if (total > 0) out.requests++
     active.add(sample.day)
+
+    let byModel = dayByModel.get(sample.day)
+    if (!byModel) {
+      byModel = new Map()
+      dayByModel.set(sample.day, byModel)
+    }
+    byModel.set(model, (byModel.get(model) ?? 0) + total)
+    dayTotals.set(sample.day, (dayTotals.get(sample.day) ?? 0) + total)
+    if (total > 0) dayRequests.set(sample.day, (dayRequests.get(sample.day) ?? 0) + 1)
+    dayCacheHit.set(sample.day, (dayCacheHit.get(sample.day) ?? 0) + sample.cacheReadTokens)
+    dayCacheMiss.set(sample.day, (dayCacheMiss.get(sample.day) ?? 0) + sample.inputTokens)
   }
 
   out.activeDays = active.size
 
   // Daily series: emit every day of the range; inactive days carry zero totals.
   for (const day of days) {
+    const byModel = dayByModel.get(day)
+    const byModelObj: Record<string, number> = {}
+    if (byModel) {
+      for (const [m, v] of byModel) byModelObj[m] = v
+    }
+    const byProviderObj: Record<string, number> = {}
+    for (const m of Object.keys(byModelObj)) {
+      byProviderObj[providerOf(m)] = (byProviderObj[providerOf(m)] ?? 0) + byModelObj[m]!
+    }
     out.daily.push({
       day,
-      total: 0,
-      byModel: {},
-      byProvider: {},
-      requests: 0,
+      total: dayTotals.get(day) ?? 0,
+      byModel: byModelObj,
+      byProvider: byProviderObj,
+      requests: dayRequests.get(day) ?? 0,
       turns: 0,
-      cacheHit: 0,
-      cacheMiss: 0,
+      cacheHit: dayCacheHit.get(day) ?? 0,
+      cacheMiss: dayCacheMiss.get(day) ?? 0,
     })
   }
 

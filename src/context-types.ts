@@ -52,7 +52,7 @@ export interface UsageWebRoute {
 
 /** The webserver service (mirror of @deepseek-ai/dsh-host-webserver). */
 export interface UsageWebServer {
-  register(routes: UsageWebRoute[]): () => void
+  register(route: UsageWebRoute): () => void
 }
 
 /** A session header row (mirror of @deepseek-ai/dsh-session-persistence). */

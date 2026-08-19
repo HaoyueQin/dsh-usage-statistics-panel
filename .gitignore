@@ -8,4 +8,4 @@ dist/
 coverage/
 .zcode/
 *.tgz
-dsh-shot.png
+dsh-*.png

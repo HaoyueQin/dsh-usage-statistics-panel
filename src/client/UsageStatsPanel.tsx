@@ -367,11 +367,11 @@ function Heatmap({ daily, from, to, t }: { daily: DailyTokenUsage[]; from: strin
         <h3 className={css.sectionTitle}>{t('heatmap')}</h3>
         <div className={css.heatLegend}>
           <span>{t('heatLess')}</span>
-          <i className={clsx(css.heatCell, css.heatCell1)} style={{ width: geom.size, height: geom.size }} />
-          <i className={clsx(css.heatCell, css.heatCell2)} style={{ width: geom.size, height: geom.size }} />
-          <i className={clsx(css.heatCell, css.heatCell3)} style={{ width: geom.size, height: geom.size }} />
-          <i className={clsx(css.heatCell, css.heatCell4)} style={{ width: geom.size, height: geom.size }} />
-          <i className={clsx(css.heatCell, css.heatCell5)} style={{ width: geom.size, height: geom.size }} />
+          <i className={clsx(css.heatCell, css.heatLevel1)} style={{ width: geom.size, height: geom.size }} />
+          <i className={clsx(css.heatCell, css.heatLevel2)} style={{ width: geom.size, height: geom.size }} />
+          <i className={clsx(css.heatCell, css.heatLevel3)} style={{ width: geom.size, height: geom.size }} />
+          <i className={clsx(css.heatCell, css.heatLevel4)} style={{ width: geom.size, height: geom.size }} />
+          <i className={clsx(css.heatCell, css.heatLevel5)} style={{ width: geom.size, height: geom.size }} />
           <span>{t('heatMore')}</span>
         </div>
       </div>

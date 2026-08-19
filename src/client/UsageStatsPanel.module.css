@@ -212,30 +212,33 @@
   border-radius: 3px;
 }
 
-/* The five heat levels: brand accent blended toward the base surface so the
-   pure accent sits softly on the card in every theme. */
+/* The five heat levels use DeepSeek's brand blue (#4D6BFE) as a fixed ramp,
+   light and dark variants below — never the theme accent, which can read
+   near-black against the base surface in dark mode. level0 (no data) is a
+   neutral empty cell. The cells are SVG <rect>s, so the color rides `fill`
+   (background is a no-op on SVG geometry). */
 .heatLevel0 {
-  background: var(--dsw-alias-bg-mask-1);
+  fill: var(--dsw-heat-0);
 }
 
 .heatLevel1 {
-  background: color-mix(in srgb, var(--dsw-alias-brand-primary) 20%, var(--dsw-alias-bg-base));
+  fill: var(--dsw-heat-1);
 }
 
 .heatLevel2 {
-  background: color-mix(in srgb, var(--dsw-alias-brand-primary) 40%, var(--dsw-alias-bg-base));
+  fill: var(--dsw-heat-2);
 }
 
 .heatLevel3 {
-  background: color-mix(in srgb, var(--dsw-alias-brand-primary) 65%, var(--dsw-alias-bg-base));
+  fill: var(--dsw-heat-3);
 }
 
 .heatLevel4 {
-  background: color-mix(in srgb, var(--dsw-alias-brand-primary) 85%, var(--dsw-alias-bg-base));
+  fill: var(--dsw-heat-4);
 }
 
 .heatLevel5 {
-  background: var(--dsw-alias-brand-primary);
+  fill: var(--dsw-heat-5);
 }
 
 /* ── daily trend ───────────────────────────────────────────────────────── */
@@ -503,10 +506,19 @@
   color: var(--dsw-alias-label-tertiary);
 }
 
-/* ── chart palette (GitHub Primer data-viz two-set) ────────────────────── */
+/* ── chart palette ──────────────────────────────────────────────────────── */
 
-/* Light variant (the theme's default). */
+/* Light variant (the theme's default): model colours are GitHub Primer's
+   data-viz two-set (rank order by token volume + gray Other, matching the
+   reasonix PR #7503 palette); the heatmap ramp is DeepSeek's brand blue
+   (#4D6BFE) stepping from a pale tint to the full blue. */
 .panel {
+  --dsw-heat-0: #ebedf0;
+  --dsw-heat-1: #dbe3ff;
+  --dsw-heat-2: #b7c5ff;
+  --dsw-heat-3: #8ea4ff;
+  --dsw-heat-4: #6884ff;
+  --dsw-heat-5: #4d6bfe;
   --dsw-chart-1: #1f883d;
   --dsw-chart-2: #1a7f37;
   --dsw-chart-3: #9a6700;
@@ -517,6 +529,12 @@
 
 @media (prefers-color-scheme: dark) {
   .panel {
+    --dsw-heat-0: #21262d;
+    --dsw-heat-1: #2f4bd0;
+    --dsw-heat-2: #4d6bfe;
+    --dsw-heat-3: #6e8bff;
+    --dsw-heat-4: #93aaff;
+    --dsw-heat-5: #c4d0ff;
     --dsw-chart-1: #3fb950;
     --dsw-chart-2: #2ea043;
     --dsw-chart-3: #d29922;

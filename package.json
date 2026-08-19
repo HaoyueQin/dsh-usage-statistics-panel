@@ -106,6 +106,7 @@
     "@types/react-dom": "~18.3.1",
     "jsdom": "^29.1.1",
     "lightningcss": "^1.32.0",
+    "playwright-core": "^1.62.1",
     "react": "^18.2.0",
     "react-dom": "18.2.0",
     "tsdown": "^0.22.2",

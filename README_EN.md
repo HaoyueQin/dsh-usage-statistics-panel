@@ -1,5 +1,12 @@
 # DSH Usage Statistics Panel
 
+English | [中文](README.md)
+
+![npm version](https://img.shields.io/npm/v/dsh-usage-statistics-panel)
+![License](https://img.shields.io/github/license/HaoyueQin/dsh-usage-statistics-panel)
+![TypeScript](https://img.shields.io/badge/TypeScript-5.6-blue)
+![dsh-plugin](https://img.shields.io/badge/dsh-plugin-4D6BFE)
+
 A usage statistics panel plugin for the DSH web UI: per-day token trend, a GitHub-style activity heatmap, a cache hit-rate curve, and a per-model breakdown (donut + list), added as a "Usage statistics" page in Settings.
 
 All charts are hand-drawn SVG with no chart library; the palette uses GitHub Primer's data-viz two-set tokens (the top five models each get a distinct rank colour, everything else collapses into a gray "Other" bucket) and adapts to the DSH theme.

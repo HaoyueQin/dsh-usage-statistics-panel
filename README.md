@@ -1,5 +1,12 @@
 # DSH Usage Statistics Panel
 
+[English](README_EN.md) | 中文
+
+![npm version](https://img.shields.io/npm/v/dsh-usage-statistics-panel)
+![License](https://img.shields.io/github/license/HaoyueQin/dsh-usage-statistics-panel)
+![TypeScript](https://img.shields.io/badge/TypeScript-5.6-blue)
+![dsh-plugin](https://img.shields.io/badge/dsh-plugin-4D6BFE)
+
 DSH web 插件的用量统计面板：按天 Token 趋势、GitHub 风格活跃热力图、缓存命中率曲线、按模型用量拆分（环形图 + 列表），在设置页新增一个"使用统计"页面。
 
 所有图表均为手绘 SVG，不依赖图表库；配色使用 GitHub Primer 的 data-viz 双套色板（前 5 名模型各取一个等级色，其余归入灰色 "Other" 桶），并随 DSH 主题自适应。
@@ -8,7 +15,7 @@ DSH web 插件的用量统计面板：按天 Token 趋势、GitHub 风格活跃�
 
 - **时间范围**：最近 7 / 14 / 30 / 90 天，或自定义起止日期
 - **汇总卡片**：Token 用量、会话数量（完成的 turn）、请求数量、活跃天数、平均缓存命中率、最常用模型
-- **40 周活跃热力图**：每日 token 用量的 GitHub 风格色阶，悬停查看当天明细
+- **26 周活跃热力图**：每日 token 用量的 GitHub 风格色阶，悬停查看当天明细
 - **按天 Token 趋势**：堆叠柱状图叠加平滑的缓存命中率曲线（Catmull-Rom 样条），悬停查看各模型拆分
 - **模型用量**：环形图 + 列表，前 5 名模型分色，其余折叠为可展开的 "Other" 明细
 - **历史回扫**：首次启用时枚举并回放全部既有会话日志，从安装日起补全历史用量

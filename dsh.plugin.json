@@ -1,0 +1,16 @@
+{
+  "id": "dsh-external/dsh-usage-statistics-panel",
+  "version": "0.1.0",
+  "main": "./lib/index.js",
+  "description": "Usage statistics panel: per-day token trend, activity heatmap, cache hit-rate curve and per-model breakdown for DSH web",
+  "engines": {
+    "dsh": ">=0.0.1"
+  },
+  "contributes": {
+    "tools": [],
+    "skills": []
+  },
+  "client": {
+    "main": "./lib/client-registry.js"
+  }
+}

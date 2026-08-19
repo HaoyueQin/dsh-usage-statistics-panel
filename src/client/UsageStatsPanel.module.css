@@ -1,0 +1,518 @@
+/**
+ * Usage statistics panel styles — the DSH port of reasonix's
+ * UsageStatsPanel.css, remapped onto the DSH semantic theme tokens
+ * (--dsw-alias-* colors, --dsw-font-* typography, --ds-* motion). Every
+ * visual value rides the theme; no static palette values, no theme
+ * selectors. The heatmap's 5 levels come from the brand accent via
+ * color-mix; model colours are the fixed --dsw-chart-1..5 series (rank
+ * order by token volume) plus the gray --dsw-chart-other step, light/dark
+ * variants defined below from GitHub Primer's data-viz tokens (PR #7503).
+ */
+
+.usage-stats {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  min-width: 0;
+}
+
+.usage-stats__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+/* Each picker (time range) lives in a framed group. */
+.usage-stats__group {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-1);
+}
+
+.usage-stats__group .provider-add-segmented__item {
+  min-height: 28px;
+  padding: 0 12px;
+  border-radius: 6px;
+}
+
+.usage-stats__custom {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.usage-stats__custom .mem-input {
+  width: 150px;
+  flex: 0 0 auto;
+}
+
+.usage-stats__custom-sep {
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.usage-stats__refresh {
+  margin-left: auto;
+  flex: 0 0 auto;
+  min-height: 30px;
+  padding: 4px 12px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: var(--dsw-font-base-16-font-size);
+  cursor: pointer;
+}
+
+.usage-stats__refresh:hover:not(:disabled) {
+  border-color: var(--dsw-alias-brand-primary);
+}
+
+.usage-stats__loading {
+  padding: 24px;
+  text-align: center;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: var(--dsw-font-base-16-font-size);
+}
+
+.usage-stats__empty {
+  padding: 24px;
+  text-align: center;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: var(--dsw-font-base-16-font-size);
+  border: 1px dashed var(--dsw-alias-border-l2);
+  border-radius: 8px;
+}
+
+/* ── numeric cards ─────────────────────────────────────────────────────── */
+
+.usage-stats__cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+}
+
+.usage-stats__card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 14px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-layer-1);
+  min-width: 0;
+}
+
+.usage-stats__card-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.usage-stats__card-icon {
+  color: var(--dsw-alias-label-tertiary);
+  flex: 0 0 auto;
+}
+
+.usage-stats__card-label {
+  color: var(--dsw-alias-label-secondary);
+  font-size: var(--dsw-font-base-16-font-size);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.usage-stats__card-value {
+  color: var(--dsw-alias-label-primary);
+  font-weight: 600;
+  line-height: 1.15;
+}
+
+.usage-stats__card-value--sm {
+  font-size: 14px;
+}
+
+.usage-stats__card-value--wrap {
+  word-break: break-word;
+}
+
+/* ── sections / chart chrome ───────────────────────────────────────────── */
+
+.usage-stats__section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.usage-stats__section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.usage-stats__section-title {
+  margin: 0;
+  font-size: var(--dsw-font-l-20-font-size);
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary);
+}
+
+.usage-stats__trend-note {
+  font-size: var(--dsw-font-base-16-font-size);
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.usage-stats__chart-wrap {
+  position: relative;
+  min-width: 0;
+}
+
+/* ── heatmap ───────────────────────────────────────────────────────────── */
+
+.usage-stats__heatmap-wrap {
+  position: relative;
+  overflow-x: auto;
+  min-width: 0;
+}
+
+.usage-stats__heatmap {
+  display: block;
+}
+
+.usage-stats__heatmap-legend {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: var(--dsw-font-base-16-font-size);
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.usage-stats__heat-cell {
+  display: inline-block;
+  width: 13px;
+  height: 13px;
+  border-radius: 3px;
+}
+
+/* The five heat levels: brand accent blended toward the base surface so the
+   pure accent sits softly on the card in every theme. */
+.usage-stats__heat-cell--0 {
+  background: var(--dsw-alias-bg-mask-1);
+}
+
+.usage-stats__heat-cell--1 {
+  background: color-mix(in srgb, var(--dsw-alias-brand-primary) 20%, var(--dsw-alias-bg-base));
+}
+
+.usage-stats__heat-cell--2 {
+  background: color-mix(in srgb, var(--dsw-alias-brand-primary) 40%, var(--dsw-alias-bg-base));
+}
+
+.usage-stats__heat-cell--3 {
+  background: color-mix(in srgb, var(--dsw-alias-brand-primary) 65%, var(--dsw-alias-bg-base));
+}
+
+.usage-stats__heat-cell--4 {
+  background: color-mix(in srgb, var(--dsw-alias-brand-primary) 85%, var(--dsw-alias-bg-base));
+}
+
+.usage-stats__heat-cell--5 {
+  background: var(--dsw-alias-brand-primary);
+}
+
+/* ── daily trend ───────────────────────────────────────────────────────── */
+
+.usage-stats__chart {
+  display: block;
+}
+
+.usage-stats__grid {
+  stroke: var(--dsw-alias-border-l1);
+  stroke-width: 1;
+}
+
+.usage-stats__axis {
+  fill: var(--dsw-alias-label-tertiary);
+  font-size: 10px;
+}
+
+.usage-stats__axis--rate {
+  fill: var(--dsw-alias-label-tertiary);
+}
+
+.usage-stats__bar {
+  transition: opacity 0.12s ease;
+}
+
+.usage-stats__bar--dim {
+  opacity: 0.35;
+}
+
+.usage-stats__bar-hit {
+  fill: transparent;
+}
+
+/* cache hit-rate trend curve: brand accent shifted slightly toward the
+   foreground so it stays distinct from the pure-accent top model bars. */
+.usage-stats__trend {
+  stroke: color-mix(in srgb, var(--dsw-alias-brand-primary) 80%, var(--dsw-alias-label-primary));
+  stroke-width: 2;
+  opacity: 0.9;
+  pointer-events: none;
+}
+
+.usage-stats__trend-dot {
+  fill: color-mix(in srgb, var(--dsw-alias-brand-primary) 80%, var(--dsw-alias-label-primary));
+  stroke: var(--dsw-alias-bg-layer-1);
+  stroke-width: 2;
+  pointer-events: none;
+}
+
+.usage-stats__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  font-size: var(--dsw-font-base-16-font-size);
+  color: var(--dsw-alias-label-secondary);
+}
+
+.usage-stats__legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  cursor: default;
+}
+
+.usage-stats__legend-swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+}
+
+.usage-stats__legend-swatch--trend {
+  background: color-mix(in srgb, var(--dsw-alias-brand-primary) 80%, var(--dsw-alias-label-primary));
+  width: 14px;
+  height: 3px;
+  border-radius: 2px;
+}
+
+/* ── per-model donut + list ────────────────────────────────────────────── */
+
+.usage-stats__models {
+  display: flex;
+  gap: 24px;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.usage-stats__donut-wrap {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.usage-stats__donut-track {
+  stroke: var(--dsw-alias-bg-mask-1);
+}
+
+.usage-stats__donut-seg {
+  transition: stroke-width 0.12s ease;
+}
+
+.usage-stats__donut-seg--dim {
+  opacity: 0.35;
+}
+
+.usage-stats__donut-center {
+  fill: var(--dsw-alias-label-primary);
+  font-size: 24px;
+  font-weight: 600;
+}
+
+.usage-stats__donut-label {
+  fill: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+}
+
+.usage-stats__model-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  flex: 1 1 260px;
+  min-width: 0;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-layer-1);
+  overflow: hidden;
+}
+
+.usage-stats__model-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  font-size: var(--dsw-font-base-16-font-size);
+  border-bottom: 1px solid var(--dsw-alias-border-l1);
+}
+
+.usage-stats__model-row:last-child {
+  border-bottom: none;
+}
+
+/* "Other" aggregate row: the entire row is clickable to expand/collapse the
+   detail list. The chevron button inside it stops propagation so
+   double-firing is avoided. */
+.usage-stats__model-row--expandable {
+  cursor: pointer;
+}
+
+/* "Other" row toggle (chevron) that expands the aggregated tail models. */
+.usage-stats__model-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  margin-right: 4px;
+  border: none;
+  background: none;
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+  vertical-align: middle;
+}
+
+/* Expanded "Other" detail rows: indented, slightly recessed, caption size. */
+.usage-stats__model-row--sub {
+  padding-left: 28px;
+  background: color-mix(in srgb, var(--dsw-alias-bg-layer-2) 55%, transparent);
+  font-size: var(--dsw-font-base-16-font-size);
+}
+
+/* "Other" details expand with an accordion: the wrapper is a grid whose
+   single track animates 0fr → 1fr. */
+.usage-stats__model-other-wrap {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.25s ease;
+}
+
+.usage-stats__model-other-wrap--open {
+  grid-template-rows: 1fr;
+}
+
+.usage-stats__model-other-list {
+  overflow: hidden;
+  min-height: 0;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.usage-stats__model-name {
+  color: var(--dsw-alias-label-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.usage-stats__model-provider {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: var(--dsw-font-base-16-font-size);
+  flex: 0 0 auto;
+}
+
+.usage-stats__model-tokens {
+  color: var(--dsw-alias-label-secondary);
+  font-variant-numeric: tabular-nums;
+  flex: 0 0 auto;
+}
+
+.usage-stats__model-pct {
+  color: var(--dsw-alias-label-tertiary);
+  font-variant-numeric: tabular-nums;
+  width: 52px;
+  text-align: right;
+  flex: 0 0 auto;
+}
+
+/* ── tooltips ──────────────────────────────────────────────────────────── */
+
+.usage-stats__tip {
+  position: absolute;
+  z-index: 20;
+  pointer-events: none;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--dsw-alias-tooltip-bg);
+  color: var(--dsw-alias-label-primary);
+  font-size: var(--dsw-font-base-16-font-size);
+  box-shadow: 0 2px 12px var(--dsw-alias-bg-mask-2);
+  white-space: nowrap;
+}
+
+.usage-stats__tip--screen {
+  position: fixed;
+}
+
+.usage-stats__tip-title {
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.usage-stats__tip-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+/* Hover tooltip breakdown rows for the "Other" aggregate: indented, muted,
+   same gray swatch as the Other step. */
+.usage-stats__tip-row--other {
+  padding-left: 8px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.usage-stats__tip-breakdown {
+  border-top: 1px solid var(--dsw-alias-border-l1);
+  margin-top: 4px;
+  padding-top: 4px;
+}
+
+.usage-stats__foot {
+  font-size: var(--dsw-font-base-16-font-size);
+  color: var(--dsw-alias-label-tertiary);
+}
+
+/* ── chart palette (PR #7503: GitHub Primer data-viz two-set) ───────────── */
+
+/* Light variant (the theme's default). */
+.usage-stats {
+  --dsw-chart-1: #1f883d;
+  --dsw-chart-2: #1a7f37;
+  --dsw-chart-3: #9a6700;
+  --dsw-chart-4: #8250df;
+  --dsw-chart-5: #cf222e;
+  --dsw-chart-other: #6e7781;
+}
+
+@media (prefers-color-scheme: dark) {
+  .usage-stats {
+    --dsw-chart-1: #3fb950;
+    --dsw-chart-2: #2ea043;
+    --dsw-chart-3: #d29922;
+    --dsw-chart-4: #a371f7;
+    --dsw-chart-5: #f85149;
+    --dsw-chart-other: #8b949e;
+  }
+}

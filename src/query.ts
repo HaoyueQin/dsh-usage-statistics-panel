@@ -1,0 +1,166 @@
+/**
+ * Range aggregation engine — a TS translation of the reasonix stats query
+ * (internal/stats/query.go). It folds raw usage records (per call + per turn)
+ * into the RangeStats the panel renders: per-day totals broken down by model
+ * and provider, range totals, derived active days / cache hit-rate / top
+ * model, and the per-model / per-provider ranked splits.
+ *
+ * The cache hit-rate is derived only from the input side (cacheHit +
+ * cacheMiss), while the token total keeps the provider's totals as-is — the
+ * two denominators never mix even when a provider reports totals that omit
+ * cache tokens (same rule as the reasonix query).
+ */
+
+import type {
+  DailyTokenUsage,
+  ModelTokenUsage,
+  ProviderTokenUsage,
+  UsageStatsRange,
+} from './wire.ts'
+
+/** Local calendar day key, e.g. "2026-08-02" (no UTC shift). */
+export function dayKey(ts: number): string {
+  const d = new Date(ts)
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
+/** All local-calendar day keys in [from, to], inclusive. */
+export function daysInRange(from: string, to: string): string[] {
+  const out: string[] = []
+  const start = new Date(`${from}T00:00:00`)
+  const end = new Date(`${to}T00:00:00`)
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end < start) return out
+  for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+    const y = d.getFullYear()
+    const m = String(d.getMonth() + 1).padStart(2, '0')
+    const day = String(d.getDate()).padStart(2, '0')
+    out.push(`${y}-${m}-${day}`)
+  }
+  return out
+}
+
+/** model refs are "provider/model"; a bare model name has no slash and is
+ *  attributed to provider "default". */
+export function providerOf(modelRef: string): string {
+  const i = modelRef.indexOf('/')
+  if (i > 0) return modelRef.slice(0, i)
+  return 'default'
+}
+
+/**
+ * One atomic usage sample from a completed model call (or one completed
+ * turn). A call sample carries the four token buckets and the model ref; a
+ * turn marker carries only the day (the panel's "sessions" metric is one
+ * completed turn).
+ */
+export interface UsageSample {
+  day: string // local calendar day the call completed
+  model?: string // canonical "provider/model"
+  inputTokens: number
+  outputTokens: number
+  cacheReadTokens: number
+  cacheWriteTokens: number
+  turn?: boolean // true for a completed-turn marker
+}
+
+export interface RangeFilter {
+  from: string // inclusive day key
+  to: string // inclusive day key
+  source?: string // "" | "all" matches every source
+}
+
+/** Aggregate the samples intersecting [from, to]. Missing days yield zero
+ *  entries so the trend chart shows the full timeline. */
+export function aggregateSamples(samples: Iterable<UsageSample>, filter: RangeFilter): UsageStatsRange {
+  const from = filter.from
+  const to = filter.to
+  const days = daysInRange(from, to)
+  const out: UsageStatsRange = {
+    from,
+    to,
+    tokens: 0,
+    requests: 0,
+    turns: 0,
+    cacheHit: 0,
+    cacheMiss: 0,
+    activeDays: 0,
+    topModel: '',
+    topProvider: '',
+    daily: [],
+    models: [],
+    providers: [],
+  }
+  const modelTotals = new Map<string, number>()
+  const providerTotals = new Map<string, number>()
+  const active = new Set<string>()
+
+  for (const sample of samples) {
+    if (sample.day < from || sample.day > to) continue
+    if (sample.turn) {
+      out.turns++
+      continue
+    }
+    const total = sample.inputTokens + sample.outputTokens
+    out.tokens += total
+    out.cacheHit += sample.cacheReadTokens
+    // The uncached input side is the cache miss: DSH's TokenUsage.inputTokens
+    // counts input minus cache hits (see llm-deepseek's mapUsage), so it maps
+    // to reasonix's cacheMiss without double counting cacheWriteTokens.
+    out.cacheMiss += sample.inputTokens
+    const model = sample.model && sample.model !== '' ? sample.model : '(unknown)'
+    modelTotals.set(model, (modelTotals.get(model) ?? 0) + total)
+    providerTotals.set(providerOf(model), (providerTotals.get(providerOf(model)) ?? 0) + total)
+    if (total > 0) out.requests++
+    active.add(sample.day)
+  }
+
+  out.activeDays = active.size
+
+  // Daily series: emit every day of the range; inactive days carry zero totals.
+  for (const day of days) {
+    out.daily.push({
+      day,
+      total: 0,
+      byModel: {},
+      byProvider: {},
+      requests: 0,
+      turns: 0,
+      cacheHit: 0,
+      cacheMiss: 0,
+    })
+  }
+
+  out.models = modelsSorted(modelTotals)
+  out.providers = providersSorted(providerTotals)
+  const top = out.models[0]
+  if (top) {
+    out.topModel = top.model
+    out.topProvider = top.provider
+  }
+  if (out.tokens > 0) {
+    for (const m of out.models) m.percent = (m.tokens / out.tokens) * 100
+    for (const p of out.providers) p.percent = (p.tokens / out.tokens) * 100
+  }
+  return out
+}
+
+function modelsSorted(totals: Map<string, number>): ModelTokenUsage[] {
+  const out: ModelTokenUsage[] = []
+  for (const [model, tokens] of totals) {
+    out.push({ model, provider: providerOf(model), tokens, percent: 0 })
+  }
+  out.sort((a, b) => b.tokens - a.tokens)
+  return out
+}
+
+function providersSorted(totals: Map<string, number>): ProviderTokenUsage[] {
+  const out: ProviderTokenUsage[] = []
+  for (const [provider, tokens] of totals) {
+    out.push({ provider, tokens, percent: 0 })
+  }
+  out.sort((a, b) => b.tokens - a.tokens)
+  return out
+}

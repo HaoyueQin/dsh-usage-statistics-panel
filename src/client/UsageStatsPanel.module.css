@@ -80,21 +80,21 @@
   border-radius: 8px;
   background: color-mix(in srgb, var(--dsw-alias-state-warn-primary) 12%, transparent);
   color: var(--dsw-alias-state-warn-label);
-  font-size: var(--dsw-font-base-16-font-size);
+  font-size: 13px;
 }
 
 .loading {
   padding: 24px;
   text-align: center;
   color: var(--dsw-alias-label-tertiary);
-  font-size: var(--dsw-font-base-16-font-size);
+  font-size: 13px;
 }
 
 .empty {
   padding: 24px;
   text-align: center;
   color: var(--dsw-alias-label-tertiary);
-  font-size: var(--dsw-font-base-16-font-size);
+  font-size: 13px;
   border: 1px dashed var(--dsw-alias-border-l2);
   border-radius: 8px;
 }
@@ -131,7 +131,7 @@
 
 .cardLabel {
   color: var(--dsw-alias-label-secondary);
-  font-size: var(--dsw-font-base-16-font-size);
+  font-size: 13px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -170,13 +170,13 @@
 
 .sectionTitle {
   margin: 0;
-  font-size: var(--dsw-font-l-20-font-size);
+  font-size: 15px;
   font-weight: 600;
   color: var(--dsw-alias-label-primary);
 }
 
 .trendNote {
-  font-size: var(--dsw-font-base-16-font-size);
+  font-size: 13px;
   color: var(--dsw-alias-label-tertiary);
 }
 
@@ -201,7 +201,7 @@
   display: inline-flex;
   align-items: center;
   gap: 3px;
-  font-size: var(--dsw-font-base-16-font-size);
+  font-size: 13px;
   color: var(--dsw-alias-label-tertiary);
 }
 
@@ -219,26 +219,32 @@
    (background is a no-op on SVG geometry). */
 .heatLevel0 {
   fill: var(--dsw-heat-0);
+  background: var(--dsw-heat-0);
 }
 
 .heatLevel1 {
   fill: var(--dsw-heat-1);
+  background: var(--dsw-heat-1);
 }
 
 .heatLevel2 {
   fill: var(--dsw-heat-2);
+  background: var(--dsw-heat-2);
 }
 
 .heatLevel3 {
   fill: var(--dsw-heat-3);
+  background: var(--dsw-heat-3);
 }
 
 .heatLevel4 {
   fill: var(--dsw-heat-4);
+  background: var(--dsw-heat-4);
 }
 
 .heatLevel5 {
   fill: var(--dsw-heat-5);
+  background: var(--dsw-heat-5);
 }
 
 /* ── daily trend ───────────────────────────────────────────────────────── */
@@ -263,6 +269,12 @@
 
 .bar {
   transition: opacity 0.12s ease;
+  /* The hover scaleX must pivot on the bar's own centre: SVG geometry
+     transforms around the SVG origin unless transform-box anchors it to the
+     element's fill box. Without this the scaled bar slides sideways and
+     looks like it vanishes. */
+  transform-box: fill-box;
+  transform-origin: center;
 }
 
 .barDim {
@@ -271,6 +283,7 @@
 
 .barHit {
   fill: transparent;
+  pointer-events: all;
 }
 
 /* cache hit-rate trend curve: brand accent shifted slightly toward the
@@ -293,7 +306,7 @@
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
-  font-size: var(--dsw-font-base-16-font-size);
+  font-size: 13px;
   color: var(--dsw-alias-label-secondary);
 }
 
@@ -347,13 +360,13 @@
 
 .donutCenter {
   fill: var(--dsw-alias-label-primary);
-  font-size: 24px;
+  font-size: 22px;
   font-weight: 600;
 }
 
 .donutLabel {
   fill: var(--dsw-alias-label-tertiary);
-  font-size: 12px;
+  font-size: 11px;
 }
 
 .modelList {
@@ -373,7 +386,7 @@
   align-items: center;
   gap: 8px;
   padding: 8px 12px;
-  font-size: var(--dsw-font-base-16-font-size);
+  font-size: 13px;
   border-bottom: 1px solid var(--dsw-alias-border-l1);
 }
 
@@ -406,7 +419,7 @@
 .modelRowSub {
   padding-left: 28px;
   background: color-mix(in srgb, var(--dsw-alias-bg-layer-2) 55%, transparent);
-  font-size: var(--dsw-font-base-16-font-size);
+  font-size: 13px;
 }
 
 /* "Other" details expand with an accordion: the wrapper is a grid whose
@@ -440,7 +453,7 @@
 
 .modelProvider {
   color: var(--dsw-alias-label-tertiary);
-  font-size: var(--dsw-font-base-16-font-size);
+  font-size: 13px;
   flex: 0 0 auto;
 }
 
@@ -468,7 +481,7 @@
   border-radius: 8px;
   background: var(--dsw-alias-tooltip-bg);
   color: var(--dsw-alias-label-primary);
-  font-size: var(--dsw-font-base-16-font-size);
+  font-size: 13px;
   box-shadow: 0 2px 12px var(--dsw-alias-bg-mask-2);
   white-space: nowrap;
 }
@@ -502,7 +515,7 @@
 }
 
 .foot {
-  font-size: var(--dsw-font-base-16-font-size);
+  font-size: 13px;
   color: var(--dsw-alias-label-tertiary);
 }
 

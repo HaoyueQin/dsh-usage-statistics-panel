@@ -28,9 +28,11 @@ type Translator = UsageStatsTranslator
 
 const RANGE_PRESETS = ['7', '14', '30', '90'] as const
 
-// The heatmap always shows a fixed 40-week window regardless of the range
-// preset.
-const HEAT_WEEKS = 40
+// The heatmap always shows a fixed window regardless of the range preset.
+// The DSH settings pane is much narrower than the reasonix settings modal,
+// so the window is 26 weeks (half a year) and the cells cap at 15px — the
+// chart must never overflow the container's sides.
+const HEAT_WEEKS = 26
 
 /** The trend chart caps its visible window at 180 days (mirrors reasonix). */
 const TREND_MAX_DAYS = 180
@@ -313,6 +315,7 @@ function FitText({ text, className, maxSize }: { text: string; className?: strin
 // ── Section 4: GitHub-style activity heatmap ──────────────────────────────
 
 const HEAT_BASE = 13 // cell size at which column trimming starts
+const HEAT_MAX = 15 // cells never grow past this (keeps the chart inside the pane)
 const HEAT_GAP = 3
 
 function Heatmap({ daily, from, to, t }: { daily: DailyTokenUsage[]; from: string; to: string; t: Translator }) {
@@ -330,9 +333,13 @@ function Heatmap({ daily, from, to, t }: { daily: DailyTokenUsage[]; from: strin
       if (baseCols >= HEAT_WEEKS) {
         const so = (indexOfDay(from) + 1) % 7
         const totalWeeks = Math.ceil((HEAT_WEEKS * 7 + so) / 7)
-        const size = Math.max(HEAT_BASE, avail / totalWeeks - HEAT_GAP)
+        // Cells grow to fill wide containers but never past HEAT_MAX — the
+        // chart must stay inside the (narrow) settings pane.
+        const size = Math.min(HEAT_MAX, Math.max(HEAT_BASE, avail / totalWeeks - HEAT_GAP))
         next = { size, cols: HEAT_WEEKS }
       } else {
+        // Too narrow for the full window at the base size: keep the newest
+        // columns at the base size and trim the earliest ones.
         next = { size: HEAT_BASE, cols: baseCols }
       }
       // Only commit when the geometry actually changed — the heatmap SVG

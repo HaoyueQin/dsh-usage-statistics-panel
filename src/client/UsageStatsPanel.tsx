@@ -314,9 +314,8 @@ function FitText({ text, className, maxSize }: { text: string; className?: strin
 
 // ── Section 4: GitHub-style activity heatmap ──────────────────────────────
 
-const HEAT_BASE = 13 // cell size at which column trimming starts
-const HEAT_MAX = 15 // cells never grow past this (keeps the chart inside the pane)
-const HEAT_GAP = 3
+const HEAT_BASE = 12 // cell size at which column trimming starts
+const HEAT_GAP = 2 // tight inter-cell gap (a large gap reads as scattered tiles)
 
 function Heatmap({ daily, from, to, t }: { daily: DailyTokenUsage[]; from: string; to: string; t: Translator }) {
   const [tip, setTip] = useState<{ day: string; tokens: number; requests: number; cacheHit: number; cacheMiss: number; x: number; top: number; bottom: number } | null>(null)
@@ -333,9 +332,9 @@ function Heatmap({ daily, from, to, t }: { daily: DailyTokenUsage[]; from: strin
       if (baseCols >= HEAT_WEEKS) {
         const so = (indexOfDay(from) + 1) % 7
         const totalWeeks = Math.ceil((HEAT_WEEKS * 7 + so) / 7)
-        // Cells grow to fill wide containers but never past HEAT_MAX — the
-        // chart must stay inside the (narrow) settings pane.
-        const size = Math.min(HEAT_MAX, Math.max(HEAT_BASE, avail / totalWeeks - HEAT_GAP))
+        // Cells grow to fill the full container width — the chart spans edge
+        // to edge (no right-hand gap), clamped by the wrap's own width.
+        const size = Math.max(HEAT_BASE, avail / totalWeeks - HEAT_GAP)
         next = { size, cols: HEAT_WEEKS }
       } else {
         // Too narrow for the full window at the base size: keep the newest
@@ -363,9 +362,13 @@ function Heatmap({ daily, from, to, t }: { daily: DailyTokenUsage[]; from: strin
   const rows = 7
   const startOffset = days[0] ? (indexOfDay(days[0]) + 1) % 7 : 0
   const weeks = Math.max(1, Math.ceil((days.length + startOffset) / 7))
+  // Tooltip is absolute inside the relative wrap: clamp to the wrap's own
+  // width so it never overflows the chart (reasonix behaviour).
   const wrapW = wrapRef.current?.clientWidth ?? 400
-  const tipX = tip ? Math.max(120, Math.min(tip.x, wrapW - 120)) : 0
-  const tipAbove = tip ? tip.top >= 72 : true
+  const TIP_W = 240
+  const tipX = tip ? Math.max(TIP_W / 2 + 8, Math.min(tip.x, wrapW - TIP_W / 2 - 8)) : 0
+  const tipH = 96
+  const tipAbove = tip ? tip.top >= tipH + 10 : true
   const tipY = tip ? (tipAbove ? tip.top - 10 : tip.bottom + 10) : 0
 
   return (
@@ -406,6 +409,7 @@ function Heatmap({ daily, from, to, t }: { daily: DailyTokenUsage[]; from: strin
                   if (!wrap) return
                   const wr = wrap.getBoundingClientRect()
                   const r = e.currentTarget.getBoundingClientRect()
+                  // Wrap-relative coords for the absolute-positioned tooltip.
                   setTip({ day, tokens, requests: rec?.requests ?? 0, cacheHit: rec?.cacheHit ?? 0, cacheMiss: rec?.cacheMiss ?? 0, x: r.left + r.width / 2 - wr.left, top: r.top - wr.top, bottom: r.bottom - wr.top })
                 }}
                 onMouseLeave={() => setTip(null)}
@@ -414,7 +418,7 @@ function Heatmap({ daily, from, to, t }: { daily: DailyTokenUsage[]; from: strin
           })}
         </svg>
         {tip && (
-          <div className={clsx(css.tip, css.tipChart)} style={{ transform: `translate(${tipX}px, ${tipY}px) translate(-50%, ${tipAbove ? '-100%' : '0'})` }}>
+          <div className={css.tip} style={{ transform: `translate(${tipX}px, ${tipY}px) translate(-50%, ${tipAbove ? '-100%' : '0'})` }}>
             <div className={css.tipTitle}>{tip.day}</div>
             <div>{t('tokens')}: {formatTokens(tip.tokens)}</div>
             <div>{t('requests')}: {tip.requests}</div>
@@ -500,18 +504,16 @@ function DailyTrend({ stats, models, daily, t, colorForModel }: { stats: UsageSt
   const legendAgg = aggregateByModel(daily)
   const legendModels = modelOrderOf(models, legendAgg)
 
-  const contentRect = wrapRef.current?.closest('.settings-center__content')?.getBoundingClientRect()
-  const cLeft = contentRect?.left ?? 0
-  const cRight = contentRect?.right ?? window.innerWidth
-  const cTop = contentRect?.top ?? 0
-  const cBottom = contentRect?.bottom ?? window.innerHeight
+  // Tooltip is absolute inside the relative wrap: clamp to the wrap width so
+  // it never overflows the chart (reasonix behaviour).
+  const wrapW = wrapRef.current?.clientWidth ?? 720
   const TIP_W = 260
-  const tipX = tip ? Math.max(cLeft + TIP_W / 2 + 8, Math.min(tip.cx, cRight - TIP_W / 2 - 8)) : 0
+  const tipX = tip ? Math.max(TIP_W / 2 + 8, Math.min(tip.cx, wrapW - TIP_W / 2 - 8)) : 0
   const tipRows = tip ? Object.keys(tip.byModel).length + 1 + (tip.otherByModel ? Object.keys(tip.otherByModel).length : 0) : 0
   const tipH = 46 + 18 * tipRows
-  const tipAbove = tip ? tip.top - cTop >= tipH + 10 : true
+  const tipAbove = tip ? tip.top >= tipH + 10 : true
   let tipY = tip ? (tipAbove ? tip.top - 10 : tip.bottom + 10) : 0
-  if (tip && !tipAbove && tipY + tipH > cBottom - 8) tipY = tip.top - 10
+  if (tip && !tipAbove && tipY + tipH > (wrapRef.current?.clientHeight ?? 220) - 8) tipY = tip.top - 10
 
   return (
     <section className={css.section}>
@@ -563,8 +565,12 @@ function DailyTrend({ stats, models, daily, t, colorForModel }: { stats: UsageSt
                   width={barW}
                   height={plotH}
                   onMouseEnter={(e) => {
+                    const wrap = wrapRef.current
+                    if (!wrap) return
+                    const wr = wrap.getBoundingClientRect()
                     const r = e.currentTarget.getBoundingClientRect()
-                    setTip({ day: d.day, total: d.total, byModel: d.byModel, otherByModel: d.otherByModel, cacheHit: d.cacheHit, cacheMiss: d.cacheMiss, cx: r.left + r.width / 2, top: r.top, bottom: r.bottom })
+                    // Wrap-relative coords for the absolute-positioned tooltip.
+                    setTip({ day: d.day, total: d.total, byModel: d.byModel, otherByModel: d.otherByModel, cacheHit: d.cacheHit, cacheMiss: d.cacheMiss, cx: r.left + r.width / 2 - wr.left, top: r.top - wr.top, bottom: r.bottom - wr.top })
                   }}
                   onMouseLeave={() => setTip(null)}
                 />
@@ -588,7 +594,7 @@ function DailyTrend({ stats, models, daily, t, colorForModel }: { stats: UsageSt
           })}
         </svg>
         {tip && (
-          <div className={clsx(css.tip, css.tipChart, css.tipScreen)} style={{ transform: `translate(${tipX}px, ${tipY}px) translate(-50%, ${tipAbove ? '-100%' : '0'})` }}>
+          <div className={css.tip} style={{ transform: `translate(${tipX}px, ${tipY}px) translate(-50%, ${tipAbove ? '-100%' : '0'})` }}>
             <div className={css.tipTitle}>{tip.day}</div>
             <div>{t('total')}: {formatTokens(tip.total)}</div>
             {legendModels.filter((m) => tip.byModel[m] !== undefined).map((m) => (
@@ -638,9 +644,14 @@ function ModelUsage({ models, t, colorForModel }: { models: GroupedModel[]; t: T
   const total = Math.max(1, models.reduce((sum, m) => sum + m.tokens, 0))
   let offset = 0
 
-  const tipX = tip ? Math.max(110, Math.min(tip.x, (donutRef.current?.clientWidth ?? 240) - 110)) : 0
   const tipAbove = tip ? tip.y >= 100 : true
   const tipY = tip ? (tipAbove ? tip.y - 14 : tip.y + 14) : 0
+
+  // Tooltip is absolute inside the relative donut wrap: clamp to the wrap's
+  // own size (reasonix behaviour).
+  const dw = donutRef.current?.clientWidth ?? 240
+  const donutTipW = 240
+  const donutTipX = tip ? Math.max(donutTipW / 2 + 8, Math.min(tip.x, dw - donutTipW / 2 - 8)) : 0
 
   return (
     <section className={css.section}>
@@ -671,6 +682,7 @@ function ModelUsage({ models, t, colorForModel }: { models: GroupedModel[]; t: T
                     setHover(m.model)
                     if (!dw) return
                     const dr = dw.getBoundingClientRect()
+                    // Wrap-relative coords for the absolute-positioned tooltip.
                     setTip({ model: m.model, tokens: m.tokens, percent: m.percent, x: e.clientX - dr.left, y: e.clientY - dr.top, items: m.items })
                   }}
                   onMouseLeave={() => { setHover(null); setTip(null) }}
@@ -683,7 +695,7 @@ function ModelUsage({ models, t, colorForModel }: { models: GroupedModel[]; t: T
             <text className={css.donutLabel} x={CX} y={CX + 26} textAnchor="middle">{t('tokens')}</text>
           </svg>
           {tip && (
-            <div className={clsx(css.tip, css.tipChart)} style={{ transform: `translate(${tipX}px, ${tipY}px) translate(-50%, ${tipAbove ? '-100%' : '0'})` }}>
+            <div className={css.tip} style={{ transform: `translate(${donutTipX}px, ${tipY}px) translate(-50%, ${tipAbove ? '-100%' : '0'})` }}>
               <div className={css.tipTitle}>{tip.model === OTHER_MODEL ? t('other') : tip.model}</div>
               <div>{t('total')}: {formatTokens(tip.tokens)}</div>
               <div>{t('percent')}: {formatPercent(tip.percent)}</div>

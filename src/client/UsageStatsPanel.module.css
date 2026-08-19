@@ -189,7 +189,10 @@
 
 .heatWrap {
   position: relative;
-  overflow-x: auto;
+  /* hidden, not auto: the SVG now fills the container exactly, and an
+     auto scrollbar would flash when a fixed tooltip passes over the wrap's
+     right edge. */
+  overflow: hidden;
   min-width: 0;
 }
 
@@ -473,9 +476,14 @@
 
 /* ── tooltips ──────────────────────────────────────────────────────────── */
 
+/* Tooltips are absolute inside their relative-positioned chart wrap, using
+   wrap-relative coordinates (the reasonix approach). Absolute positioning
+   inside a transformed/scrollable ancestor is unreliable (the containing
+   block changes), so the tip lives in the wrap and follows the chart
+   content; a high z-index keeps it above the settings shell. */
 .tip {
   position: absolute;
-  z-index: 20;
+  z-index: 100;
   pointer-events: none;
   padding: 8px 10px;
   border-radius: 8px;
@@ -484,10 +492,6 @@
   font-size: 13px;
   box-shadow: 0 2px 12px var(--dsw-alias-bg-mask-2);
   white-space: nowrap;
-}
-
-.tipScreen {
-  position: fixed;
 }
 
 .tipTitle {

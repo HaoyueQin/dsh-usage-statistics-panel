@@ -24,8 +24,10 @@ DSH web 插件的用量统计面板：按天 Token 趋势、GitHub 风格活跃�
 ## 安装
 
 ```sh
-dsh plugin --profile <name> add dsh-usage-statistics-panel@<version>
+dsh plugin --profile <name> add dsh-usage-statistics-panel@latest
 ```
+
+装完**硬刷新浏览器**（Cmd/Ctrl+Shift+R）：client 半的改动 DSH 会热加载，无需重启；仅 host 半（采集/存储/路由）更新时需要重启 DSH。
 
 插件挂载后，在 Web UI 的设置页左侧导航会出现"使用统计"页面。
 

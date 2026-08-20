@@ -15,7 +15,7 @@ All charts are hand-drawn SVG with no chart library; the palette uses GitHub Pri
 
 - **Time ranges**: last 7 / 14 / 30 / 90 days, or a custom from/to pair
 - **Summary cards**: token usage, sessions (completed turns), requests, active days, average cache hit-rate, top model
-- **40-week activity heatmap**: GitHub-style day cells, hover for the day's detail
+- **26-week activity heatmap**: GitHub-style day cells, hover for the day's detail
 - **Daily token trend**: stacked bars with a smooth cache hit-rate curve (Catmull-Rom), hover for the per-model breakdown
 - **Model usage**: donut + list; the top five models keep distinct colours, the tail collapses into an expandable "Other" row
 - **History backfill**: on first enable, the plugin enumerates and replays all existing session logs so historical usage is accounted from day one
@@ -24,8 +24,10 @@ All charts are hand-drawn SVG with no chart library; the palette uses GitHub Pri
 ## Install
 
 ```sh
-dsh plugin --profile <name> add dsh-usage-statistics-panel@<version>
+dsh plugin --profile <name> add dsh-usage-statistics-panel@latest
 ```
+
+After mounting, **hard-refresh the browser** (Cmd/Ctrl+Shift+R): client-half changes hot-reload in DSH, no restart needed; only host-half updates (collector/storage/routes) require restarting DSH.
 
 Once mounted, a "Usage statistics" page appears in the left navigation of the Settings shell.
 

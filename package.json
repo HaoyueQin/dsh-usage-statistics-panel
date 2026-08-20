@@ -3,6 +3,23 @@
   "version": "0.1.0",
   "description": "DSH web plugin: a usage statistics panel with per-day token trend, GitHub-style activity heatmap, cache hit-rate curve and per-model breakdown, replicating the reasonix usage stats feature.",
   "type": "module",
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "plugin",
+    "usage-statistics",
+    "token",
+    "stats",
+    "heatmap"
+  ],
+  "homepage": "https://github.com/HaoyueQin/dsh-usage-statistics-panel",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/HaoyueQin/dsh-usage-statistics-panel.git"
+  },
+  "bugs": {
+    "url": "https://github.com/HaoyueQin/dsh-usage-statistics-panel/issues"
+  },
   "publishConfig": {
     "access": "public"
   },
@@ -45,6 +62,7 @@
     "lib/types/**/*.d.ts",
     "src",
     "cordis.patch.yml",
+    "docs/design.md",
     "README.md",
     "README_EN.md",
     "LICENSE"

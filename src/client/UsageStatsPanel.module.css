@@ -488,7 +488,11 @@
    both instead of staying dark in light mode. */
 .tip {
   position: fixed;
-  z-index: 100;
+  /* The tip is portaled to document.body, so it competes with the settings
+     modal itself (z-index 1000) for the top layer: 100 would sit under the
+     modal and the tip would be invisible. 1100 matches the official
+     toast/portaled-menu layer, which is exactly the "over a modal" tier. */
+  z-index: 1100;
   pointer-events: none;
   padding: 8px 10px;
   border-radius: 8px;

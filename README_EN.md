@@ -3,6 +3,7 @@
 English | [中文](README.md)
 
 ![npm version](https://img.shields.io/npm/v/dsh-usage-statistics-panel)
+![npm downloads](https://img.shields.io/npm/dm/dsh-usage-statistics-panel)
 ![License](https://img.shields.io/github/license/HaoyueQin/dsh-usage-statistics-panel)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.6-blue)
 ![dsh-plugin](https://img.shields.io/badge/dsh-plugin-4D6BFE)

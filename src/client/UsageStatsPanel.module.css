@@ -210,9 +210,12 @@
 
 .heatCell {
   display: inline-block;
-  width: 13px;
-  height: 13px;
   border-radius: 3px;
+  /* No width/height here: the SVG cells carry their size as geometry
+     attributes (x/y/width/height), and a CSS width/height would override
+     those on SVG2 rects — pinning every cell to a fixed px and widening the
+     visual gap. The legend swatches carry the same size inline, so both
+     always match the measured geom.size. */
 }
 
 /* The five heat levels use DeepSeek's brand blue (#4D6BFE) as a fixed ramp,
@@ -476,18 +479,21 @@
 
 /* ── tooltips ──────────────────────────────────────────────────────────── */
 
-/* Tooltips are absolute inside their relative-positioned chart wrap, using
-   wrap-relative coordinates (the reasonix approach). Absolute positioning
-   inside a transformed/scrollable ancestor is unreliable (the containing
-   block changes), so the tip lives in the wrap and follows the chart
-   content; a high z-index keeps it above the settings shell. */
+/* Tooltips render as fixed-position portals on document.body (see ChartTip),
+   so they escape every ancestor's clipping and never overflow the settings
+   panel: ChartTip clamps each tip inside the panel bounds and flips it above
+   the hovered element when there is no room below. The plate follows the
+   active theme: the DSH overlay token is a light gray in light mode and a
+   dark gray under body[data-ds-dark-theme], so the tip reads correctly in
+   both instead of staying dark in light mode. */
 .tip {
-  position: absolute;
+  position: fixed;
   z-index: 100;
   pointer-events: none;
   padding: 8px 10px;
   border-radius: 8px;
-  background: var(--dsw-alias-tooltip-bg);
+  background: var(--dsw-alias-bg-overlay);
+  border: 1px solid var(--dsw-alias-border-l2);
   color: var(--dsw-alias-label-primary);
   font-size: 13px;
   box-shadow: 0 2px 12px var(--dsw-alias-bg-mask-2);

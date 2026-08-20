@@ -13,12 +13,13 @@
  * semantic tokens. The functionality replicates the reasonix usage stats
  * feature; the implementation is DSH-native.
  */
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type RefObject } from 'react'
 import clsx from 'clsx'
 import { Activity, CalendarDays, ChevronDown, ChevronRight, Coins, Cpu, MessageSquare, MessagesSquare } from 'lucide-react'
 import { Button, Input } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { DailyTokenUsage, ModelTokenUsage, UsageStatsRange, UsageStatsRequest } from '../wire.ts'
 import { fetchRange, UsageApiError } from './api.ts'
+import { ChartTip } from './ChartTip.tsx'
 import { formatTokens, formatCompact, formatPercent, cacheRate, cacheRateText, daysBetween, localDay, indexOfDay, shortDay, providerOf, smoothPath, niceTicks } from './format.ts'
 import type { UsageStatsKey } from './locales.ts'
 import type { UsageStatsTranslator } from './index.tsx'
@@ -30,7 +31,7 @@ const RANGE_PRESETS = ['7', '14', '30', '90'] as const
 
 // The heatmap always shows a fixed window regardless of the range preset.
 // The DSH settings pane is much narrower than the reasonix settings modal,
-// so the window is 26 weeks (half a year) and the cells cap at 15px — the
+// so the window is 26 weeks (half a year) and the cells cap at 16px — the
 // chart must never overflow the container's sides.
 const HEAT_WEEKS = 26
 
@@ -56,6 +57,9 @@ export function UsageStatsPanel({ t }: { t: Translator }): JSX.Element {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const generationRef = useRef(0)
+  // The panel bounds the chart tooltips: a tip must never leave the settings
+  // panel even when the hovered cell sits near its edge.
+  const panelRef = useRef<HTMLDivElement>(null)
 
   // Heatmap window: the last HEAT_WEEKS*7 days, fixed regardless of `range`.
   const heatWindow = useMemo(() => {
@@ -166,7 +170,7 @@ export function UsageStatsPanel({ t }: { t: Translator }): JSX.Element {
   const trendModels = groupedStats?.models ?? []
 
   return (
-    <div className={css.panel}>
+    <div className={css.panel} ref={panelRef}>
       <div className={css.toolbar}>
         <div className={css.group} role="group" aria-label={t('range')}>
           {RANGE_PRESETS.map((r) => (
@@ -229,9 +233,9 @@ export function UsageStatsPanel({ t }: { t: Translator }): JSX.Element {
       {!loading && stats && (
         <>
           <StatCards stats={stats} t={t} />
-          <Heatmap daily={heatDaily} from={heatWindow.from} to={heatWindow.to} t={t} />
-          <DailyTrend stats={stats} models={trendModels} daily={trendDaily} t={t} colorForModel={colorForModel} />
-          <ModelUsage models={trendModels} t={t} colorForModel={colorForModel} />
+          <Heatmap daily={heatDaily} from={heatWindow.from} to={heatWindow.to} t={t} panelRef={panelRef} />
+          <DailyTrend stats={stats} models={trendModels} daily={trendDaily} t={t} colorForModel={colorForModel} panelRef={panelRef} />
+          <ModelUsage models={trendModels} t={t} colorForModel={colorForModel} panelRef={panelRef} />
           {stats.to && (
             <div className={css.foot}>
               {t('asOf')} {stats.to}
@@ -314,11 +318,15 @@ function FitText({ text, className, maxSize }: { text: string; className?: strin
 
 // ── Section 4: GitHub-style activity heatmap ──────────────────────────────
 
-const HEAT_BASE = 12 // cell size at which column trimming starts
-const HEAT_GAP = 2 // tight inter-cell gap (a large gap reads as scattered tiles)
+// Tighter inter-cell gap: the previous 2px against a ~14px cell read as
+// scattered tiles. The legend swatches render at the same size/colour classes
+// as the SVG cells (geom.size inline + the same heatLevelN classes), so the
+// key always matches the chart.
+const HEAT_BASE = 16 // cell size at which column trimming starts
+const HEAT_GAP = 1 // tight inter-cell gap (a large gap reads as scattered tiles)
 
-function Heatmap({ daily, from, to, t }: { daily: DailyTokenUsage[]; from: string; to: string; t: Translator }) {
-  const [tip, setTip] = useState<{ day: string; tokens: number; requests: number; cacheHit: number; cacheMiss: number; x: number; top: number; bottom: number } | null>(null)
+function Heatmap({ daily, from, to, t, panelRef }: { daily: DailyTokenUsage[]; from: string; to: string; t: Translator; panelRef: RefObject<HTMLDivElement | null> }) {
+  const [tip, setTip] = useState<{ day: string; tokens: number; requests: number; cacheHit: number; cacheMiss: number; anchor: Element } | null>(null)
   const wrapRef = useRef<HTMLDivElement>(null)
   const [geom, setGeom] = useState<{ size: number; cols: number }>({ size: HEAT_BASE, cols: HEAT_WEEKS })
 
@@ -362,14 +370,6 @@ function Heatmap({ daily, from, to, t }: { daily: DailyTokenUsage[]; from: strin
   const rows = 7
   const startOffset = days[0] ? (indexOfDay(days[0]) + 1) % 7 : 0
   const weeks = Math.max(1, Math.ceil((days.length + startOffset) / 7))
-  // Tooltip is absolute inside the relative wrap: clamp to the wrap's own
-  // width so it never overflows the chart (reasonix behaviour).
-  const wrapW = wrapRef.current?.clientWidth ?? 400
-  const TIP_W = 240
-  const tipX = tip ? Math.max(TIP_W / 2 + 8, Math.min(tip.x, wrapW - TIP_W / 2 - 8)) : 0
-  const tipH = 96
-  const tipAbove = tip ? tip.top >= tipH + 10 : true
-  const tipY = tip ? (tipAbove ? tip.top - 10 : tip.bottom + 10) : 0
 
   return (
     <section className={css.section}>
@@ -405,12 +405,9 @@ function Heatmap({ daily, from, to, t }: { daily: DailyTokenUsage[]; from: strin
                 height={geom.size}
                 rx={Math.max(1.5, geom.size * 0.2)}
                 onMouseEnter={(e) => {
-                  const wrap = wrapRef.current
-                  if (!wrap) return
-                  const wr = wrap.getBoundingClientRect()
-                  const r = e.currentTarget.getBoundingClientRect()
-                  // Wrap-relative coords for the absolute-positioned tooltip.
-                  setTip({ day, tokens, requests: rec?.requests ?? 0, cacheHit: rec?.cacheHit ?? 0, cacheMiss: rec?.cacheMiss ?? 0, x: r.left + r.width / 2 - wr.left, top: r.top - wr.top, bottom: r.bottom - wr.top })
+                  // The tip anchors to the hovered cell's viewport rect, so it
+                  // can escape the wrap's overflow clipping and follow scroll.
+                  setTip({ day, tokens, requests: rec?.requests ?? 0, cacheHit: rec?.cacheHit ?? 0, cacheMiss: rec?.cacheMiss ?? 0, anchor: e.currentTarget })
                 }}
                 onMouseLeave={() => setTip(null)}
               />
@@ -418,12 +415,12 @@ function Heatmap({ daily, from, to, t }: { daily: DailyTokenUsage[]; from: strin
           })}
         </svg>
         {tip && (
-          <div className={css.tip} style={{ transform: `translate(${tipX}px, ${tipY}px) translate(-50%, ${tipAbove ? '-100%' : '0'})` }}>
+          <ChartTip anchor={tip.anchor} panelRef={panelRef}>
             <div className={css.tipTitle}>{tip.day}</div>
             <div>{t('tokens')}: {formatTokens(tip.tokens)}</div>
             <div>{t('requests')}: {tip.requests}</div>
             <div>{t('cacheHitRate')}: {cacheRateText(tip.cacheHit, tip.cacheMiss)}</div>
-          </div>
+          </ChartTip>
         )}
       </div>
     </section>
@@ -432,8 +429,8 @@ function Heatmap({ daily, from, to, t }: { daily: DailyTokenUsage[]; from: strin
 
 // ── Section 5: stacked daily token trend ──────────────────────────────────
 
-function DailyTrend({ stats, models, daily, t, colorForModel }: { stats: UsageStatsRange; models: GroupedModel[]; daily: GroupedDaily[]; t: Translator; colorForModel: (m: string) => string }) {
-  const [tip, setTip] = useState<{ day: string; total: number; byModel: Record<string, number>; otherByModel?: Record<string, number>; cacheHit: number; cacheMiss: number; cx: number; top: number; bottom: number } | null>(null)
+function DailyTrend({ stats, models, daily, t, colorForModel, panelRef }: { stats: UsageStatsRange; models: GroupedModel[]; daily: GroupedDaily[]; t: Translator; colorForModel: (m: string) => string; panelRef: RefObject<HTMLDivElement | null> }) {
+  const [tip, setTip] = useState<{ day: string; total: number; byModel: Record<string, number>; otherByModel?: Record<string, number>; cacheHit: number; cacheMiss: number; anchor: Element } | null>(null)
   const [hover, setHover] = useState<string | null>(null)
   const wrapRef = useRef<HTMLDivElement>(null)
 
@@ -504,17 +501,6 @@ function DailyTrend({ stats, models, daily, t, colorForModel }: { stats: UsageSt
   const legendAgg = aggregateByModel(daily)
   const legendModels = modelOrderOf(models, legendAgg)
 
-  // Tooltip is absolute inside the relative wrap: clamp to the wrap width so
-  // it never overflows the chart (reasonix behaviour).
-  const wrapW = wrapRef.current?.clientWidth ?? 720
-  const TIP_W = 260
-  const tipX = tip ? Math.max(TIP_W / 2 + 8, Math.min(tip.cx, wrapW - TIP_W / 2 - 8)) : 0
-  const tipRows = tip ? Object.keys(tip.byModel).length + 1 + (tip.otherByModel ? Object.keys(tip.otherByModel).length : 0) : 0
-  const tipH = 46 + 18 * tipRows
-  const tipAbove = tip ? tip.top >= tipH + 10 : true
-  let tipY = tip ? (tipAbove ? tip.top - 10 : tip.bottom + 10) : 0
-  if (tip && !tipAbove && tipY + tipH > (wrapRef.current?.clientHeight ?? 220) - 8) tipY = tip.top - 10
-
   return (
     <section className={css.section}>
       <div className={css.sectionHead}>
@@ -565,12 +551,9 @@ function DailyTrend({ stats, models, daily, t, colorForModel }: { stats: UsageSt
                   width={barW}
                   height={plotH}
                   onMouseEnter={(e) => {
-                    const wrap = wrapRef.current
-                    if (!wrap) return
-                    const wr = wrap.getBoundingClientRect()
-                    const r = e.currentTarget.getBoundingClientRect()
-                    // Wrap-relative coords for the absolute-positioned tooltip.
-                    setTip({ day: d.day, total: d.total, byModel: d.byModel, otherByModel: d.otherByModel, cacheHit: d.cacheHit, cacheMiss: d.cacheMiss, cx: r.left + r.width / 2 - wr.left, top: r.top - wr.top, bottom: r.bottom - wr.top })
+                    // The tip anchors to the hovered day column's viewport
+                    // rect, so it can escape wrap clipping and follow scroll.
+                    setTip({ day: d.day, total: d.total, byModel: d.byModel, otherByModel: d.otherByModel, cacheHit: d.cacheHit, cacheMiss: d.cacheMiss, anchor: e.currentTarget })
                   }}
                   onMouseLeave={() => setTip(null)}
                 />
@@ -594,7 +577,7 @@ function DailyTrend({ stats, models, daily, t, colorForModel }: { stats: UsageSt
           })}
         </svg>
         {tip && (
-          <div className={css.tip} style={{ transform: `translate(${tipX}px, ${tipY}px) translate(-50%, ${tipAbove ? '-100%' : '0'})` }}>
+          <ChartTip anchor={tip.anchor} panelRef={panelRef}>
             <div className={css.tipTitle}>{tip.day}</div>
             <div>{t('total')}: {formatTokens(tip.total)}</div>
             {legendModels.filter((m) => tip.byModel[m] !== undefined).map((m) => (
@@ -604,7 +587,7 @@ function DailyTrend({ stats, models, daily, t, colorForModel }: { stats: UsageSt
               <div key={m} className={clsx(css.tipRow, css.tipRowOther)}><i className={css.legendSwatch} style={{ background: OTHER_COLOR }} />{m}: {formatTokens(v)}</div>
             ))}
             <div>{t('cacheHitRate')}: {cacheRateText(tip.cacheHit, tip.cacheMiss)}</div>
-          </div>
+          </ChartTip>
         )}
         <div className={css.legend}>
           {legendModels.map((model) => (
@@ -625,8 +608,8 @@ function DailyTrend({ stats, models, daily, t, colorForModel }: { stats: UsageSt
 
 // ── Section 6: per-model donut + list ─────────────────────────────────────
 
-function ModelUsage({ models, t, colorForModel }: { models: GroupedModel[]; t: Translator; colorForModel: (m: string) => string }) {
-  const [tip, setTip] = useState<{ model: string; tokens: number; percent: number; x: number; y: number; items?: ModelTokenUsage[] } | null>(null)
+function ModelUsage({ models, t, colorForModel, panelRef }: { models: GroupedModel[]; t: Translator; colorForModel: (m: string) => string; panelRef: RefObject<HTMLDivElement | null> }) {
+  const [tip, setTip] = useState<{ model: string; tokens: number; percent: number; anchor: Element; items?: ModelTokenUsage[] } | null>(null)
   const [hover, setHover] = useState<string | null>(null)
   const [expandedOther, setExpandedOther] = useState(false)
   const donutRef = useRef<HTMLDivElement>(null)
@@ -643,15 +626,6 @@ function ModelUsage({ models, t, colorForModel }: { models: GroupedModel[]; t: T
   const CIRC = 2 * Math.PI * R
   const total = Math.max(1, models.reduce((sum, m) => sum + m.tokens, 0))
   let offset = 0
-
-  const tipAbove = tip ? tip.y >= 100 : true
-  const tipY = tip ? (tipAbove ? tip.y - 14 : tip.y + 14) : 0
-
-  // Tooltip is absolute inside the relative donut wrap: clamp to the wrap's
-  // own size (reasonix behaviour).
-  const dw = donutRef.current?.clientWidth ?? 240
-  const donutTipW = 240
-  const donutTipX = tip ? Math.max(donutTipW / 2 + 8, Math.min(tip.x, dw - donutTipW / 2 - 8)) : 0
 
   return (
     <section className={css.section}>
@@ -678,12 +652,10 @@ function ModelUsage({ models, t, colorForModel }: { models: GroupedModel[]; t: T
                   transform={`rotate(-90 ${CX} ${CX})`}
                   style={{ strokeWidth: active ? SW + 5 : SW, transition: 'stroke-width 0.12s ease' }}
                   onMouseEnter={(e) => {
-                    const dw = donutRef.current
                     setHover(m.model)
-                    if (!dw) return
-                    const dr = dw.getBoundingClientRect()
-                    // Wrap-relative coords for the absolute-positioned tooltip.
-                    setTip({ model: m.model, tokens: m.tokens, percent: m.percent, x: e.clientX - dr.left, y: e.clientY - dr.top, items: m.items })
+                    // The tip anchors to the hovered segment's viewport rect,
+                    // so it stays inside the panel even at the ring's edges.
+                    setTip({ model: m.model, tokens: m.tokens, percent: m.percent, anchor: e.currentTarget, items: m.items })
                   }}
                   onMouseLeave={() => { setHover(null); setTip(null) }}
                 />
@@ -695,7 +667,7 @@ function ModelUsage({ models, t, colorForModel }: { models: GroupedModel[]; t: T
             <text className={css.donutLabel} x={CX} y={CX + 26} textAnchor="middle">{t('tokens')}</text>
           </svg>
           {tip && (
-            <div className={css.tip} style={{ transform: `translate(${donutTipX}px, ${tipY}px) translate(-50%, ${tipAbove ? '-100%' : '0'})` }}>
+            <ChartTip anchor={tip.anchor} panelRef={panelRef}>
               <div className={css.tipTitle}>{tip.model === OTHER_MODEL ? t('other') : tip.model}</div>
               <div>{t('total')}: {formatTokens(tip.tokens)}</div>
               <div>{t('percent')}: {formatPercent(tip.percent)}</div>
@@ -706,7 +678,7 @@ function ModelUsage({ models, t, colorForModel }: { models: GroupedModel[]; t: T
                   ))}
                 </div>
               )}
-            </div>
+            </ChartTip>
           )}
         </div>
         <ul className={css.modelList}>

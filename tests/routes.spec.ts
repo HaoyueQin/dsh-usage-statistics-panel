@@ -58,6 +58,8 @@ describe('resolveRange', () => {
 // without the storage domain.
 import { aggregateRange } from '../src/routes.ts'
 import type { UsageDayRow } from '../src/store.ts'
+import { readJsonBody } from '../src/wire.ts'
+import type { UsageHttpRequest } from '../src/context-types.ts'
 
 function memoryStore(rows: UsageDayRow[]): Parameters<typeof aggregateRange>[0] {
   return {
@@ -87,5 +89,49 @@ describe('aggregateRange', () => {
     const out = await aggregateRange(store, '2026-08-01', '2026-08-01')
     expect(out.requests).toBe(1)
     expect(out.tokens).toBe(0)
+  })
+
+  it('keeps a pure-cache call in the aggregate (zero input/output, real cache traffic)', async () => {
+    const store = memoryStore([
+      { day: '2026-08-01', provider: 'deepseek', model: 'deepseek/deepseek-chat', inputTokens: 0, outputTokens: 0, cacheReadTokens: 5000, cacheWriteTokens: 0, requests: 1, turns: 0, lastSeen: 0 },
+    ])
+    const out = await aggregateRange(store, '2026-08-01', '2026-08-01')
+    expect(out.cacheHit).toBe(5000)
+    expect(out.tokens).toBe(0)
+  })
+
+  it('reports per-day turns in the daily series', async () => {
+    const store = memoryStore([
+      { day: '2026-08-01', provider: 'default', model: '(turns)', inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, requests: 0, turns: 3, lastSeen: 0 },
+    ])
+    const out = await aggregateRange(store, '2026-08-01', '2026-08-01')
+    expect(out.turns).toBe(3)
+    expect(out.daily[0]!.turns).toBe(3)
+    expect(out.daily[0]!.total).toBe(0)
+  })
+})
+
+describe('readJsonBody', () => {
+  function bodyReq(chunks: string[]): UsageHttpRequest {
+    return {
+      url: '/usage/api/range',
+      method: 'POST',
+      headers: {},
+      async *[Symbol.asyncIterator]() {
+        for (const chunk of chunks) yield chunk
+      },
+    } as unknown as UsageHttpRequest
+  }
+
+  it('parses a small JSON body', async () => {
+    expect(await readJsonBody(bodyReq(['{"range":"7"}']))).toEqual({ range: '7' })
+  })
+
+  it('rejects an oversized body with 413', async () => {
+    await expect(readJsonBody(bodyReq(['x'.repeat(70_000)]))).rejects.toThrow(/exceeds/)
+  })
+
+  it('rejects malformed JSON with 400', async () => {
+    await expect(readJsonBody(bodyReq(['{nope']))).rejects.toThrow(/invalid json/)
   })
 })

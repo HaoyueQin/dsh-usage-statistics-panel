@@ -65,11 +65,13 @@ export function resolveRange(req: UsageStatsRequest, now = new Date()): { from: 
 }
 
 /** Build the aggregate for a range from the store rows. */
-export async function aggregateRange(store: UsageStore, from: string, to: string, source?: string): Promise<UsageStatsRange> {
+export async function aggregateRange(store: UsageStore, from: string, to: string): Promise<UsageStatsRange> {
   const rows = await store.rangeRows(from, to)
   const samples: UsageSample[] = []
   for (const row of rows) {
-    if (row.inputTokens + row.outputTokens > 0) {
+    // Any real token traffic makes the row a token sample — including a
+    // pure-cache call whose uncached input and output are both zero.
+    if (row.inputTokens + row.outputTokens + row.cacheReadTokens + row.cacheWriteTokens > 0) {
       samples.push({
         day: row.day,
         model: row.model,
@@ -88,7 +90,7 @@ export async function aggregateRange(store: UsageStore, from: string, to: string
       samples.push({ day: row.day, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, turn: true })
     }
   }
-  return aggregateSamples(samples, { from, to, source })
+  return aggregateSamples(samples, { from, to })
 }
 
 /** Build the single fenced prefix route serving the /usage/api JSON RPC.
@@ -107,7 +109,7 @@ export function buildUsageRoute(ctx: Context, deps: RoutesDeps): UsageWebRoute {
       if (method === 'POST' && url.endsWith('/range')) {
         const body = (await readJsonBody(req)) as Partial<UsageStatsRequest>
         const { from, to } = resolveRange(body as UsageStatsRequest)
-        const stats = await aggregateRange(deps.store, from, to, body.source)
+        const stats = await aggregateRange(deps.store, from, to)
         writeJson(res, { ok: true, value: stats })
         return
       }
@@ -117,6 +119,11 @@ export function buildUsageRoute(ctx: Context, deps: RoutesDeps): UsageWebRoute {
       }
       writeJson(res, { ok: false, error: { code: 'not_found', message: `unknown endpoint ${url}` } }, 404)
     } catch (err) {
+      // Log the real failure server-side (the fence keeps untrusted callers
+      // out, so this is a trusted client or an internal fault); writeError
+      // only returns a generic 500 body for non-UsageError failures.
+      const logger = (ctx as unknown as { logger?: { warn(message: unknown): void } }).logger
+      if (!(err instanceof UsageError)) logger?.warn(err instanceof Error ? err : new Error(String(err)))
       writeError(res, err)
     }
   }

@@ -18,37 +18,11 @@ import type {
   UsageStatsRange,
 } from './wire.ts'
 
-/** Local calendar day key, e.g. "2026-08-02" (no UTC shift). */
-export function dayKey(ts: number): string {
-  const d = new Date(ts)
-  const y = d.getFullYear()
-  const m = String(d.getMonth() + 1).padStart(2, '0')
-  const day = String(d.getDate()).padStart(2, '0')
-  return `${y}-${m}-${day}`
-}
-
-/** All local-calendar day keys in [from, to], inclusive. */
-export function daysInRange(from: string, to: string): string[] {
-  const out: string[] = []
-  const start = new Date(`${from}T00:00:00`)
-  const end = new Date(`${to}T00:00:00`)
-  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end < start) return out
-  for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-    const y = d.getFullYear()
-    const m = String(d.getMonth() + 1).padStart(2, '0')
-    const day = String(d.getDate()).padStart(2, '0')
-    out.push(`${y}-${m}-${day}`)
-  }
-  return out
-}
-
-/** model refs are "provider/model"; a bare model name has no slash and is
- *  attributed to provider "default". */
-export function providerOf(modelRef: string): string {
-  const i = modelRef.indexOf('/')
-  if (i > 0) return modelRef.slice(0, i)
-  return 'default'
-}
+// Pure date/model-ref helpers live in the shared (host+client, zero-dep)
+// module; imported for local use AND re-exported so the host-side import
+// surface is unchanged.
+import { dayKey, daysInRange, providerOf } from './shared.ts'
+export { dayKey, daysInRange, providerOf }
 
 /**
  * One atomic usage sample from a completed model call (or one completed
@@ -71,7 +45,6 @@ export interface UsageSample {
 export interface RangeFilter {
   from: string // inclusive day key
   to: string // inclusive day key
-  source?: string // "" | "all" matches every source
 }
 
 /** Aggregate the samples intersecting [from, to]. Missing days yield zero
@@ -104,6 +77,7 @@ export function aggregateSamples(samples: Iterable<UsageSample>, filter: RangeFi
   const dayByModel = new Map<string, Map<string, number>>()
   const dayTotals = new Map<string, number>()
   const dayRequests = new Map<string, number>()
+  const dayTurns = new Map<string, number>()
   const dayCacheHit = new Map<string, number>()
   const dayCacheMiss = new Map<string, number>()
 
@@ -111,6 +85,7 @@ export function aggregateSamples(samples: Iterable<UsageSample>, filter: RangeFi
     if (sample.day < from || sample.day > to) continue
     if (sample.turn) {
       out.turns++
+      dayTurns.set(sample.day, (dayTurns.get(sample.day) ?? 0) + 1)
       continue
     }
     if (sample.request) {
@@ -164,7 +139,7 @@ export function aggregateSamples(samples: Iterable<UsageSample>, filter: RangeFi
       byModel: byModelObj,
       byProvider: byProviderObj,
       requests: dayRequests.get(day) ?? 0,
-      turns: 0,
+      turns: dayTurns.get(day) ?? 0,
       cacheHit: dayCacheHit.get(day) ?? 0,
       cacheMiss: dayCacheMiss.get(day) ?? 0,
     })

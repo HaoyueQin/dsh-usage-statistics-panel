@@ -2,9 +2,17 @@
  * Number/date formatting helpers for the usage panel — a TS translation of
  * reasonix's usageStatsFormat.ts plus the pure chart helpers from the panel
  * component. The locale is explicit so the helpers stay easy to verify.
+ *
+ * Pure date/model-ref helpers (`providerOf`, `daysBetween`) are re-exported
+ * from the shared zero-dependency module so the host and client halves share
+ * one implementation.
  */
 
 export type PanelLocale = 'zh' | 'zh-TW' | 'en'
+
+// Shared with the host half (src/shared.ts has no Node/DOM types, so the
+// client bundle may import it at runtime).
+export { providerOf, daysInRange as daysBetween } from '../shared.ts'
 
 /** Compact number formatting following the panel's active language (Chinese
  *  users get zh-CN compact units instead of leaking English suffixes). */
@@ -49,22 +57,6 @@ export function cacheRateText(hit: number, miss: number): string {
   return r === null ? '—' : formatPercent(r)
 }
 
-/** Local-calendar date strings (no UTC shift) so the keys match the
- *  backend's "YYYY-MM-DD" day keys. */
-export function daysBetween(from: string, to: string): string[] {
-  const out: string[] = []
-  const start = new Date(from + 'T00:00:00')
-  const end = new Date(to + 'T00:00:00')
-  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return out
-  for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-    const y = d.getFullYear()
-    const m = String(d.getMonth() + 1).padStart(2, '0')
-    const day = String(d.getDate()).padStart(2, '0')
-    out.push(`${y}-${m}-${day}`)
-  }
-  return out
-}
-
 /** Today's local date (plus/minus offsetDays) in "YYYY-MM-DD". */
 export function localDay(offsetDays: number): string {
   const d = new Date()
@@ -88,12 +80,8 @@ export function shortDay(day: string): string {
   return `${Number(m)}/${Number(d)}`
 }
 
-/** model refs are "provider/model"; a bare model name has no slash. */
-export function providerOf(model: string): string {
-  const i = model.indexOf('/')
-  if (i > 0) return model.slice(0, i)
-  return 'default'
-}
+/** model refs are "provider/model"; a bare model name has no slash.
+ *  (Re-exported from ../shared.ts at the top of this file.) */
 
 /** Build a Catmull-Rom spline through the points (converted to cubic
  *  Beziers) so the hit-rate line reads as a smooth curve across data-less
@@ -117,12 +105,16 @@ export function smoothPath(pts: Array<{ x: number; y: number }>): string {
   return d
 }
 
-/** Nice axis ticks: 1/2/5 × 10^k steps covering [step, max]. */
+/** Nice axis ticks: 1/2/5 × 10^k steps covering [step, max]. Non-positive
+ *  maxima produce no ticks (guards the log10 against 0/NaN and the loop
+ *  against a zero step). */
 export function niceTicks(max: number, count: number): number[] {
+  if (!(max > 0) || !(count > 0) || !Number.isFinite(max)) return []
   const raw = max / count
   const mag = Math.pow(10, Math.floor(Math.log10(raw)))
   const norm = raw / mag
   const step = (norm <= 1 ? 1 : norm <= 2 ? 2 : norm <= 5 ? 5 : 10) * mag
+  if (!(step > 0)) return []
   const out: number[] = []
   for (let v = step; v <= max; v += step) out.push(v)
   return out

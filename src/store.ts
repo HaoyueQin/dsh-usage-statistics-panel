@@ -82,6 +82,13 @@ export class UsageStore {
   private table: UsageKvTable<string, UsageDayRow> | null = null
   private domainHandle: UsageDomain | null = null
   private ready: Promise<void>
+  /** Serializes read-modify-write cycles on the backfill cursor. The domain
+   *  only guarantees single-write ordering on its chain — a global.set is a
+   *  whole-value overwrite, so two concurrent markSeenSessions calls would
+   *  interleave get→set and lose one caller's ids (lost update). Chaining
+   *  through this promise makes every get→set pair atomic within the
+   *  process, which is the only concurrency that exists here. */
+  private markChain: Promise<void> = Promise.resolve()
 
   constructor(ctx: UsageStorageDomain) {
     this.ready = ctx.open(usageHistoryDomain).then((domain) => {
@@ -101,12 +108,23 @@ export class UsageStore {
     return new Set(value?.backfilledSessions ?? [])
   }
 
-  /** Persist session ids as replayed (merges into the cursor). */
+  /** Persist session ids as replayed (merges into the cursor). Calls are
+   *  serialized through {@link markChain} so concurrent workers never lose
+   *  each other's ids in a get→set interleaving. */
   async markSeenSessions(ids: Iterable<string>): Promise<void> {
-    await this.ready
-    const seen = await this.seenSessions()
-    for (const id of ids) seen.add(id)
-    await this.domainHandle?.global?.set({ backfilledSessions: [...seen] })
+    const write = this.markChain.then(async () => {
+      await this.ready
+      const seen = await this.seenSessions()
+      for (const id of ids) seen.add(id)
+      await this.domainHandle?.global?.set({ backfilledSessions: [...seen] })
+    })
+    // Keep the chain alive regardless of failure: one rejected write must
+    // not poison every later mark (the caller observes the rejection).
+    this.markChain = write.then(
+      () => undefined,
+      () => undefined,
+    )
+    return write
   }
 
   /** Drop every day row — the one-time rebuild path for a pre-cursor store

@@ -56,14 +56,20 @@ export function apply(ctx: Context, config: UsageStatsConfig = {}): void {
   }, 'dsh-usage-statistics-panel: routes')
 
   // Start the live event listener and kick off the one-time backfill. The
-  // backfill runs after the routes mount so the UI can poll status.
+  // backfill runs after the routes mount so the UI can poll status. The
+  // disposer aborts an in-flight scan: without it, a fiber teardown (plugin
+  // reload) would leave the scan running fire-and-forget behind the closed
+  // domain.
   ctx.effect(() => {
     collector.start()
+    const controller = new AbortController()
     void store.readyPromise().then(() => {
-      void collector.backfill(ctx.sessionPersistence, ctx.sessions)
+      if (!controller.signal.aborted) {
+        void collector.backfill(ctx.sessionPersistence, ctx.sessions, controller.signal)
+      }
     })
     return () => {
-      // (No per-effect disposer beyond the fiber teardown.)
+      controller.abort()
     }
   }, 'dsh-usage-statistics-panel: collector')
 }

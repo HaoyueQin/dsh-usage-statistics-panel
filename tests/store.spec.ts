@@ -96,4 +96,39 @@ describe('UsageStore', () => {
     const key = dayRowKey('2026-08-01', 'deepseek', 'deepseek/deepseek-chat')
     expect(key).toBe('2026-08-01|deepseek|deepseek/deepseek-chat')
   })
+
+  it('serializes concurrent cursor writes so no session id is lost', async () => {
+    // A domain whose global.set resolves on a later macrotask widens the
+    // get→set window that a concurrent caller would race through.
+    let globalValue: { backfilledSessions: string[] } | undefined
+    const emptyTable = {
+      get: () => undefined,
+      entries: () => [][Symbol.iterator](),
+      keys: () => [][Symbol.iterator](),
+      size: 0,
+      put: async () => {},
+      delete: async () => false,
+      update: async () => {
+        throw new Error('missing-key')
+      },
+    }
+    const domain: UsageDomain = {
+      table: () => emptyTable as unknown as ReturnType<UsageDomain['table']>,
+      global: {
+        get: () => globalValue,
+        set: async (value) => {
+          await new Promise((resolve) => setTimeout(resolve, 5))
+          globalValue = value as { backfilledSessions: string[] }
+        },
+      },
+    }
+    const store = new UsageStore({ open: async () => domain } as unknown as UsageStorageDomain)
+    await Promise.all([
+      store.markSeenSessions(['a']),
+      store.markSeenSessions(['b']),
+      store.markSeenSessions(['c']),
+    ])
+    const seen = await store.seenSessions()
+    expect([...seen].sort()).toEqual(['a', 'b', 'c'])
+  })
 })

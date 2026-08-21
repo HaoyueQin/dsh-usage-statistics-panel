@@ -5,7 +5,7 @@
  */
 import { describe, expect, it } from 'vitest'
 import { UsageCollector, UsageFold } from '../src/collector.ts'
-import type { UsageSessionEvent } from '../src/context-types.ts'
+import type { UsageSessionEvent, UsageSessionPersistence } from '../src/context-types.ts'
 
 function event(type: string, turn: number, step: number, time: number, data: Record<string, unknown>): UsageSessionEvent {
   return { type, seq: 0, time, data: { turn, step, ...data } }
@@ -87,6 +87,18 @@ describe('UsageFold', () => {
     expect(fold.fold(event('request/context', 1, 1, T, { provider: 'deepseek', model: 'chat' }))).toBeNull()
   })
 
+  it('records a pure-cache call (zero uncached input, zero output, real cache traffic)', () => {
+    const fold = new UsageFold()
+    const s = fold.fold(event('assistant/message', 1, 1, T, {
+      usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 5000 },
+    }))
+    expect(s).not.toBeNull()
+    expect(s!.cacheReadTokens).toBe(5000)
+    expect(s!.inputTokens + s!.outputTokens).toBe(0)
+    // An all-zero usage is still noise.
+    expect(fold.fold(event('assistant/message', 1, 2, T, { usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 } }))).toBeNull()
+  })
+
   it('treats the same key across different turn/step as distinct', () => {
     const fold = new UsageFold()
     const a = fold.fold(event('assistant/message', 1, 1, T, { usage: { inputTokens: 10, outputTokens: 1 } }))
@@ -118,7 +130,7 @@ describe('UsageCollector.backfill', () => {
     return {
       list: async () => ids.map((id) => ({ id })),
       inspect: async (id: string) => ({ id, events }),
-    } as unknown as ConstructorParameters<typeof UsageCollector>[2]
+    } as unknown as UsageSessionPersistence
   }
 
   it('rebuilds a pre-cursor store once, then never re-folds seen sessions', async () => {
@@ -142,5 +154,86 @@ describe('UsageCollector.backfill', () => {
     await collector.backfill(persistence(['s1'], events), { list: () => [] } as never)
     expect(storeB.state.recorded.length).toBe(0)
     expect(storeB.state.cleared).toBe(0)
+  })
+
+  it('stops the scan when the abort signal fires', async () => {
+    const ctx = { on: () => {} }
+    const store = memoryStore(0)
+    const collector = new UsageCollector(ctx as never, store as never)
+    const controller = new AbortController()
+    const persistence = {
+      list: async () => ['s1', 's2', 's3'].map((id) => ({ id })),
+      inspect: async (id: string) => {
+        if (id === 's1') controller.abort() // abort mid-scan
+        return { id, events: [] }
+      },
+    } as unknown as UsageSessionPersistence
+    await collector.backfill(persistence, { list: () => [] } as never, controller.signal)
+    // Only the session already in flight completes; the rest are skipped.
+    expect(collector.status.done).toBe(1)
+    expect(store.state.marked.flat()).toEqual(['s1'])
+  })
+})
+
+describe('UsageCollector live attribution', () => {
+  function captureCtx() {
+    const listeners = new Map<string, Array<(...args: never[]) => void>>()
+    return {
+      ctx: {
+        on: (event: string, listener: (...args: never[]) => void) => {
+          const list = listeners.get(event) ?? []
+          list.push(listener)
+          listeners.set(event, list)
+        },
+      },
+      listeners,
+    }
+  }
+
+  function recordingStore() {
+    const recorded: Array<Record<string, unknown>> = []
+    return {
+      recorded,
+      record: async (sample: Record<string, unknown>) => { recorded.push(sample) },
+    }
+  }
+
+  function emit(listeners: Map<string, Array<(...args: never[]) => void>>, event: string, ...args: unknown[]): void {
+    for (const listener of listeners.get(event) ?? []) (listener as (...a: unknown[]) => void)(...args)
+  }
+
+  it('keeps concurrent sessions out of each other\'s dedupe and route buckets', () => {
+    const { ctx, listeners } = captureCtx()
+    const store = recordingStore()
+    const collector = new UsageCollector(ctx as never, store as never)
+    collector.start()
+
+    // Session A: route deepseek/model-a, then usage on turn 1 / step 1.
+    emit(listeners, 'session/event', { id: 'A' }, { type: 'request/context', seq: 0, time: T, data: { provider: 'deepseek', model: 'model-a' } })
+    emit(listeners, 'session/event', { id: 'A' }, { type: 'assistant/message', seq: 1, time: T, data: { turn: 1, step: 1, usage: { inputTokens: 1000, outputTokens: 500 } } })
+    // Session B: the SAME turn/step pair, its own route — neither the
+    // dedupe fold nor the attribution may leak across sessions.
+    emit(listeners, 'session/event', { id: 'B' }, { type: 'request/context', seq: 2, time: T, data: { provider: 'openai', model: 'model-b' } })
+    emit(listeners, 'session/event', { id: 'B' }, { type: 'assistant/message', seq: 3, time: T, data: { turn: 1, step: 1, usage: { inputTokens: 2000, outputTokens: 800 } } })
+
+    expect(store.recorded).toHaveLength(2)
+    const a = store.recorded.find((s) => s.model === 'deepseek/model-a')
+    const b = store.recorded.find((s) => s.model === 'openai/model-b')
+    expect(a?.inputTokens).toBe(1000)
+    expect(b?.inputTokens).toBe(2000)
+  })
+
+  it('drops a disposed session\'s fold and route buckets', () => {
+    const { ctx, listeners } = captureCtx()
+    const store = recordingStore()
+    const collector = new UsageCollector(ctx as never, store as never)
+    collector.start()
+    emit(listeners, 'session/event', { id: 'A' }, { type: 'request/context', seq: 0, time: T, data: { provider: 'deepseek', model: 'model-a' } })
+    emit(listeners, 'session/disposed', { id: 'A' })
+    // After disposal the route is gone; a later usage sample from a
+    // recycled id must not inherit the old route.
+    emit(listeners, 'session/event', { id: 'A' }, { type: 'assistant/message', seq: 1, time: T, data: { turn: 9, step: 9, usage: { inputTokens: 5, outputTokens: 5 } } })
+    expect(store.recorded).toHaveLength(1)
+    expect(store.recorded[0]!.model).toBeUndefined()
   })
 })

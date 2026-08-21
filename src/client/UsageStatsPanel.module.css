@@ -341,7 +341,7 @@
 
 .models {
   display: flex;
-  gap: 24px;
+  gap: 16px;
   align-items: flex-start;
   flex-wrap: wrap;
   min-width: 0;
@@ -366,7 +366,7 @@
 
 .donutCenter {
   fill: var(--dsw-alias-label-primary);
-  font-size: 22px;
+  font-size: 18px;
   font-weight: 600;
 }
 
@@ -448,33 +448,49 @@
   padding: 0;
 }
 
+/* Two-line row anatomy: [swatch] [name / provider] ……… [tokens / share].
+   The name block takes the free width; the values block hugs the right. */
+.modelId {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.modelValues {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 1px;
+  flex: 0 0 auto;
+}
+
 .modelName {
   color: var(--dsw-alias-label-primary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  flex: 1 1 auto;
   min-width: 0;
 }
 
 .modelProvider {
   color: var(--dsw-alias-label-tertiary);
-  font-size: 13px;
-  flex: 0 0 auto;
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .modelTokens {
   color: var(--dsw-alias-label-secondary);
   font-variant-numeric: tabular-nums;
-  flex: 0 0 auto;
 }
 
 .modelPct {
   color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
   font-variant-numeric: tabular-nums;
-  width: 52px;
-  text-align: right;
-  flex: 0 0 auto;
 }
 
 /* ── tooltips ──────────────────────────────────────────────────────────── */

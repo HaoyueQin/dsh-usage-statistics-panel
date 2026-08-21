@@ -20,7 +20,7 @@ import { Button, Input } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { DailyTokenUsage, ModelTokenUsage, UsageStatsRange, UsageStatsRequest } from '../wire.ts'
 import { fetchRange, UsageApiError } from './api.ts'
 import { ChartTip } from './ChartTip.tsx'
-import { formatTokens, formatCompact, formatPercent, cacheRate, cacheRateText, daysBetween, localDay, indexOfDay, shortDay, providerOf, smoothPath, niceTicks, type PanelLocale } from './format.ts'
+import { formatTokens, formatCompact, formatPercent, cacheRate, cacheRateText, daysBetween, localDay, indexOfDay, shortDay, providerOf, modelNameOf, smoothPath, niceTicks, type PanelLocale } from './format.ts'
 import type { UsageStatsKey } from './locales.ts'
 import type { UsageStatsTranslator } from './index.tsx'
 import css from './UsageStatsPanel.module.css'
@@ -624,12 +624,14 @@ function ModelUsage({ models, t, locale, colorForModel, panelRef }: { models: Gr
   if (models.length === 0) return null
   const other = models.find((m) => m.model === OTHER_MODEL)
 
-  // The ring leaves a margin inside the fixed 240px viewBox at rest, so the
-  // hover-grow of the stroke never overflows into a clipped square.
-  const OUTER = 114
-  const SW = 36
+  // The ring leaves a margin inside the fixed 200px viewBox at rest, so the
+  // hover-grow of the stroke never overflows into a clipped square. Sized
+  // down from the reasonix 240px: the DSH settings pane is narrower, and the
+  // per-model list beside it needs the width more than the ring does.
+  const OUTER = 95
+  const SW = 30
   const R = OUTER - SW / 2
-  const CX = 120
+  const CX = 100
   const CIRC = 2 * Math.PI * R
   const total = Math.max(1, models.reduce((sum, m) => sum + m.tokens, 0))
   let offset = 0
@@ -724,23 +726,27 @@ function ModelUsage({ models, t, locale, colorForModel, panelRef }: { models: Gr
                   : {})}
               >
                 <i className={css.legendSwatch} style={{ background: colorForModel(m.model) }} />
-                <span className={css.modelName}>
-                  {isOther && (
-                    <button
-                      type="button"
-                      className={css.modelToggle}
-                      onClick={(e) => { e.stopPropagation(); setExpandedOther(!expandedOther) }}
-                      aria-expanded={expandedOther}
-                      aria-label={t('other')}
-                    >
-                      {expandedOther ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-                    </button>
-                  )}
-                  {isOther ? t('other') : m.model}
-                </span>
-                <span className={css.modelProvider}>{isOther ? '' : providerOf(m.model)}</span>
-                <span className={css.modelTokens}>{formatTokens(m.tokens, locale)}</span>
-                <span className={css.modelPct}>{formatPercent(m.percent)}</span>
+                <div className={css.modelId}>
+                  <span className={css.modelName}>
+                    {isOther && (
+                      <button
+                        type="button"
+                        className={css.modelToggle}
+                        onClick={(e) => { e.stopPropagation(); setExpandedOther(!expandedOther) }}
+                        aria-expanded={expandedOther}
+                        aria-label={t('other')}
+                      >
+                        {expandedOther ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+                      </button>
+                    )}
+                    {isOther ? t('other') : modelNameOf(m.model)}
+                  </span>
+                  {!isOther && <span className={css.modelProvider}>{providerOf(m.model)}</span>}
+                </div>
+                <div className={css.modelValues}>
+                  <span className={css.modelTokens}>{formatTokens(m.tokens, locale)}</span>
+                  <span className={css.modelPct}>{formatPercent(m.percent)}</span>
+                </div>
               </li>
             )
           })}
@@ -750,10 +756,14 @@ function ModelUsage({ models, t, locale, colorForModel, panelRef }: { models: Gr
                 {other.items.map((it) => (
                   <li key={it.model} className={clsx(css.modelRow, css.modelRowSub)}>
                     <i className={css.legendSwatch} style={{ background: OTHER_COLOR }} />
-                    <span className={css.modelName}>{it.model}</span>
-                    <span className={css.modelProvider}>{providerOf(it.model)}</span>
-                    <span className={css.modelTokens}>{formatTokens(it.tokens, locale)}</span>
-                    <span className={css.modelPct}>{formatPercent(it.percent)}</span>
+                    <div className={css.modelId}>
+                      <span className={css.modelName}>{modelNameOf(it.model)}</span>
+                      <span className={css.modelProvider}>{providerOf(it.model)}</span>
+                    </div>
+                    <div className={css.modelValues}>
+                      <span className={css.modelTokens}>{formatTokens(it.tokens, locale)}</span>
+                      <span className={css.modelPct}>{formatPercent(it.percent)}</span>
+                    </div>
                   </li>
                 ))}
               </ul>

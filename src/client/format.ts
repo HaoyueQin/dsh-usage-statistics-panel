@@ -12,7 +12,7 @@ export type PanelLocale = 'zh' | 'zh-TW' | 'en'
 
 // Shared with the host half (src/shared.ts has no Node/DOM types, so the
 // client bundle may import it at runtime).
-export { providerOf, daysInRange as daysBetween } from '../shared.ts'
+export { providerOf, modelNameOf, daysInRange as daysBetween } from '../shared.ts'
 
 /** Compact token formatting following the panel's active language: Chinese
  *  locales get 亿/万 (simplified) or 億/萬 (traditional) units, English gets

@@ -38,3 +38,11 @@ export function providerOf(modelRef: string): string {
   if (i > 0) return modelRef.slice(0, i)
   return 'default'
 }
+
+/** The display name of a model ref: the part after the provider slash
+ *  ("deepseek-chat" of "deepseek/deepseek-chat"); a bare name is unchanged. */
+export function modelNameOf(modelRef: string): string {
+  const i = modelRef.indexOf('/')
+  if (i > 0) return modelRef.slice(i + 1)
+  return modelRef
+}

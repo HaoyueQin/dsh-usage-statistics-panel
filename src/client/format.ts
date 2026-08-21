@@ -1,29 +1,22 @@
 /**
  * Number/date formatting helpers for the usage panel — a TS translation of
  * reasonix's usageStatsFormat.ts plus the pure chart helpers from the panel
- * component. The locale is explicit so the helpers stay easy to verify.
+ * component.
  *
  * Pure date/model-ref helpers (`providerOf`, `daysBetween`) are re-exported
  * from the shared zero-dependency module so the host and client halves share
  * one implementation.
  */
 
-export type PanelLocale = 'zh' | 'zh-TW' | 'en'
-
 // Shared with the host half (src/shared.ts has no Node/DOM types, so the
 // client bundle may import it at runtime).
 export { providerOf, modelNameOf, daysInRange as daysBetween } from '../shared.ts'
 
-/** Compact token formatting following the panel's active language: Chinese
- *  locales get 亿/万 (simplified) or 億/萬 (traditional) units, English gets
- *  the k/M/B chart convention. Small numbers carry no suffix. */
-export function formatTokens(n: number, locale: PanelLocale = 'en'): string {
-  if (locale === 'en') return formatCompact(n)
-  const yi = locale === 'zh' ? '亿' : '億'
-  const wan = locale === 'zh' ? '万' : '萬'
-  if (n >= 1e8) return (n / 1e8).toFixed(n % 1e8 === 0 ? 0 : 1) + yi
-  if (n >= 1e4) return (n / 1e4).toFixed(n % 1e4 === 0 ? 0 : 1) + wan
-  return String(n)
+/** Exact token counts with thousands separators — no 万/亿/k/M units, the
+ *  user reads the precise number (long values shrink to fit via FitText).
+ *  Compact units stay on the axis labels and the donut centre only. */
+export function formatTokens(n: number): string {
+  return n.toLocaleString('en-US')
 }
 
 /** English-style compact (B/M/k) for axis labels and the donut centre. */

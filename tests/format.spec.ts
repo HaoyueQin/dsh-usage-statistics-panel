@@ -18,19 +18,13 @@ import {
 } from '../src/client/format.ts'
 
 describe('formatTokens', () => {
-  it('uses 万/亿 for simplified Chinese', () => {
-    expect(formatTokens(15000, 'zh')).toBe('1.5万')
-    expect(formatTokens(200000000, 'zh')).toBe('2亿')
-    expect(formatTokens(999, 'zh')).toBe('999')
-  })
-  it('uses 萬/億 for traditional Chinese', () => {
-    expect(formatTokens(15000, 'zh-TW')).toBe('1.5萬')
-    expect(formatTokens(200000000, 'zh-TW')).toBe('2億')
-  })
-  it('falls back to the k/M/B chart convention for English', () => {
-    expect(formatTokens(1234, 'en')).toBe('1.2k')
-    expect(formatTokens(1500000, 'en')).toBe('1.5M')
-    expect(formatTokens(2500000000, 'en')).toBe('2.5B')
+  it('shows exact counts with thousands separators', () => {
+    expect(formatTokens(999)).toBe('999')
+    expect(formatTokens(15000)).toBe('15,000')
+    expect(formatTokens(1234)).toBe('1,234')
+    expect(formatTokens(1500000)).toBe('1,500,000')
+    expect(formatTokens(200000000)).toBe('200,000,000')
+    expect(formatTokens(2500000000)).toBe('2,500,000,000')
   })
 })
 

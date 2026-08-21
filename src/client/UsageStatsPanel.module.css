@@ -4,8 +4,8 @@
  * typography, --ds-* motion); no static palette values, no theme selectors.
  * The heatmap's 5 levels come from the brand accent via color-mix; model
  * colours are the fixed --dsw-chart-1..5 series (rank order by token
- * volume) plus the gray --dsw-chart-other step, light/dark variants defined
- * below from GitHub Primer's data-viz tokens.
+ * volume) plus the gray --dsw-chart-other step — the reasonix usage-stats
+ * palette, with a lifted dark variant defined below.
  */
 
 .panel {
@@ -101,10 +101,27 @@
 
 /* ── numeric cards ─────────────────────────────────────────────────────── */
 
+/* Six cards in two rows of three. The first column is wider (1.35fr): it
+   holds the two long-valued cards — total tokens (row one) and the most used
+   model name (row two) — stacked and aligned, while the four short numerics
+   share the equal tracks (mirrors the reasonix card sizing). Narrow panes
+   degrade to equal columns instead of squeezing the wide one. */
 .cards {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  grid-template-columns: 1.35fr 1fr 1fr;
   gap: 10px;
+}
+
+@media (max-width: 560px) {
+  .cards {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (max-width: 380px) {
+  .cards {
+    grid-template-columns: 1fr;
+  }
 }
 
 .card {
@@ -149,6 +166,15 @@
 
 .cardValueWrap {
   word-break: break-word;
+}
+
+/* The "most used model" card value: the model name over the provider, the
+   same two-line anatomy as the per-model list rows (modelName/modelProvider
+   classes), instead of the raw "provider/model" ref. */
+.cardModelLines {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
 }
 
 /* ── sections / chart chrome ───────────────────────────────────────────── */
@@ -292,17 +318,18 @@
   pointer-events: all;
 }
 
-/* cache hit-rate trend curve: brand accent shifted slightly toward the
-   foreground so it stays distinct from the pure-accent top model bars. */
+/* cache hit-rate trend curve: DeepSeek's brand blue (#4D6BFE, the same hue
+   family as the heatmap ramp) — a fixed brand ramp instead of the theme
+   accent, which can read near-black in some themes. */
 .trend {
-  stroke: color-mix(in srgb, var(--dsw-alias-brand-primary) 80%, var(--dsw-alias-label-primary));
+  stroke: var(--dsw-trend-line);
   stroke-width: 2;
   opacity: 0.9;
   pointer-events: none;
 }
 
 .trendDot {
-  fill: color-mix(in srgb, var(--dsw-alias-brand-primary) 80%, var(--dsw-alias-label-primary));
+  fill: var(--dsw-trend-line);
   stroke: var(--dsw-alias-bg-layer-1);
   stroke-width: 2;
   pointer-events: none;
@@ -331,7 +358,7 @@
 }
 
 .legendTrend {
-  background: color-mix(in srgb, var(--dsw-alias-brand-primary) 80%, var(--dsw-alias-label-primary));
+  background: var(--dsw-trend-line);
   width: 14px;
   height: 3px;
   border-radius: 2px;
@@ -551,10 +578,14 @@
 
 /* ── chart palette ──────────────────────────────────────────────────────── */
 
-/* Light variant (the theme's default): model colours are GitHub Primer's
-   data-viz two-set (rank order by token volume + gray Other, matching the
-   reasonix PR #7503 palette); the heatmap ramp is DeepSeek's brand blue
-   (#4D6BFE) stepping from a pale tint to the full blue. */
+/* Light variant (the theme's default): model colours are the reasonix
+   usage-stats palette (rank order by token volume + gray Other) with a
+   white veil mixed in (color-mix 30% white) — the raw hues read dark and
+   heavy on the light card surface, and the veil lifts lightness and dulls
+   saturation the way a translucent white overlay would, keeping the hues
+   colourful instead of muddy. The heatmap ramp is DeepSeek's brand blue
+   (#4D6BFE) stepping from a pale tint to the full blue; the hit-rate curve
+   rides the same brand hue. */
 .panel {
   --dsw-heat-0: #ebedf0;
   --dsw-heat-1: #dbe3ff;
@@ -562,14 +593,18 @@
   --dsw-heat-3: #8ea4ff;
   --dsw-heat-4: #6884ff;
   --dsw-heat-5: #4d6bfe;
-  --dsw-chart-1: #1f883d;
-  --dsw-chart-2: #1a7f37;
-  --dsw-chart-3: #9a6700;
-  --dsw-chart-4: #8250df;
-  --dsw-chart-5: #cf222e;
-  --dsw-chart-other: #6e7781;
+  --dsw-trend-line: #4d6bfe;
+  --dsw-chart-1: color-mix(in srgb, #0576ff 70%, white);
+  --dsw-chart-2: color-mix(in srgb, #2f6f37 70%, white);
+  --dsw-chart-3: color-mix(in srgb, #c46212 70%, white);
+  --dsw-chart-4: color-mix(in srgb, #975bf1 70%, white);
+  --dsw-chart-5: color-mix(in srgb, #d34591 70%, white);
+  --dsw-chart-other: color-mix(in srgb, #576270 70%, white);
 }
 
+/* Dark variant: the same reasonix hues under a thicker white veil
+   (35% — dark surfaces need the extra lift), so segments read soft and
+   bright instead of sinking into the background. */
 @media (prefers-color-scheme: dark) {
   .panel {
     --dsw-heat-0: #21262d;
@@ -578,11 +613,12 @@
     --dsw-heat-3: #6e8bff;
     --dsw-heat-4: #93aaff;
     --dsw-heat-5: #c4d0ff;
-    --dsw-chart-1: #3fb950;
-    --dsw-chart-2: #2ea043;
-    --dsw-chart-3: #d29922;
-    --dsw-chart-4: #a371f7;
-    --dsw-chart-5: #f85149;
-    --dsw-chart-other: #8b949e;
+    --dsw-trend-line: #7d95ff;
+    --dsw-chart-1: color-mix(in srgb, #0576ff 65%, white);
+    --dsw-chart-2: color-mix(in srgb, #2f6f37 65%, white);
+    --dsw-chart-3: color-mix(in srgb, #c46212 65%, white);
+    --dsw-chart-4: color-mix(in srgb, #975bf1 65%, white);
+    --dsw-chart-5: color-mix(in srgb, #d34591 65%, white);
+    --dsw-chart-other: color-mix(in srgb, #576270 65%, white);
   }
 }

@@ -12,6 +12,12 @@ A usage statistics panel plugin for the DSH web UI: per-day token trend, a GitHu
 
 All charts are hand-drawn SVG with no chart library; the palette uses GitHub Primer's data-viz two-set tokens (the top five models each get a distinct rank colour, everything else collapses into a gray "Other" bucket) and adapts to the DSH theme.
 
+## Preview
+
+![Panel overview: summary cards, activity heatmap and daily token trend](docs/images/panel-overview.png)
+
+![Model usage: donut, list and daily trend](docs/images/model-usage.png)
+
 ## Features
 
 - **Time ranges**: last 7 / 14 / 30 / 90 days, or a custom from/to pair
@@ -34,7 +40,7 @@ Once mounted, a "Usage statistics" page appears in the left navigation of the Se
 
 ## Data source
 
-The collector is observational: it subscribes to the session event stream (`session/event`), reads provider-reported `TokenUsage` from `assistant/message` and `assistant/chunk` (input / output / cache-read / cache-write), dedupes by `(turn, step)` WITHIN one session (a later report replaces an earlier one for the same call; concurrent sessions never swallow each other's samples), and attributes to the provider/model from `request/context`. On first enable it also backfills by replaying persisted session logs.
+The collector is observational: it subscribes to the session event stream (`session/event`), reads provider-reported `TokenUsage` from `assistant/message` and `assistant/chunk` (input / output / cache-read / cache-write), dedupes by `(turn, step)` WITHIN one session (each call counts once, keeping the first report — the shipped adapters report identical values on the streaming sample and the final message; concurrent sessions never swallow each other's samples), and attributes to the provider/model from `request/context`. On first enable it also backfills by replaying persisted session logs.
 
 > Note: usage accumulates from the day the panel is enabled (including the backfill). Sessions whose logs predate the feature carry no provider-reported usage and cannot be reconstructed.
 

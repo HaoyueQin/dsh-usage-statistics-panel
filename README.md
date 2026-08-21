@@ -12,6 +12,12 @@ DSH web 插件的用量统计面板：按天 Token 趋势、GitHub 风格活跃�
 
 所有图表均为手绘 SVG，不依赖图表库；配色使用 GitHub Primer 的 data-viz 双套色板（前 5 名模型各取一个等级色，其余归入灰色 "Other" 桶），并随 DSH 主题自适应。
 
+## 预览
+
+![面板概览：汇总卡片、活跃热力图与按天 Token 趋势](docs/images/panel-overview.png)
+
+![模型用量：环形图、列表与趋势图](docs/images/model-usage.png)
+
 ## 功能
 
 - **时间范围**：最近 7 / 14 / 30 / 90 天，或自定义起止日期
@@ -34,7 +40,7 @@ dsh plugin --profile <name> add dsh-usage-statistics-panel@latest
 
 ## 数据来源
 
-面板的数据采集是**观测式**的：插件订阅会话事件流（`session/event`）中的 `assistant/message` 与 `assistant/chunk`，提取 provider 上报的 token 用量（输入 / 输出 / 缓存读 / 缓存写），在**单个会话内**按 `(turn, step)` 去重（同一调用的流式采样与最终上报取后者；并发会话各自独立计数、互不吞样本），并按 `request/context` 中的 provider/model 归因。首次启用时还会回扫既有会话日志补齐历史。
+面板的数据采集是**观测式**的：插件订阅会话事件流（`session/event`）中的 `assistant/message` 与 `assistant/chunk`，提取 provider 上报的 token 用量（输入 / 输出 / 缓存读 / 缓存写），在**单个会话内**按 `(turn, step)` 去重（同一调用只计一次、保留先到的样本——两个官方适配器对流式采样与最终上报的数值完全一致；并发会话各自独立计数、互不吞样本），并按 `request/context` 中的 provider/model 归因。首次启用时还会回扫既有会话日志补齐历史。
 
 > 提示：Token 用量从插件启用（含回扫）之日起累计；更早的会话日志若无 provider 上报的用量数据，则无法回溯。
 

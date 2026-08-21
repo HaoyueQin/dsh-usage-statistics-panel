@@ -19,7 +19,7 @@ All charts are hand-drawn SVG with no chart library; the palette uses GitHub Pri
 - **26-week activity heatmap**: GitHub-style day cells, hover for the day's detail
 - **Daily token trend**: stacked bars with a smooth cache hit-rate curve (Catmull-Rom), hover for the per-model breakdown
 - **Model usage**: donut + list; the top five models keep distinct colours, the tail collapses into an expandable "Other" row
-- **History backfill**: on first enable, the plugin enumerates and replays all existing session logs so historical usage is accounted from day one
+- **History backfill**: on first enable, the plugin enumerates and replays existing session logs (currently-live sessions are skipped, so their pre-boot history is not counted) so historical usage is accounted from day one
 - **Local persistence**: data lands in `$DSH_HOME/storages/usage_history.json` (storage-domain), fully local, no external services
 
 ## Install
@@ -34,7 +34,7 @@ Once mounted, a "Usage statistics" page appears in the left navigation of the Se
 
 ## Data source
 
-The collector is observational: it subscribes to the session event stream (`session/event`), reads provider-reported `TokenUsage` from `assistant/message` and `assistant/chunk` (input / output / cache-read / cache-write), dedupes by `(turn, step)` (a later report replaces an earlier one for the same call), and attributes to the provider/model from `request/context`. On first enable it also backfills by replaying persisted session logs.
+The collector is observational: it subscribes to the session event stream (`session/event`), reads provider-reported `TokenUsage` from `assistant/message` and `assistant/chunk` (input / output / cache-read / cache-write), dedupes by `(turn, step)` WITHIN one session (a later report replaces an earlier one for the same call; concurrent sessions never swallow each other's samples), and attributes to the provider/model from `request/context`. On first enable it also backfills by replaying persisted session logs.
 
 > Note: usage accumulates from the day the panel is enabled (including the backfill). Sessions whose logs predate the feature carry no provider-reported usage and cannot be reconstructed.
 

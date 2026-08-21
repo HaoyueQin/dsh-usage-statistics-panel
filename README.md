@@ -19,7 +19,7 @@ DSH web 插件的用量统计面板：按天 Token 趋势、GitHub 风格活跃�
 - **26 周活跃热力图**：每日 token 用量的 GitHub 风格色阶，悬停查看当天明细
 - **按天 Token 趋势**：堆叠柱状图叠加平滑的缓存命中率曲线（Catmull-Rom 样条），悬停查看各模型拆分
 - **模型用量**：环形图 + 列表，前 5 名模型分色，其余折叠为可展开的 "Other" 明细
-- **历史回扫**：首次启用时枚举并回放全部既有会话日志，从安装日起补全历史用量
+- **历史回扫**：首次启用时枚举并回放既有会话日志（当前活跃会话除外，其启动前的历史不计），从安装日起补全历史用量
 - **本地持久化**：数据写入 `$DSH_HOME/storages/usage_history.json`（storage-domain），纯本地、无外部依赖
 
 ## 安装
@@ -34,7 +34,7 @@ dsh plugin --profile <name> add dsh-usage-statistics-panel@latest
 
 ## 数据来源
 
-面板的数据采集是**观测式**的：插件订阅会话事件流（`session/event`）中的 `assistant/message` 与 `assistant/chunk`，提取 provider 上报的 token 用量（输入 / 输出 / 缓存读 / 缓存写），按 `(turn, step)` 去重（同一调用的流式采样与最终上报取后者），并按 `request/context` 中的 provider/model 归因。首次启用时还会回扫既有会话日志补齐历史。
+面板的数据采集是**观测式**的：插件订阅会话事件流（`session/event`）中的 `assistant/message` 与 `assistant/chunk`，提取 provider 上报的 token 用量（输入 / 输出 / 缓存读 / 缓存写），在**单个会话内**按 `(turn, step)` 去重（同一调用的流式采样与最终上报取后者；并发会话各自独立计数、互不吞样本），并按 `request/context` 中的 provider/model 归因。首次启用时还会回扫既有会话日志补齐历史。
 
 > 提示：Token 用量从插件启用（含回扫）之日起累计；更早的会话日志若无 provider 上报的用量数据，则无法回溯。
 
@@ -51,7 +51,7 @@ pnpm build       # tsc declarations + tsdown (host ESM + 双通道 client bundle
 
 - **Host 半**（`src/`）：`collector`（事件订阅 + 回扫折叠）、`store`（`usage_history` storage-domain）、`query`（范围聚合，翻译自 reasonix 的 query.go）、`routes`（`/usage/api` fenced JSON 路由，信任围栏与 `/api` 网关一致）
 - **Client 半**（`src/client/`）：`UsageStatsPanel.tsx`（手绘 SVG 图表，移植自 reasonix 面板 + Primer 配色）、`locales`（en / zh / zh-TW）、`api`（`/usage/api` fetch 封装）
-- **双通道打包**：`lib/client.js`（官方 profile 通道，bundle id = 包名）与 `lib/client-registry.js`（插件注册表通道，bundle id = manifest id）
+- **双通道打包**：`lib/client.js`（官方 profile 通道，bundle id = 包名）与 `lib/client-registry.js`（插件注册表通道，bundle id = manifest id）。harness 0.1.x 官方加载链只消费前者；后者为外部 registry 通道预留，当前无消费者
 - 详细设计见 [docs/design.md](docs/design.md)
 
 ## 致谢

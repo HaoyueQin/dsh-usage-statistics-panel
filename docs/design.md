@@ -23,9 +23,9 @@ UsageCollector ──(turn,step 去重折叠)──▶ UsageStore (storage-domai
 
 ### collector.ts — 采集与去重
 
-- **实时**：`ctx.on('session/event')` 订阅。`assistant/message` 的 `data.usage`（TokenUsage）与 `assistant/chunk` 的 `chunk.type === 'usage'` 都是 usage 样本；`request/context` 提供 provider/model 归因。
-- **去重**：同一 `(turn, step)` 的流式采样与最终上报取后者（replace），与 `dsh-token-meter` 的 usage 投影语义一致——同一调用的重复上报不会重复计数。键为 `turn:step`，与事件类型无关。
-- **回扫**：首次启用时 `sessionPersistence.list()` 枚举全部会话，`inspect(id)` 读取完整事件日志（zstd 由后端内部处理），并发 4 逐会话回放同一折叠。单个会话读取失败不中断整体回扫（status.error 记录）。
+- **实时**：`ctx.on('session/event')` 订阅。`assistant/message` 的 `data.usage`（TokenUsage）与 `assistant/chunk` 的 `chunk.type === 'usage'` 都是 usage 样本；`request/context` 提供 provider/model 归因。fold 桶与归因路由都按回调携带的 sessionId 分桶，并发会话互不干扰；`session/disposed` 时释放对应桶。
+- **去重**：同一会话内同一 `(turn, step)` 的流式采样与最终上报取后者（replace），与 `dsh-token-meter` 的 usage 投影语义一致（该投影同样是 per-session 的）——同一调用的重复上报不会重复计数，跨会话的相同 `(turn, step)` 各自成立。
+- **回扫**：首次启用时 `sessionPersistence.list()` 枚举全部会话（当前活跃会话除外），`inspect(id)` 读取完整事件日志（zstd 由后端内部处理），并发 4 逐会话回放——每个会话使用全新的独立 fold。单个会话读取失败不中断整体回扫（status.error 记录）；游标按批（32 个/次）串行写回，避免并发读改写丢 id。
 
 ### store.ts — 持久化
 
@@ -52,7 +52,7 @@ Token 桶语义：`inputTokens` 是 uncached input（即缓存 miss 侧），`ca
 
 - `POST /usage/api/range`：`{ range, from?, to? }` → `UsageStatsRange`
 - `POST /usage/api/status`：`BackfillStatus`
-- 信任围栏：Host 头为 loopback 或 webRuntime.trustedHosts（与 `/api` 网关同源），否则 403
+- 信任围栏与 `/api` 网关同源同语义（dsh-client-connection `isTrustedApiRequest`）：① Host 头须为 loopback 或 webRuntime.trustedHosts 授权（无端口条目匹配任意端口，带端口条目精确匹配 host:port）；② `sec-fetch-site: cross-site` 一律拒绝；③ 携带 Origin 时必须与 Host 同源（"null" 视为不透明 origin 拒绝）。任一不满足即 403。
 
 ## Client 半
 
@@ -81,8 +81,11 @@ Token 桶语义：`inputTokens` 是 uncached input（即缓存 miss 侧），`ca
 - client bundle ×2：`lib/client.js`（官方 profile 通道，id=包名）与 `lib/client-registry.js`（注册表通道，id=manifest id），lazy-CJS factory（`window.__ModuleLoader__.load`），external 走模块表（react/cordis/dsh-client-* 白名单），其余内联，purity gate 拒非白名单 `@deepseek-ai` 值导入
 - CSS Modules（lightningcss）哈希类名 + `<style data-plugin>` 注入
 
+> 通道状态：harness 0.1.x 的官方加载链只消费 package.json 的 `dsh.client` 声明 + `exports["./client"]`（entry id = 包名，即 `lib/client.js`）；`dsh.plugin.json` 与 `lib/client-registry.js` 目前不被 harness 任何代码读取，是为外部 registry 通道预留的产物。只装官方 profile 通道时二者可忽略。
+
 ## 已知限制
 
 - 回扫后的**增量**不重放旧会话（避免重复计数）；新会话实时采集
+- 回扫跳过启动时的**活跃会话**：这些会话在插件启动前的历史 usage 不计（避免与实时流重复折叠）；其后的增量由实时监听覆盖
 - 旧会话日志若无 provider usage（或日志被压缩清理），无法回溯
 - `usage_history` 域版本 1；若需迁移，bump domain version 并写迁移

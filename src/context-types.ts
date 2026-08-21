@@ -86,7 +86,6 @@ export interface UsageTokens {
 export interface UsageSessionPersistence {
   list(signal?: AbortSignal): Promise<UsageSessionHeader[]>
   inspect(id: string, signal?: AbortSignal): Promise<{ meta: UsageSessionHeader; events: UsageSessionEvent[] }>
-  readFrom(id: string, fromSeq: number, signal?: AbortSignal): Promise<{ meta: UsageSessionHeader; events: UsageSessionEvent[] }>
 }
 
 /** The live session store (mirror of @deepseek-ai/dsh-session SessionStore). */
@@ -139,6 +138,8 @@ export interface UsageSettingsService {
 export interface UsageLocaleService {
   register(namespace: string, ...entries: Array<[string, Record<string, string>]>): () => void
   bind(namespace: string): (key: string) => string
+  /** The active locale id ("zh" | "zh-TW" | "en"), for locale-aware formatting. */
+  getLocale(): { active: string }
 }
 
 /** The client connection handle (mirror of @deepseek-ai/dsh-client-connection). */

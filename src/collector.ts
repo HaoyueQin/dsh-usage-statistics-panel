@@ -18,15 +18,17 @@
  *
  * Idempotence: within ONE session, the same (turn, step) may report usage
  * more than once (a streaming sample then the final assistant/message;
- * compaction replays). The fold keeps the newest sample per (turn, step) and
- * replaces the earlier one instead of double counting — the same replace
- * semantics as dsh-token-meter's usage projection, which is likewise a
- * per-session projection. Cross-session (turn, step) collisions are NOT
- * deduped: two sessions both own a turn 1 / step 1, and each must count.
- * The store's per-day rows accumulate, so re-folding the same log must not
- * add twice: live events are only folded once per event; backfill runs on a
- * fresh (empty) domain and never re-processes a session the store already
- * saw (guarded by the per-session cursor below).
+ * compaction replays). The fold emits each (turn, step) key exactly once and
+ * keeps the newest values in its own state — see the replaceSample note for
+ * why the store observably keeps the FIRST emission. Cross-session
+ * (turn, step) collisions are NOT deduped: two sessions both own a turn 1 /
+ * step 1, and each must count. The store's per-day rows accumulate, so
+ * re-folding the same log must not add twice: live events are only folded
+ * once per event, and every session the live listener touches is written
+ * into the durable backfill cursor, so a later boot's backfill never
+ * re-processes it (the cursor is what makes a restart safe — without it a
+ * disposed session would be replayed from its persisted log on top of the
+ * samples the live path already recorded).
  */
 
 import type { Context } from './context-types.ts'
@@ -56,12 +58,6 @@ interface AssistantChunkData extends UsageEventData {
 interface RequestContextData {
   provider?: string
   model?: string
-}
-
-/** The turn/end payload: why the turn ended (reasonix records every ended turn). */
-interface TurnEndData {
-  turn?: number
-  reason?: { kind?: string }
 }
 
 export interface CollectorOptions {
@@ -170,17 +166,23 @@ export class UsageFold {
     }
     if (key === null) return sample
     const prev = this.seen.get(key)
+    // Track the newest report internally either way; the fold must NEVER
+    // mutate an object the store already received.
+    this.seen.set(key, sample)
     if (prev) {
-      // Replace: the later sample wins (same (turn, step)), never add.
-      prev.inputTokens = sample.inputTokens
-      prev.outputTokens = sample.outputTokens
-      prev.cacheReadTokens = sample.cacheReadTokens
-      prev.cacheWriteTokens = sample.cacheWriteTokens
-      prev.day = sample.day
+      // Duplicate report for a known (turn, step): swallow it. The shipped
+      // adapters emit the identical TokenUsage on the streaming chunk and
+      // the final message (llm-deepseek yields one `pendingUsage` at DONE;
+      // llm-pi-ai only on done/error), so first == last observationally.
+      // ponytail: true last-wins would need store-side delta corrections
+      // keyed by (session, turn, step); add them only if an adapter ever
+      // reports differing values for one call.
       return null
     }
-    this.seen.set(key, sample)
-    return sample
+    // First emission: hand the store its own copy. The internal object stays
+    // fold-owned — mutating it on a later duplicate would rewrite the sample
+    // already sitting in the store's write path through the shared reference.
+    return { ...sample }
   }
 }
 
@@ -207,6 +209,13 @@ export class UsageCollector {
    *  its own last-known route for attributing subsequent usage samples. */
   private routes = new Map<string, string>()
   private started = false
+  /** Live session ids already written (or queued) into the backfill cursor
+   *  this boot — one entry per session, not per event. */
+  private liveMarked = new Set<string>()
+  /** Coalescing buffer for cursor writes: a burst of first events flushes as
+   *  one markSeenSessions call instead of one global rewrite per session. */
+  private liveMarkBuffer = new Set<string>()
+  private liveMarkFlushScheduled = false
 
   constructor(
     private ctx: Context,
@@ -229,6 +238,28 @@ export class UsageCollector {
     return fold
   }
 
+  /** Write a live session into the durable backfill cursor (coalesced per
+   *  tick). This is the restart-safety invariant: `SessionStore.list()`
+   *  only reports LIVE sessions, so once a session is disposed its samples
+   *  exist only in the store rows and in the persisted log — without the
+   *  cursor, the next boot's backfill would replay that log on top of the
+   *  already-recorded rows and double every counter. The sentinel id for
+   *  unidentifiable sessions never matches a persisted header, so it is
+   *  not marked. */
+  private markLiveSession(sessionId: string): void {
+    if (sessionId === '(unknown-session)' || this.liveMarked.has(sessionId)) return
+    this.liveMarked.add(sessionId)
+    this.liveMarkBuffer.add(sessionId)
+    if (this.liveMarkFlushScheduled) return
+    this.liveMarkFlushScheduled = true
+    queueMicrotask(() => {
+      this.liveMarkFlushScheduled = false
+      const batch = [...this.liveMarkBuffer]
+      this.liveMarkBuffer.clear()
+      if (batch.length > 0) void this.store.markSeenSessions(batch)
+    })
+  }
+
   /** Attach the live listeners (call once from apply). */
   start(): void {
     if (this.started) return
@@ -238,6 +269,7 @@ export class UsageCollector {
     }
     ctx.on?.('session/event', (session: { id: string }, event: UsageSessionEvent) => {
       const sid = UsageCollector.sessionIdOf(session)
+      this.markLiveSession(sid)
       if (event.type === 'request/context') {
         const data = event.data as RequestContextData
         if (data.provider && data.model) this.routes.set(sid, `${data.provider}/${data.model}`)
@@ -268,10 +300,12 @@ export class UsageCollector {
   /** Run the one-time backfill: enumerate persisted sessions and replay each
    *  through its own fold. Idempotent — re-running on a populated store only
    *  re-folds sessions the store hasn't seen (guarded by a per-session
-   *  cursor persisted in the domain global; the fold's replace semantics
-   *  make a full replay safe only when the store is empty). Resolves early
-   *  (mid-scan) when `signal` aborts — the fiber teardown path uses this so
-   *  disposal does not leave a fire-and-forget scan writing behind it. */
+   *  cursor persisted in the domain global; the live listener writes every
+   *  session it touches into the same cursor, so the split of work between
+   *  the live path and the replay path is stable across restarts). Resolves
+   *  early (mid-scan) when `signal` aborts — the fiber teardown path uses
+   *  this so disposal does not leave a fire-and-forget scan writing behind
+   *  it. */
   async backfill(persistence: UsageSessionPersistence, sessions: UsageSessionStore, signal?: AbortSignal): Promise<void> {
     if (this.status.running) return
     if (signal?.aborted) return
@@ -284,12 +318,6 @@ export class UsageCollector {
       // sessions the store already saw: the fold's replace semantics dedupe
       // within one pass only, so a full replay would double every counter.
       const seen = await this.store.seenSessions()
-      if (seen.size === 0 && (await this.store.count()) > 0) {
-        // Rows without a cursor predate the per-call request/turn semantics
-        // (≤0.1.1): their requests use the old definition and turns are all
-        // zero. Rebuild once from the logs instead of replaying on top.
-        await this.store.clearDays()
-      }
       const targets = headers.filter((h) => !liveIds.has(h.id) && !seen.has(h.id))
       this.status.total = targets.length
       this.status.done = 0
@@ -308,6 +336,14 @@ export class UsageCollector {
           if (i >= targets.length) return
           const header = targets[i]!
           this.status.lastSessionId = header.id
+          // Liveness recheck at replay time: the snapshot above ages as the
+          // scan runs, and a session resumed mid-scan is owned by the live
+          // listener (which writes the cursor itself) — replaying it here
+          // too would double its usage.
+          if (sessions.list().some((s) => s.id === header.id)) {
+            this.status.done++
+            continue
+          }
           // One FRESH fold per session replay: (turn, step) keys are
           // session-scoped, so concurrent replays must never share a fold.
           const fold = new UsageFold()

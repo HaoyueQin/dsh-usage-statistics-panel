@@ -14,20 +14,15 @@ export type PanelLocale = 'zh' | 'zh-TW' | 'en'
 // client bundle may import it at runtime).
 export { providerOf, daysInRange as daysBetween } from '../shared.ts'
 
-/** Compact number formatting following the panel's active language (Chinese
- *  users get zh-CN compact units instead of leaking English suffixes). */
-export function formatUsageTokens(n: number, locale: PanelLocale = 'en'): string {
-  const languageTag = locale === 'zh' ? 'zh-CN' : locale === 'zh-TW' ? 'zh-TW' : 'en-US'
-  return new Intl.NumberFormat(languageTag, {
-    notation: 'compact',
-    maximumFractionDigits: 1,
-  }).format(n)
-}
-
-/** Chinese-style compact tokens (亿/万) for the tooltip values. */
-export function formatTokens(n: number): string {
-  if (n >= 1e8) return (n / 1e8).toFixed(n % 1e8 === 0 ? 0 : 1) + '亿'
-  if (n >= 1e4) return (n / 1e4).toFixed(n % 1e4 === 0 ? 0 : 1) + '万'
+/** Compact token formatting following the panel's active language: Chinese
+ *  locales get 亿/万 (simplified) or 億/萬 (traditional) units, English gets
+ *  the k/M/B chart convention. Small numbers carry no suffix. */
+export function formatTokens(n: number, locale: PanelLocale = 'en'): string {
+  if (locale === 'en') return formatCompact(n)
+  const yi = locale === 'zh' ? '亿' : '億'
+  const wan = locale === 'zh' ? '万' : '萬'
+  if (n >= 1e8) return (n / 1e8).toFixed(n % 1e8 === 0 ? 0 : 1) + yi
+  if (n >= 1e4) return (n / 1e4).toFixed(n % 1e4 === 0 ? 0 : 1) + wan
   return String(n)
 }
 

@@ -8,7 +8,6 @@
  * helpers are host-only and import the node faces explicitly.
  */
 
-import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { UsageHttpRequest, UsageHttpResponse } from './context-types.ts'
 
 /** One day's token usage and turn count in a trend series. */
@@ -124,14 +123,4 @@ export function writeError(res: UsageHttpResponse, err: unknown): void {
   // the route handler logs the real error server-side.
   const message = err instanceof UsageError ? err.message : 'internal error'
   writeJson(res, { ok: false, error: { code: 'usage_api_error', message } }, status)
-}
-
-/** Cast a structural response face to the real node ServerResponse. */
-export function asServerResponse(res: UsageHttpResponse): ServerResponse {
-  return res as ServerResponse
-}
-
-/** Cast a structural request face to the real node IncomingMessage. */
-export function asIncomingMessage(req: UsageHttpRequest): IncomingMessage {
-  return req as IncomingMessage
 }

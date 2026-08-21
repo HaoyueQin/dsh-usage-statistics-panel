@@ -12,7 +12,6 @@
  */
 
 import type {
-  DailyTokenUsage,
   ModelTokenUsage,
   ProviderTokenUsage,
   UsageStatsRange,

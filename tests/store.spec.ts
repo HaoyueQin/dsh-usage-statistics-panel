@@ -8,7 +8,15 @@ import { UsageStore, dayRowKey, type UsageDayRow } from '../src/store.ts'
 import type { UsageDomain, UsageKvTable, UsageStorageDomain } from '../src/context-types.ts'
 
 function memoryDomain(): UsageStorageDomain {
-  const records = new Map<string, UsageDayRow>()
+  return memoryDomainWith(new Map())
+}
+
+/** A storage-domain stand-in whose table starts with `records` and whose
+ *  global starts at `globalValue` (mirroring an absent cursor). */
+function memoryDomainWith(
+  records: Map<string, UsageDayRow>,
+  globalValue?: { backfilledSessions: string[] },
+): UsageStorageDomain {
   const table: UsageKvTable<string, UsageDayRow> = {
     get: (k) => records.get(k),
     entries: () => records.entries() as IterableIterator<[string, UsageDayRow]>,
@@ -31,7 +39,7 @@ function memoryDomain(): UsageStorageDomain {
   }
   const domain: UsageDomain = {
     table: () => table as UsageKvTable<string, unknown>,
-    global: { get: () => undefined, set: async () => {} },
+    global: { get: () => globalValue, set: async () => {} },
   }
   return {
     open: async () => domain,
@@ -92,9 +100,31 @@ describe('UsageStore', () => {
     expect(rows.map((r) => r.day)).toEqual(['2026-08-03'])
   })
 
-  it('dayRowKey round-trips through dayRowKeyParts', async () => {
-    const key = dayRowKey('2026-08-01', 'deepseek', 'deepseek/deepseek-chat')
-    expect(key).toBe('2026-08-01|deepseek|deepseek/deepseek-chat')
+  it('formats the day row key as day|provider|model', async () => {
+    expect(dayRowKey('2026-08-01', 'deepseek', 'deepseek/deepseek-chat')).toBe('2026-08-01|deepseek|deepseek/deepseek-chat')
+  })
+
+  it('rebuilds a pre-cursor store once at open (legacy rows, empty cursor)', async () => {
+    // The ≤0.1.1 shape: rows exist but no cursor was ever written. The
+    // rebuild decision runs inside ready(), so the rows are gone before the
+    // first record/seen call and the backfill repopulates from scratch.
+    const records = new Map<string, UsageDayRow>([
+      ['2026-08-01|deepseek|m', { day: '2026-08-01', provider: 'deepseek', model: 'm', inputTokens: 1, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, requests: 0, turns: 0, lastSeen: 0 }],
+    ])
+    const domain = memoryDomainWith(records)
+    const store = new UsageStore(domain)
+    await store.readyPromise()
+    expect(await store.count()).toBe(0)
+  })
+
+  it('keeps rows when the cursor is populated (no false rebuild)', async () => {
+    const records = new Map<string, UsageDayRow>([
+      ['2026-08-01|deepseek|m', { day: '2026-08-01', provider: 'deepseek', model: 'm', inputTokens: 1, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, requests: 0, turns: 0, lastSeen: 0 }],
+    ])
+    const domain = memoryDomainWith(records, { backfilledSessions: ['s1'] })
+    const store = new UsageStore(domain)
+    await store.readyPromise()
+    expect(await store.count()).toBe(1)
   })
 
   it('serializes concurrent cursor writes so no session id is lost', async () => {

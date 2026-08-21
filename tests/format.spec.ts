@@ -10,7 +10,6 @@ import {
   formatCompact,
   formatPercent,
   formatTokens,
-  formatUsageTokens,
   indexOfDay,
   niceTicks,
   providerOf,
@@ -18,24 +17,20 @@ import {
   smoothPath,
 } from '../src/client/format.ts'
 
-describe('formatUsageTokens', () => {
-  it('uses compact notation', () => {
-    expect(formatUsageTokens(1234, 'en')).toBe('1.2K')
-    expect(formatUsageTokens(12345, 'en')).toBe('12.3K')
-  })
-  it('uses zh-CN units for Chinese', () => {
-    expect(formatUsageTokens(12345, 'zh')).toBe('1.2万')
-  })
-  it('renders small numbers without a suffix', () => {
-    expect(formatUsageTokens(999, 'en')).toBe('999')
-  })
-})
-
 describe('formatTokens', () => {
-  it('uses 万/亿 for Chinese-style values', () => {
-    expect(formatTokens(15000)).toBe('1.5万')
-    expect(formatTokens(200000000)).toBe('2亿')
-    expect(formatTokens(999)).toBe('999')
+  it('uses 万/亿 for simplified Chinese', () => {
+    expect(formatTokens(15000, 'zh')).toBe('1.5万')
+    expect(formatTokens(200000000, 'zh')).toBe('2亿')
+    expect(formatTokens(999, 'zh')).toBe('999')
+  })
+  it('uses 萬/億 for traditional Chinese', () => {
+    expect(formatTokens(15000, 'zh-TW')).toBe('1.5萬')
+    expect(formatTokens(200000000, 'zh-TW')).toBe('2億')
+  })
+  it('falls back to the k/M/B chart convention for English', () => {
+    expect(formatTokens(1234, 'en')).toBe('1.2k')
+    expect(formatTokens(1500000, 'en')).toBe('1.5M')
+    expect(formatTokens(2500000000, 'en')).toBe('2.5B')
   })
 })
 

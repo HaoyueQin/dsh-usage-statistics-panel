@@ -52,7 +52,7 @@ describe('ChartTip placement', () => {
 
   it('places below the anchor, centered, clamped inside the panel', async () => {
     const { anchorEl, panelRef, tipSize } = mockGeometry({})
-    const { container } = render(
+    render(
       <ChartTip anchor={anchorEl} panelRef={panelRef}>
         <span>tip body</span>
       </ChartTip>,

@@ -5,17 +5,9 @@
  */
 import { describe, expect, it } from 'vitest'
 import { resolveRange } from '../src/routes.ts'
-import type { UsageStatsRequest } from '../src/wire.ts'
 
 function fixedNow(): Date {
   return new Date(2026, 7, 20, 15, 0, 0) // 2026-08-20 local
-}
-
-function dayKey(d: Date): string {
-  const y = d.getFullYear()
-  const m = String(d.getMonth() + 1).padStart(2, '0')
-  const day = String(d.getDate()).padStart(2, '0')
-  return `${y}-${m}-${day}`
 }
 
 describe('resolveRange', () => {
@@ -46,6 +38,20 @@ describe('resolveRange', () => {
 
   it('custom range rejects to < from', () => {
     expect(() => resolveRange({ range: 'custom', from: '2026-07-31', to: '2026-07-01' }, now)).toThrow(/>= from/)
+  })
+
+  it('custom range rejects well-formed but impossible calendar dates', () => {
+    // A regex alone passes these; the semantic parse must not.
+    expect(() => resolveRange({ range: 'custom', from: '2026-13-01', to: '2026-12-31' }, now)).toThrow(/valid from\/to/)
+    expect(() => resolveRange({ range: 'custom', from: '2026-02-30', to: '2026-03-01' }, now)).toThrow(/valid from\/to/)
+  })
+
+  it('custom range caps the span at 366 days', () => {
+    expect(() => resolveRange({ range: 'custom', from: '2025-01-01', to: '2026-12-31' }, now)).toThrow(/more than 366 days/)
+    // Exactly one leap year is accepted.
+    const { from, to } = resolveRange({ range: 'custom', from: '2024-01-01', to: '2024-12-31' }, now)
+    expect(from).toBe('2024-01-01')
+    expect(to).toBe('2024-12-31')
   })
 
   it('unknown/empty range defaults to the last 7 days', () => {

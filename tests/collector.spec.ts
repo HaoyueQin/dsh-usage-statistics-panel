@@ -13,6 +13,25 @@ function event(type: string, turn: number, step: number, time: number, data: Rec
 
 const T = new Date(2026, 7, 2, 12).getTime() // 2026-08-02 local
 
+/** A ctx whose `on` registrations are captured so tests can emit events. */
+function captureCtx() {
+  const listeners = new Map<string, Array<(...args: never[]) => void>>()
+  return {
+    ctx: {
+      on: (event: string, listener: (...args: never[]) => void) => {
+        const list = listeners.get(event) ?? []
+        list.push(listener)
+        listeners.set(event, list)
+      },
+    },
+    listeners,
+  }
+}
+
+function emit(listeners: Map<string, Array<(...args: never[]) => void>>, event: string, ...args: unknown[]): void {
+  for (const listener of listeners.get(event) ?? []) (listener as (...a: unknown[]) => void)(...args)
+}
+
 describe('UsageFold', () => {
   it('extracts usage from assistant/message and assistant/chunk', () => {
     const fold = new UsageFold()
@@ -40,18 +59,20 @@ describe('UsageFold', () => {
     expect(fold.fold(event('request/context', 1, 1, T, { provider: 'deepseek', model: 'chat' }))).toBeNull()
   })
 
-  it('replaces the earlier sample for the same (turn, step) instead of double counting', () => {
+  it('swallows a duplicate report for the same (turn, step) instead of double counting', () => {
     const fold = new UsageFold()
     // Streaming sample first, then the final assistant/message — same (1,1).
     const first = fold.fold(event('assistant/chunk', 1, 1, T, {
       chunk: { type: 'usage', usage: { inputTokens: 100, outputTokens: 50 } },
     }))
     expect(first!.inputTokens).toBe(100)
-    // The final message carries the authoritative usage; the fold replaces.
+    // The duplicate is swallowed: the fold emits each key exactly once, so
+    // the store keeps the FIRST emission (the shipped adapters report
+    // identical values on both events, so first == last observationally).
     const second = fold.fold(event('assistant/message', 1, 1, T, {
       usage: { inputTokens: 200, outputTokens: 90 },
     }))
-    expect(second).toBeNull() // replaced in place, no new sample
+    expect(second).toBeNull() // swallowed, no new sample
     // A later distinct (turn, step) still produces a new sample.
     const third = fold.fold(event('assistant/message', 1, 2, T, {
       usage: { inputTokens: 50, outputTokens: 10 },
@@ -112,7 +133,6 @@ describe('UsageCollector.backfill', () => {
   function memoryStore(preRows = 0) {
     const state = {
       recorded: [] as Array<Record<string, unknown>>,
-      cleared: 0,
       seen: new Set<string>(),
       marked: [] as string[][],
     }
@@ -120,7 +140,6 @@ describe('UsageCollector.backfill', () => {
       state,
       seenSessions: async () => new Set(state.seen),
       markSeenSessions: async (ids: Iterable<string>) => { const arr = [...ids]; state.marked.push(arr); for (const id of arr) state.seen.add(id) },
-      clearDays: async () => { state.cleared++ },
       count: async () => preRows,
       record: async (sample: Record<string, unknown>) => { state.recorded.push(sample) },
     } as unknown as ConstructorParameters<typeof UsageCollector>[1] & { state: typeof state }
@@ -133,27 +152,70 @@ describe('UsageCollector.backfill', () => {
     } as unknown as UsageSessionPersistence
   }
 
-  it('rebuilds a pre-cursor store once, then never re-folds seen sessions', async () => {
+  const events = [
+    { type: 'step/start', seq: 0, time: T, data: { turn: 1, step: 1 } },
+    { type: 'assistant/message', seq: 1, time: T, data: { turn: 1, step: 1, usage: { inputTokens: 10, outputTokens: 5 } } },
+    { type: 'turn/end', seq: 2, time: T, data: { turn: 1, reason: { kind: 'completed' } } },
+  ]
+
+  it('never re-folds a session the cursor already holds', async () => {
     const ctx = { on: () => {} }
-    const store = memoryStore(3) // rows without a cursor: the ≤0.1.1 shape
+    const store = memoryStore(3)
     const collector = new UsageCollector(ctx as never, store as never)
-    const events = [
-      { type: 'step/start', seq: 0, time: T, data: { turn: 1, step: 1 } },
-      { type: 'assistant/message', seq: 1, time: T, data: { turn: 1, step: 1, usage: { inputTokens: 10, outputTokens: 5 } } },
-      { type: 'turn/end', seq: 2, time: T, data: { turn: 1, reason: { kind: 'completed' } } },
-    ]
     await collector.backfill(persistence(['s1'], events), { list: () => [] } as never)
-    expect(store.state.cleared).toBe(1) // old-semantics rows dropped
     expect(store.state.recorded.length).toBe(3) // request marker + usage + turn
     expect(store.state.marked).toEqual([['s1']])
 
     // A second boot: the cursor holds s1, so nothing re-folds and the rows stay.
-    const store2pre = 0
-    const storeB = memoryStore(store2pre)
+    const storeB = memoryStore(3)
     storeB.state.seen.add('s1')
-    await collector.backfill(persistence(['s1'], events), { list: () => [] } as never)
+    const collectorB = new UsageCollector(ctx as never, storeB as never)
+    await collectorB.backfill(persistence(['s1'], events), { list: () => [] } as never)
     expect(storeB.state.recorded.length).toBe(0)
-    expect(storeB.state.cleared).toBe(0)
+  })
+
+  it('does not double-count a session the live listener already recorded (restart regression)', async () => {
+    // Boot 1: a live session S11 produces usage; the listener must write it
+    // into the durable cursor so boot 2's backfill skips its persisted log.
+    const seenAcrossBoots = new Set<string>()
+    function durableStore() {
+      const recorded: Array<Record<string, unknown>> = []
+      return {
+        recorded,
+        seenSessions: async () => new Set(seenAcrossBoots),
+        markSeenSessions: async (ids: Iterable<string>) => { for (const id of ids) seenAcrossBoots.add(id) },
+        count: async () => recorded.length,
+        record: async (sample: Record<string, unknown>) => { recorded.push(sample) },
+      } as unknown as ConstructorParameters<typeof UsageCollector>[1] & { recorded: Array<Record<string, unknown>> }
+    }
+    const ctx1 = captureCtx()
+    const store1 = durableStore()
+    const collector1 = new UsageCollector(ctx1.ctx as never, store1 as never)
+    collector1.start()
+    emit(ctx1.listeners, 'session/event', { id: 'S11' }, { type: 'request/context', seq: 0, time: T, data: { provider: 'deepseek', model: 'model-a' } })
+    emit(ctx1.listeners, 'session/event', { id: 'S11' }, { type: 'assistant/message', seq: 1, time: T, data: { turn: 1, step: 1, usage: { inputTokens: 1000, outputTokens: 500 } } })
+    expect(store1.recorded).toHaveLength(1)
+    // Drain the coalesced cursor write.
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(seenAcrossBoots.has('S11')).toBe(true)
+
+    // Boot 2: S11 is disposed (absent from the live list) but persisted —
+    // the backfill must NOT replay its log on top of the live-recorded row.
+    const store2 = durableStore()
+    const collector2 = new UsageCollector({ on: () => {} } as never, store2 as never)
+    await collector2.backfill(persistence(['S11'], events), { list: () => [] } as never)
+    expect(store2.recorded).toHaveLength(0)
+  })
+
+  it('skips a target that became live after the snapshot (liveness recheck)', async () => {
+    const ctx = { on: () => {} }
+    const store = memoryStore(0)
+    const collector = new UsageCollector(ctx as never, store as never)
+    // s2 is reported live by the session store even though the backfill
+    // snapshot listed it: replaying it would double the live path's samples.
+    await collector.backfill(persistence(['s1', 's2'], events), { list: () => [{ id: 's2' }] } as never)
+    expect(store.state.recorded.length).toBe(3) // only s1 replayed
+    expect(store.state.marked.flat()).toEqual(['s1'])
   })
 
   it('stops the scan when the abort signal fires', async () => {
@@ -176,30 +238,15 @@ describe('UsageCollector.backfill', () => {
 })
 
 describe('UsageCollector live attribution', () => {
-  function captureCtx() {
-    const listeners = new Map<string, Array<(...args: never[]) => void>>()
-    return {
-      ctx: {
-        on: (event: string, listener: (...args: never[]) => void) => {
-          const list = listeners.get(event) ?? []
-          list.push(listener)
-          listeners.set(event, list)
-        },
-      },
-      listeners,
-    }
-  }
-
   function recordingStore() {
     const recorded: Array<Record<string, unknown>> = []
     return {
       recorded,
+      seenSessions: async () => new Set<string>(),
+      markSeenSessions: async (ids: Iterable<string>) => { for (const _ of ids) {} },
+      count: async () => recorded.length,
       record: async (sample: Record<string, unknown>) => { recorded.push(sample) },
-    }
-  }
-
-  function emit(listeners: Map<string, Array<(...args: never[]) => void>>, event: string, ...args: unknown[]): void {
-    for (const listener of listeners.get(event) ?? []) (listener as (...a: unknown[]) => void)(...args)
+    } as unknown as ConstructorParameters<typeof UsageCollector>[1] & { recorded: Array<Record<string, unknown>> }
   }
 
   it('keeps concurrent sessions out of each other\'s dedupe and route buckets', () => {
@@ -221,6 +268,21 @@ describe('UsageCollector live attribution', () => {
     const b = store.recorded.find((s) => s.model === 'openai/model-b')
     expect(a?.inputTokens).toBe(1000)
     expect(b?.inputTokens).toBe(2000)
+  })
+
+  it('records the FIRST emission for a repeated (turn, step) into the store', () => {
+    // Documents the observable store semantics: the duplicate is swallowed,
+    // so the early streaming sample is what the rows hold. Shipped adapters
+    // emit identical values on both events, so first == last in practice.
+    const { ctx, listeners } = captureCtx()
+    const store = recordingStore()
+    const collector = new UsageCollector(ctx as never, store as never)
+    collector.start()
+    emit(listeners, 'session/event', { id: 'A' }, { type: 'assistant/chunk', seq: 0, time: T, data: { turn: 1, step: 1, chunk: { type: 'usage', usage: { inputTokens: 100, outputTokens: 50 } } } })
+    emit(listeners, 'session/event', { id: 'A' }, { type: 'assistant/message', seq: 1, time: T, data: { turn: 1, step: 1, usage: { inputTokens: 200, outputTokens: 90 } } })
+    expect(store.recorded).toHaveLength(1)
+    expect(store.recorded[0]!.inputTokens).toBe(100)
+    expect(store.recorded[0]!.outputTokens).toBe(50)
   })
 
   it('drops a disposed session\'s fold and route buckets', () => {

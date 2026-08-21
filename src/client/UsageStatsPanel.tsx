@@ -20,7 +20,7 @@ import { Button, Input } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { DailyTokenUsage, ModelTokenUsage, UsageStatsRange, UsageStatsRequest } from '../wire.ts'
 import { fetchRange, UsageApiError } from './api.ts'
 import { ChartTip } from './ChartTip.tsx'
-import { formatTokens, formatCompact, formatPercent, cacheRate, cacheRateText, daysBetween, localDay, indexOfDay, shortDay, providerOf, smoothPath, niceTicks } from './format.ts'
+import { formatTokens, formatCompact, formatPercent, cacheRate, cacheRateText, daysBetween, localDay, indexOfDay, shortDay, providerOf, smoothPath, niceTicks, type PanelLocale } from './format.ts'
 import type { UsageStatsKey } from './locales.ts'
 import type { UsageStatsTranslator } from './index.tsx'
 import css from './UsageStatsPanel.module.css'
@@ -49,7 +49,7 @@ const OTHER_COLOR = 'var(--dsw-chart-other)'
 type GroupedDaily = DailyTokenUsage & { otherByModel: Record<string, number> }
 type GroupedModel = ModelTokenUsage & { items?: ModelTokenUsage[] }
 
-export function UsageStatsPanel({ t }: { t: Translator }): JSX.Element {
+export function UsageStatsPanel({ t, locale }: { t: Translator; locale: PanelLocale }): JSX.Element {
   const [range, setRange] = useState<string>('30')
   const [customFrom, setCustomFrom] = useState('')
   const [customTo, setCustomTo] = useState('')
@@ -229,13 +229,13 @@ export function UsageStatsPanel({ t }: { t: Translator }): JSX.Element {
       </div>
 
       {error && <div className={css.errorBanner}>{error}</div>}
-      {loading && !stats && <div className={css.loading}>{t('refresh')}…</div>}
+      {loading && !stats && <div className={css.loading}>{t('loading')}…</div>}
       {!loading && stats && (
         <>
-          <StatCards stats={stats} t={t} />
-          <Heatmap daily={heatDaily} from={heatWindow.from} to={heatWindow.to} t={t} panelRef={panelRef} />
-          <DailyTrend stats={stats} models={trendModels} daily={trendDaily} t={t} colorForModel={colorForModel} panelRef={panelRef} />
-          <ModelUsage models={trendModels} t={t} colorForModel={colorForModel} panelRef={panelRef} />
+          <StatCards stats={stats} t={t} locale={locale} />
+          <Heatmap daily={heatDaily} from={heatWindow.from} to={heatWindow.to} t={t} locale={locale} panelRef={panelRef} />
+          <DailyTrend models={trendModels} daily={trendDaily} t={t} locale={locale} colorForModel={colorForModel} panelRef={panelRef} />
+          <ModelUsage models={trendModels} t={t} locale={locale} colorForModel={colorForModel} panelRef={panelRef} />
           {stats.to && (
             <div className={css.foot}>
               {t('asOf')} {stats.to}
@@ -243,7 +243,7 @@ export function UsageStatsPanel({ t }: { t: Translator }): JSX.Element {
           )}
         </>
       )}
-      {!loading && !error && stats && stats.tokens === 0 && (
+      {!loading && !error && stats && isEmptyRange(stats) && (
         <div className={css.empty}>{t('empty')}</div>
       )}
     </div>
@@ -252,10 +252,17 @@ export function UsageStatsPanel({ t }: { t: Translator }): JSX.Element {
 
 // ── Section 2+3: numeric cards ────────────────────────────────────────────
 
-function StatCards({ stats, t }: { stats: UsageStatsRange; t: Translator }) {
+/** A range is empty only when NOTHING was recorded in it: a pure-cache day
+ *  (zero input/output but real cache hits) or a failed-call day (requests
+ *  but no tokens) both carry real usage and must not read as "no data". */
+function isEmptyRange(stats: UsageStatsRange): boolean {
+  return stats.tokens === 0 && stats.cacheHit === 0 && stats.requests === 0 && stats.turns === 0
+}
+
+function StatCards({ stats, t, locale }: { stats: UsageStatsRange; t: Translator; locale: PanelLocale }) {
   const topModel = stats.topModel || '—'
   const cards: Array<{ icon: typeof Coins; label: string; value: string; sm?: boolean; wrap?: boolean; hint?: string }> = [
-    { icon: Coins, label: t('tokens'), value: formatTokens(stats.tokens) },
+    { icon: Coins, label: t('tokens'), value: formatTokens(stats.tokens, locale) },
     { icon: MessageSquare, label: t('sessions'), value: String(stats.turns) },
     { icon: MessagesSquare, label: t('requests'), value: String(stats.requests) },
     { icon: CalendarDays, label: t('activeDays'), value: String(stats.activeDays) },
@@ -325,7 +332,7 @@ function FitText({ text, className, maxSize }: { text: string; className?: strin
 const HEAT_BASE = 16 // cell size at which column trimming starts
 const HEAT_GAP = 1 // tight inter-cell gap (a large gap reads as scattered tiles)
 
-function Heatmap({ daily, from, to, t, panelRef }: { daily: DailyTokenUsage[]; from: string; to: string; t: Translator; panelRef: RefObject<HTMLDivElement | null> }) {
+function Heatmap({ daily, from, to, t, locale, panelRef }: { daily: DailyTokenUsage[]; from: string; to: string; t: Translator; locale: PanelLocale; panelRef: RefObject<HTMLDivElement | null> }) {
   const [tip, setTip] = useState<{ day: string; tokens: number; requests: number; cacheHit: number; cacheMiss: number; anchor: Element } | null>(null)
   const wrapRef = useRef<HTMLDivElement>(null)
   const [geom, setGeom] = useState<{ size: number; cols: number }>({ size: HEAT_BASE, cols: HEAT_WEEKS })
@@ -417,7 +424,7 @@ function Heatmap({ daily, from, to, t, panelRef }: { daily: DailyTokenUsage[]; f
         {tip && (
           <ChartTip anchor={tip.anchor} panelRef={panelRef}>
             <div className={css.tipTitle}>{tip.day}</div>
-            <div>{t('tokens')}: {formatTokens(tip.tokens)}</div>
+            <div>{t('tokens')}: {formatTokens(tip.tokens, locale)}</div>
             <div>{t('requests')}: {tip.requests}</div>
             <div>{t('cacheHitRate')}: {cacheRateText(tip.cacheHit, tip.cacheMiss)}</div>
           </ChartTip>
@@ -429,7 +436,7 @@ function Heatmap({ daily, from, to, t, panelRef }: { daily: DailyTokenUsage[]; f
 
 // ── Section 5: stacked daily token trend ──────────────────────────────────
 
-function DailyTrend({ stats, models, daily, t, colorForModel, panelRef }: { stats: UsageStatsRange; models: GroupedModel[]; daily: GroupedDaily[]; t: Translator; colorForModel: (m: string) => string; panelRef: RefObject<HTMLDivElement | null> }) {
+function DailyTrend({ models, daily, t, locale, colorForModel, panelRef }: { models: GroupedModel[]; daily: GroupedDaily[]; t: Translator; locale: PanelLocale; colorForModel: (m: string) => string; panelRef: RefObject<HTMLDivElement | null> }) {
   const [tip, setTip] = useState<{ day: string; total: number; byModel: Record<string, number>; otherByModel?: Record<string, number>; cacheHit: number; cacheMiss: number; anchor: Element } | null>(null)
   const [hover, setHover] = useState<string | null>(null)
   const wrapRef = useRef<HTMLDivElement>(null)
@@ -579,12 +586,12 @@ function DailyTrend({ stats, models, daily, t, colorForModel, panelRef }: { stat
         {tip && (
           <ChartTip anchor={tip.anchor} panelRef={panelRef}>
             <div className={css.tipTitle}>{tip.day}</div>
-            <div>{t('total')}: {formatTokens(tip.total)}</div>
+            <div>{t('total')}: {formatTokens(tip.total, locale)}</div>
             {legendModels.filter((m) => tip.byModel[m] !== undefined).map((m) => (
-              <div key={m} className={css.tipRow}><i className={css.legendSwatch} style={{ background: colorForModel(m) }} />{m === OTHER_MODEL ? t('other') : m}: {formatTokens(tip.byModel[m]!)}</div>
+              <div key={m} className={css.tipRow}><i className={css.legendSwatch} style={{ background: colorForModel(m) }} />{m === OTHER_MODEL ? t('other') : m}: {formatTokens(tip.byModel[m]!, locale)}</div>
             ))}
             {tip.otherByModel && Object.entries(tip.otherByModel).sort((a, b) => b[1] - a[1]).map(([m, v]) => (
-              <div key={m} className={clsx(css.tipRow, css.tipRowOther)}><i className={css.legendSwatch} style={{ background: OTHER_COLOR }} />{m}: {formatTokens(v)}</div>
+              <div key={m} className={clsx(css.tipRow, css.tipRowOther)}><i className={css.legendSwatch} style={{ background: OTHER_COLOR }} />{m}: {formatTokens(v, locale)}</div>
             ))}
             <div>{t('cacheHitRate')}: {cacheRateText(tip.cacheHit, tip.cacheMiss)}</div>
           </ChartTip>
@@ -608,7 +615,7 @@ function DailyTrend({ stats, models, daily, t, colorForModel, panelRef }: { stat
 
 // ── Section 6: per-model donut + list ─────────────────────────────────────
 
-function ModelUsage({ models, t, colorForModel, panelRef }: { models: GroupedModel[]; t: Translator; colorForModel: (m: string) => string; panelRef: RefObject<HTMLDivElement | null> }) {
+function ModelUsage({ models, t, locale, colorForModel, panelRef }: { models: GroupedModel[]; t: Translator; locale: PanelLocale; colorForModel: (m: string) => string; panelRef: RefObject<HTMLDivElement | null> }) {
   const [tip, setTip] = useState<{ model: string; tokens: number; percent: number; anchor: Element; items?: ModelTokenUsage[] } | null>(null)
   const [hover, setHover] = useState<string | null>(null)
   const [expandedOther, setExpandedOther] = useState(false)
@@ -638,6 +645,10 @@ function ModelUsage({ models, t, colorForModel, panelRef }: { models: GroupedMod
               const frac = m.tokens / total
               const dash = frac * CIRC
               const active = hover === m.model || tip?.model === m.model
+              // Keyboard parity for the donut: the segment count is bounded
+              // (top models + Other), so focusable segments stay a reasonable
+              // tab path — unlike the heatmap's ~180 cells.
+              const tipLabel = `${m.model === OTHER_MODEL ? t('other') : m.model}: ${formatTokens(m.tokens, locale)} (${formatPercent(m.percent)})`
               const el = (
                 <circle
                   key={m.model}
@@ -651,6 +662,8 @@ function ModelUsage({ models, t, colorForModel, panelRef }: { models: GroupedMod
                   strokeDashoffset={-offset}
                   transform={`rotate(-90 ${CX} ${CX})`}
                   style={{ strokeWidth: active ? SW + 5 : SW, transition: 'stroke-width 0.12s ease' }}
+                  tabIndex={0}
+                  aria-label={tipLabel}
                   onMouseEnter={(e) => {
                     setHover(m.model)
                     // The tip anchors to the hovered segment's viewport rect,
@@ -658,6 +671,11 @@ function ModelUsage({ models, t, colorForModel, panelRef }: { models: GroupedMod
                     setTip({ model: m.model, tokens: m.tokens, percent: m.percent, anchor: e.currentTarget, items: m.items })
                   }}
                   onMouseLeave={() => { setHover(null); setTip(null) }}
+                  onFocus={(e) => {
+                    setHover(m.model)
+                    setTip({ model: m.model, tokens: m.tokens, percent: m.percent, anchor: e.currentTarget, items: m.items })
+                  }}
+                  onBlur={() => { setHover(null); setTip(null) }}
                 />
               )
               offset += dash
@@ -669,12 +687,12 @@ function ModelUsage({ models, t, colorForModel, panelRef }: { models: GroupedMod
           {tip && (
             <ChartTip anchor={tip.anchor} panelRef={panelRef}>
               <div className={css.tipTitle}>{tip.model === OTHER_MODEL ? t('other') : tip.model}</div>
-              <div>{t('total')}: {formatTokens(tip.tokens)}</div>
+              <div>{t('total')}: {formatTokens(tip.tokens, locale)}</div>
               <div>{t('percent')}: {formatPercent(tip.percent)}</div>
               {tip.items && tip.items.length > 0 && (
                 <div className={css.tipBreakdown}>
                   {tip.items.map((it) => (
-                    <div key={it.model} className={clsx(css.tipRow, css.tipRowOther)}><i className={css.legendSwatch} style={{ background: OTHER_COLOR }} />{it.model}: {formatTokens(it.tokens)}</div>
+                    <div key={it.model} className={clsx(css.tipRow, css.tipRowOther)}><i className={css.legendSwatch} style={{ background: OTHER_COLOR }} />{it.model}: {formatTokens(it.tokens, locale)}</div>
                   ))}
                 </div>
               )}
@@ -721,7 +739,7 @@ function ModelUsage({ models, t, colorForModel, panelRef }: { models: GroupedMod
                   {isOther ? t('other') : m.model}
                 </span>
                 <span className={css.modelProvider}>{isOther ? '' : providerOf(m.model)}</span>
-                <span className={css.modelTokens}>{formatTokens(m.tokens)}</span>
+                <span className={css.modelTokens}>{formatTokens(m.tokens, locale)}</span>
                 <span className={css.modelPct}>{formatPercent(m.percent)}</span>
               </li>
             )
@@ -734,7 +752,7 @@ function ModelUsage({ models, t, colorForModel, panelRef }: { models: GroupedMod
                     <i className={css.legendSwatch} style={{ background: OTHER_COLOR }} />
                     <span className={css.modelName}>{it.model}</span>
                     <span className={css.modelProvider}>{providerOf(it.model)}</span>
-                    <span className={css.modelTokens}>{formatTokens(it.tokens)}</span>
+                    <span className={css.modelTokens}>{formatTokens(it.tokens, locale)}</span>
                     <span className={css.modelPct}>{formatPercent(it.percent)}</span>
                   </li>
                 ))}

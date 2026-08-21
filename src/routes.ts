@@ -11,7 +11,7 @@ import type { Context } from './context-types.ts'
 import type { UsageHttpRequest, UsageHttpResponse, UsageWebRoute } from './context-types.ts'
 import { UsageStore } from './store.ts'
 import { UsageCollector } from './collector.ts'
-import { aggregateSamples, daysInRange } from './query.ts'
+import { aggregateSamples } from './query.ts'
 import type { UsageSample } from './query.ts'
 import type { BackfillStatus, UsageStatsRange, UsageStatsRequest } from './wire.ts'
 import { UsageError, readJsonBody, writeError, writeJson } from './wire.ts'
@@ -23,6 +23,22 @@ export interface RoutesDeps {
   /** Resolve the trusted-host list live (webRuntime.trustedHosts). */
   trustedHosts: () => string[]
 }
+
+/** Parse a strict `YYYY-MM-DD` calendar date (rejects rolled-over shapes
+ *  like "2026-13-45" that a regex alone would pass). */
+function parseDayKey(value: string): { y: number; m: number; d: number } | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value)
+  if (match === null) return null
+  const y = Number(match[1])
+  const m = Number(match[2])
+  const d = Number(match[3])
+  const dt = new Date(y, m - 1, d)
+  return dt.getFullYear() === y && dt.getMonth() === m - 1 && dt.getDate() === d ? { y, m, d } : null
+}
+
+/** Longest custom span accepted (one leap year) — bounds the daily series
+ *  size and the response body against a misbehaving trusted client. */
+const MAX_CUSTOM_SPAN_DAYS = 366
 
 /** Resolve a request's [from, to] into inclusive local day keys. */
 export function resolveRange(req: UsageStatsRequest, now = new Date()): { from: string; to: string } {
@@ -47,11 +63,19 @@ export function resolveRange(req: UsageStatsRequest, now = new Date()): { from: 
       if (!req.from || !req.to) {
         throw new UsageError(400, 'usage stats: custom range needs valid from/to dates (YYYY-MM-DD)')
       }
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(req.from) || !/^\d{4}-\d{2}-\d{2}$/.test(req.to)) {
+      const from = parseDayKey(req.from)
+      const to = parseDayKey(req.to)
+      if (from === null || to === null) {
         throw new UsageError(400, 'usage stats: custom range needs valid from/to dates (YYYY-MM-DD)')
       }
       if (req.to < req.from) {
         throw new UsageError(400, 'usage stats: custom to must be >= from')
+      }
+      // Calendar-day span via UTC noon-free date math: both keys are plain
+      // calendar dates, so the millisecond difference is exact whole days.
+      const spanDays = (Date.UTC(to.y, to.m - 1, to.d) - Date.UTC(from.y, from.m - 1, from.d)) / 86_400_000 + 1
+      if (spanDays > MAX_CUSTOM_SPAN_DAYS) {
+        throw new UsageError(400, `usage stats: custom range spans more than ${MAX_CUSTOM_SPAN_DAYS} days`)
       }
       return { from: req.from, to: req.to }
     }
@@ -64,32 +88,35 @@ export function resolveRange(req: UsageStatsRequest, now = new Date()): { from: 
   }
 }
 
-/** Build the aggregate for a range from the store rows. */
+/** Build the aggregate for a range from the store rows. The per-row request
+ *  and turn counts are yielded lazily as markers, so no intermediate array
+ *  is materialized regardless of range size. */
 export async function aggregateRange(store: UsageStore, from: string, to: string): Promise<UsageStatsRange> {
   const rows = await store.rangeRows(from, to)
-  const samples: UsageSample[] = []
-  for (const row of rows) {
-    // Any real token traffic makes the row a token sample — including a
-    // pure-cache call whose uncached input and output are both zero.
-    if (row.inputTokens + row.outputTokens + row.cacheReadTokens + row.cacheWriteTokens > 0) {
-      samples.push({
-        day: row.day,
-        model: row.model,
-        inputTokens: row.inputTokens,
-        outputTokens: row.outputTokens,
-        cacheReadTokens: row.cacheReadTokens,
-        cacheWriteTokens: row.cacheWriteTokens,
-      })
+  const samples = (function* (): Generator<UsageSample> {
+    for (const row of rows) {
+      // Any real token traffic makes the row a token sample — including a
+      // pure-cache call whose uncached input and output are both zero.
+      if (row.inputTokens + row.outputTokens + row.cacheReadTokens + row.cacheWriteTokens > 0) {
+        yield {
+          day: row.day,
+          model: row.model,
+          inputTokens: row.inputTokens,
+          outputTokens: row.outputTokens,
+          cacheReadTokens: row.cacheReadTokens,
+          cacheWriteTokens: row.cacheWriteTokens,
+        }
+      }
+      // Requests live on the row as a count (one per provider call, tokens or
+      // not); expand them into request markers for the shared aggregator.
+      for (let i = 0; i < row.requests; i++) {
+        yield { day: row.day, model: row.model, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, request: true }
+      }
+      for (let i = 0; i < row.turns; i++) {
+        yield { day: row.day, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, turn: true }
+      }
     }
-    // Requests live on the row as a count (one per provider call, tokens or
-    // not); expand them into request markers for the shared aggregator.
-    for (let i = 0; i < row.requests; i++) {
-      samples.push({ day: row.day, model: row.model, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, request: true })
-    }
-    for (let i = 0; i < row.turns; i++) {
-      samples.push({ day: row.day, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, turn: true })
-    }
-  }
+  })()
   return aggregateSamples(samples, { from, to })
 }
 

@@ -14,7 +14,6 @@
 
 import { defineDomain, domainTable } from '@deepseek-ai/dsh-storage-domain'
 import type { UsageStorageDomain, UsageKvTable, UsageDomain } from './context-types.ts'
-import { dayKey } from './query.ts'
 import type { UsageSample } from './query.ts'
 import { z } from 'zod'
 
@@ -73,11 +72,6 @@ export function dayRowKey(day: string, provider: string, model: string): string 
   return `${day}|${provider}|${model}`
 }
 
-export function dayRowKeyParts(key: string): { day: string; provider: string; model: string } {
-  const [day, provider, model] = key.split('|')
-  return { day: day ?? '', provider: provider ?? '', model: model ?? '' }
-}
-
 export class UsageStore {
   private table: UsageKvTable<string, UsageDayRow> | null = null
   private domainHandle: UsageDomain | null = null
@@ -91,9 +85,21 @@ export class UsageStore {
   private markChain: Promise<void> = Promise.resolve()
 
   constructor(ctx: UsageStorageDomain) {
-    this.ready = ctx.open(usageHistoryDomain).then((domain) => {
+    this.ready = ctx.open(usageHistoryDomain).then(async (domain) => {
       this.domainHandle = domain
       this.table = domain.table('days') as UsageKvTable<string, UsageDayRow>
+      // One-time rebuild of pre-cursor rows (≤0.1.1 wrote the old request
+      // semantics and no turns at all): rows paired with a completely empty
+      // cursor cannot be told apart from a half-written new-world store, and
+      // both recover by dropping the rows and letting the backfill replay
+      // from scratch. Running inside ready() means every later record, mark,
+      // or cursor read — including the live listener's first writes — lands
+      // after the decision, so no ordering race exists.
+      const value = domain.global?.get() as { backfilledSessions?: string[] } | undefined
+      const cursorEmpty = (value?.backfilledSessions?.length ?? 0) === 0
+      if (cursorEmpty && this.table.keys().next().done === false) {
+        for (const key of [...this.table.keys()]) await this.table.delete(key)
+      }
     })
   }
 
@@ -125,15 +131,6 @@ export class UsageStore {
       () => undefined,
     )
     return write
-  }
-
-  /** Drop every day row — the one-time rebuild path for a pre-cursor store
-   *  (≤0.1.1 rows carry the old request semantics and no turns at all, so a
-   *  replay on top of them would double every token). */
-  async clearDays(): Promise<void> {
-    await this.ready
-    const table = this.requireTable()
-    for (const key of [...table.keys()]) await table.delete(key)
   }
 
   /** Opens the domain (lazily awaited by every operation). */

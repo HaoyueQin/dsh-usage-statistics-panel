@@ -15,10 +15,14 @@ import type { InjectFace, PropsLocale, PropsRuntime, TranslateNS } from '@deepse
 import { UsageStatsPanel } from './UsageStatsPanel.tsx'
 import { registerSettingsNavIcon } from './settings-nav-icon.ts'
 import { LOCALE_NS, en, zh, zhTW, type UsageStatsKey } from './locales.ts'
+import type { PanelLocale } from './format.ts'
 
 export interface UsageStatsInjected {
   /** Refresh the aggregate after the backfill completes. */
   backfill?: () => void
+  /** The active locale id ("zh" | "zh-TW" | "en"), read live at render time
+   *  so number formatting follows the language switch. */
+  locale?: () => string
 }
 
 /** The typed translator seat the framework injects for this namespace. */
@@ -37,9 +41,17 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 
 export const inject = ['slots', 'locale']
 
-/** The settings-section renderer: hands the locale seat to the panel. */
+/** Map the locale service's active id onto the panel's formatter locales. */
+function panelLocaleOf(active: string | undefined): PanelLocale {
+  return active === 'zh' ? 'zh' : active === 'zh-TW' ? 'zh-TW' : 'en'
+}
+
+/** The settings-section renderer: hands the locale seat and the active
+ *  language to the panel (the language switch re-renders the section through
+ *  the locale seat, so reading the getter at render time stays current). */
 export function UsageStatsSection(props: UsageStatsSectionProps): JSX.Element {
-  return <UsageStatsPanel t={props.t} />
+  const locale = panelLocaleOf(props.locale?.())
+  return <UsageStatsPanel t={props.t} locale={locale} />
 }
 
 export function apply(ctx: ClientContext): void {
@@ -72,6 +84,8 @@ export function apply(ctx: ClientContext): void {
     order: 30,
     label: () => t('nav'),
     locale: LOCALE_NS,
-    inject: (): UsageStatsInjected => ({}),
+    inject: (): UsageStatsInjected => ({
+      locale: () => ctx.locale.getLocale().active,
+    }),
   }, UsageStatsSection))
 }

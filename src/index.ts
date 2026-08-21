@@ -15,17 +15,13 @@ import type { Context } from './context-types.ts'
 import { UsageStore } from './store.ts'
 import { UsageCollector } from './collector.ts'
 import { buildUsageRoute } from './routes.ts'
-import { settingsNamespace } from '@deepseek-ai/dsh-settings'
 
 export const name = 'dsh-usage-statistics-panel'
 
-/** The settings namespace pairing host and browser halves. */
-export const USAGE_STATS_NS = settingsNamespace('usage-statistics')
-
 /** Services required before mounting: the webserver routes, the session
- *  persistence + live store (backfill + live events), the storage domain
- *  hub (durable rows), and the settings seam (namespace registration). */
-export const inject = ['webServer', 'sessionPersistence', 'sessions', 'storageDomain', 'settings']
+ *  persistence + live store (backfill + live events), and the storage domain
+ *  hub (durable rows). */
+export const inject = ['webServer', 'sessionPersistence', 'sessions', 'storageDomain']
 
 export interface UsageStatsConfig {
   /** The source label recorded with every live sample ("" = unlabelled). */

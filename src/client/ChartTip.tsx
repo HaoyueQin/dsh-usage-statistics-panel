@@ -43,6 +43,13 @@ export function ChartTip({ anchor, panelRef, children, gap = 8, margin = 8 }: Ch
       const h = el.offsetHeight
       if (w === 0 || h === 0) return // not measured yet; the next pass catches it
       const a = anchor.getBoundingClientRect()
+      // A stale anchor — detached from the document by a geometry re-render —
+      // measures as an all-zero rect, which would fling the tip to the panel
+      // edge. Hide it until the next hover re-anchors.
+      if (a.width === 0 && a.height === 0 && a.left === 0 && a.top === 0) {
+        setPos(null)
+        return
+      }
       // The panel is the visible region the tip must stay inside; without it
       // (or while it measures 0) the viewport bounds the tip instead.
       const p = panelRef.current?.getBoundingClientRect()

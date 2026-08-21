@@ -20,6 +20,7 @@ export type UsageStatsKey =
   | 'from'
   | 'to'
   | 'refresh'
+  | 'loading'
   | 'tokens'
   | 'sessions'
   | 'requests'
@@ -53,6 +54,7 @@ export const en: Record<UsageStatsKey, string> = {
   from: 'From',
   to: 'To',
   refresh: 'Refresh',
+  loading: 'Loading',
   tokens: 'Token usage',
   sessions: 'Sessions',
   requests: 'Requests',
@@ -87,6 +89,7 @@ export const zh: Record<UsageStatsKey, string> = {
   from: '开始日期',
   to: '结束日期',
   refresh: '刷新',
+  loading: '加载中',
   tokens: 'Tokens 用量',
   sessions: '会话数量',
   requests: '请求数量',
@@ -121,6 +124,7 @@ export const zhTW: Record<UsageStatsKey, string> = {
   from: '開始日期',
   to: '結束日期',
   refresh: '重新整理',
+  loading: '載入中',
   tokens: 'Tokens 用量',
   sessions: '會話數量',
   requests: '請求數量',

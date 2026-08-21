@@ -104,7 +104,10 @@ export interface UsageSessionHandle {
 export interface UsageKvTable<K extends string, V> {
   get(key: K): V | undefined
   entries(): IterableIterator<[K, V]>
+  keys(): IterableIterator<K>
+  readonly size: number
   put(key: K, value: V): Promise<void>
+  delete(key: K): Promise<boolean>
   update(key: K, fn: (current: V) => V): Promise<V>
 }
 

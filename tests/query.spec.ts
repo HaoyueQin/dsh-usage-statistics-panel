@@ -50,6 +50,10 @@ describe('aggregateSamples', () => {
       sample({ day: '2026-08-01', model: 'deepseek/deepseek-chat', inputTokens: 100, outputTokens: 50, cacheReadTokens: 40, cacheWriteTokens: 10 }),
       sample({ day: '2026-08-01', model: 'deepseek/deepseek-chat', inputTokens: 200, outputTokens: 100, cacheReadTokens: 180, cacheWriteTokens: 20 }),
       sample({ day: '2026-08-02', model: 'anthropic/claude', inputTokens: 300, outputTokens: 0 }),
+      // Requests come from the per-call markers, one per provider call.
+      sample({ day: '2026-08-01', model: 'deepseek/deepseek-chat', request: true }),
+      sample({ day: '2026-08-01', model: 'deepseek/deepseek-chat', request: true }),
+      sample({ day: '2026-08-02', model: 'anthropic/claude', request: true }),
     ]
     const out = aggregateSamples(samples, { from: '2026-08-01', to: '2026-08-02' })
     expect(out.tokens).toBe(750)
@@ -64,6 +68,7 @@ describe('aggregateSamples', () => {
   it('counts turns separately; turn-only days do not add to active days', () => {
     const samples: UsageSample[] = [
       sample({ day: '2026-08-01', model: 'deepseek/deepseek-chat', inputTokens: 10, outputTokens: 5 }),
+      sample({ day: '2026-08-01', model: 'deepseek/deepseek-chat', request: true }),
       { day: '2026-08-02', inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, turn: true },
     ]
     const out = aggregateSamples(samples, { from: '2026-08-01', to: '2026-08-02' })

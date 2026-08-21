@@ -13,7 +13,7 @@
  */
 
 import { defineDomain, domainTable } from '@deepseek-ai/dsh-storage-domain'
-import type { UsageStorageDomain, UsageKvTable } from './context-types.ts'
+import type { UsageStorageDomain, UsageKvTable, UsageDomain } from './context-types.ts'
 import { dayKey } from './query.ts'
 import type { UsageSample } from './query.ts'
 import { z } from 'zod'
@@ -52,9 +52,17 @@ export const usageDayRowSchema = z.object({
   lastSeen: z.number(),
 })
 
+/** The domain's global singleton: the backfill cursor. Session ids already
+ *  replayed into the store live here, so a reboot's backfill only folds
+ *  sessions it has never seen (a full replay would double every counter —
+ *  the fold's replace semantics only dedupe within one pass). */
 export const usageHistoryDomain = defineDomain({
   name: 'usage_history',
   version: 1,
+  global: {
+    schema: z.object({ backfilledSessions: z.array(z.string()) }),
+    initial: { backfilledSessions: [] as string[] },
+  },
   tables: {
     days: domainTable<string, UsageDayRow>(usageDayRowSchema),
   },
@@ -72,12 +80,42 @@ export function dayRowKeyParts(key: string): { day: string; provider: string; mo
 
 export class UsageStore {
   private table: UsageKvTable<string, UsageDayRow> | null = null
+  private domainHandle: UsageDomain | null = null
   private ready: Promise<void>
 
   constructor(ctx: UsageStorageDomain) {
     this.ready = ctx.open(usageHistoryDomain).then((domain) => {
+      this.domainHandle = domain
       this.table = domain.table('days') as UsageKvTable<string, UsageDayRow>
     })
+  }
+
+  /** Session ids already replayed into the store (the backfill cursor).
+   *  A medium without a global (pre-cursor rows) yields an empty set, which
+   *  would replay everything once — acceptable only for a fresh install, so
+   *  callers pairing this with markSeenSessions still converge after one
+   *  pass. */
+  async seenSessions(): Promise<Set<string>> {
+    await this.ready
+    const value = this.domainHandle?.global?.get() as { backfilledSessions?: string[] } | undefined
+    return new Set(value?.backfilledSessions ?? [])
+  }
+
+  /** Persist session ids as replayed (merges into the cursor). */
+  async markSeenSessions(ids: Iterable<string>): Promise<void> {
+    await this.ready
+    const seen = await this.seenSessions()
+    for (const id of ids) seen.add(id)
+    await this.domainHandle?.global?.set({ backfilledSessions: [...seen] })
+  }
+
+  /** Drop every day row — the one-time rebuild path for a pre-cursor store
+   *  (≤0.1.1 rows carry the old request semantics and no turns at all, so a
+   *  replay on top of them would double every token). */
+  async clearDays(): Promise<void> {
+    await this.ready
+    const table = this.requireTable()
+    for (const key of [...table.keys()]) await table.delete(key)
   }
 
   /** Opens the domain (lazily awaited by every operation). */
@@ -112,13 +150,19 @@ export class UsageStore {
       if (sample.turn) {
         return { ...base, turns: base.turns + 1, lastSeen: Date.now() }
       }
+      if (sample.request) {
+        // A provider-call marker (step/start or a started retry): one request,
+        // no tokens — reasonix counts failed calls too. Requests are counted
+        // ONLY here: a successful call also produces a usage sample, and
+        // counting both would double every call.
+        return { ...base, requests: base.requests + 1, lastSeen: Date.now() }
+      }
       return {
         ...base,
         inputTokens: base.inputTokens + sample.inputTokens,
         outputTokens: base.outputTokens + sample.outputTokens,
         cacheReadTokens: base.cacheReadTokens + sample.cacheReadTokens,
         cacheWriteTokens: base.cacheWriteTokens + sample.cacheWriteTokens,
-        requests: base.requests + (sample.inputTokens + sample.outputTokens > 0 ? 1 : 0),
         lastSeen: Date.now(),
       }
     }

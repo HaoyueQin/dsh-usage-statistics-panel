@@ -53,6 +53,18 @@ interface RequestContextData {
   model?: string
 }
 
+/** The turn/end payload: why the turn ended (reasonix records every ended turn). */
+interface TurnEndData {
+  turn?: number
+  reason?: { kind?: string }
+}
+
+/** The llm/retry-started payload: one actual retried provider call. */
+interface RetryStartedData {
+  turn?: number
+  step?: number
+}
+
 export interface CollectorOptions {
   /** The source label recorded with every sample (matches the reasonix Source). */
   source?: string
@@ -89,9 +101,32 @@ export class UsageFold {
   }
 
   /** Fold one event. Returns the sample to persist, or null when the event
-   *  carries no (new) usage. */
+   *  carries no (new) usage or turn marker. */
   fold(ev: UsageSessionEvent): UsageSample | null {
-    if (ev.type === 'request/context') return null
+    if (ev.type === 'turn/end') {
+      // Every ended turn counts once (reasonix TurnDone parity): a turn ends
+      // exactly once, so no dedupe key is needed. Failed turns end too, and
+      // reasonix emits TurnDone regardless of the run's error.
+      return { day: dayKey(ev.time), inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, turn: true }
+    }
+    if (ev.type === 'step/start' || ev.type === 'llm/retry-started') {
+      // One actual provider call. reasonix counts every provider call as a
+      // request (usage.RequestCount, defaulting to 1) — including calls that
+      // fail and report no tokens. DSH's TokenUsage has no RequestCount field,
+      // so requests are derived from the call boundaries: `step/start` opens
+      // exactly one model call ("one model call plus the tool executions it
+      // requested"), and `llm/retry-started` marks each actually-started retry
+      // of that call (a scheduled-but-cancelled retry never reaches -started).
+      // The marker carries no tokens; the store counts it as one request.
+      return {
+        day: dayKey(ev.time),
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
+        request: true,
+      }
+    }
     if (ev.type === 'assistant/chunk') {
       const data = ev.data as AssistantChunkData
       const usage = data.chunk?.type === 'usage' ? data.chunk.usage : undefined
@@ -171,6 +206,10 @@ export class UsageCollector {
       }
       const sample = this.fold.fold(event)
       if (!sample) return
+      // A request marker carries no tokens; attribute it to the route that
+      // resolved it (a request/context before any usage keeps the route from
+      // the previous call — close enough for the "requests" metric, which is
+      // provider-scoped like reasonix's per-source rows).
       sample.model = this.lastRoute || undefined
       void this.store.record(sample)
     })
@@ -194,7 +233,17 @@ export class UsageCollector {
     try {
       const headers = await persistence.list()
       const liveIds = new Set(sessions.list().map((s) => s.id))
-      const targets = headers.filter((h) => !liveIds.has(h.id))
+      // The per-session cursor keeps a reboot's backfill from re-folding
+      // sessions the store already saw: the fold's replace semantics dedupe
+      // within one pass only, so a full replay would double every counter.
+      const seen = await this.store.seenSessions()
+      if (seen.size === 0 && (await this.store.count()) > 0) {
+        // Rows without a cursor predate the per-call request/turn semantics
+        // (≤0.1.1): their requests use the old definition and turns are all
+        // zero. Rebuild once from the logs instead of replaying on top.
+        await this.store.clearDays()
+      }
+      const targets = headers.filter((h) => !liveIds.has(h.id) && !seen.has(h.id))
       this.status.total = targets.length
       this.status.done = 0
       const concurrency = this.options.backfillConcurrency ?? 4
@@ -216,10 +265,13 @@ export class UsageCollector {
               }
               const sample = this.fold.fold(ev)
               if (sample) {
-                sample.model = route || undefined
+                sample.model = sample.turn ? undefined : route || undefined
                 await this.store.record(sample)
               }
             }
+            // Mark only after a clean replay, so a failed session retries on
+            // the next boot instead of being silently skipped forever.
+            await this.store.markSeenSessions([header.id])
             this.status.scannedSessions++
           } catch (err) {
             // A single unreadable session must not abort the whole backfill.

@@ -54,7 +54,8 @@ export function providerOf(modelRef: string): string {
  * One atomic usage sample from a completed model call (or one completed
  * turn). A call sample carries the four token buckets and the model ref; a
  * turn marker carries only the day (the panel's "sessions" metric is one
- * completed turn).
+ * completed turn). A request marker (from `request/context`) counts one
+ * provider call with no tokens.
  */
 export interface UsageSample {
   day: string // local calendar day the call completed
@@ -64,6 +65,7 @@ export interface UsageSample {
   cacheReadTokens: number
   cacheWriteTokens: number
   turn?: boolean // true for a completed-turn marker
+  request?: boolean // true for a provider-call (request/context) marker
 }
 
 export interface RangeFilter {
@@ -111,6 +113,15 @@ export function aggregateSamples(samples: Iterable<UsageSample>, filter: RangeFi
       out.turns++
       continue
     }
+    if (sample.request) {
+      // A provider call (step/start or a started retry): one request whether
+      // or not it produced tokens — reasonix counts failed calls too. The
+      // request markers are the ONLY request source: a successful call also
+      // yields a usage sample, and counting both would double every call.
+      out.requests++
+      dayRequests.set(sample.day, (dayRequests.get(sample.day) ?? 0) + 1)
+      continue
+    }
     const total = sample.inputTokens + sample.outputTokens
     out.tokens += total
     out.cacheHit += sample.cacheReadTokens
@@ -121,7 +132,6 @@ export function aggregateSamples(samples: Iterable<UsageSample>, filter: RangeFi
     const model = sample.model && sample.model !== '' ? sample.model : '(unknown)'
     modelTotals.set(model, (modelTotals.get(model) ?? 0) + total)
     providerTotals.set(providerOf(model), (providerTotals.get(providerOf(model)) ?? 0) + total)
-    if (total > 0) out.requests++
     active.add(sample.day)
 
     let byModel = dayByModel.get(sample.day)
@@ -131,7 +141,6 @@ export function aggregateSamples(samples: Iterable<UsageSample>, filter: RangeFi
     }
     byModel.set(model, (byModel.get(model) ?? 0) + total)
     dayTotals.set(sample.day, (dayTotals.get(sample.day) ?? 0) + total)
-    if (total > 0) dayRequests.set(sample.day, (dayRequests.get(sample.day) ?? 0) + 1)
     dayCacheHit.set(sample.day, (dayCacheHit.get(sample.day) ?? 0) + sample.cacheReadTokens)
     dayCacheMiss.set(sample.day, (dayCacheMiss.get(sample.day) ?? 0) + sample.inputTokens)
   }

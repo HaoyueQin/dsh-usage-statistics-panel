@@ -79,6 +79,11 @@ export async function aggregateRange(store: UsageStore, from: string, to: string
         cacheWriteTokens: row.cacheWriteTokens,
       })
     }
+    // Requests live on the row as a count (one per provider call, tokens or
+    // not); expand them into request markers for the shared aggregator.
+    for (let i = 0; i < row.requests; i++) {
+      samples.push({ day: row.day, model: row.model, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, request: true })
+    }
     for (let i = 0; i < row.turns; i++) {
       samples.push({ day: row.day, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, turn: true })
     }

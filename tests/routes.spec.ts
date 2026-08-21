@@ -56,34 +56,36 @@ describe('resolveRange', () => {
 
 // A tiny in-memory UsageStore stand-in so the aggregate route test can run
 // without the storage domain.
-import { aggregateSamples, type UsageSample } from '../src/query.ts'
+import { aggregateRange } from '../src/routes.ts'
+import type { UsageDayRow } from '../src/store.ts'
 
-describe('aggregateRange (via aggregateSamples)', () => {
-  it('folds store rows into the same aggregate as direct samples', () => {
-    const rows = [
+function memoryStore(rows: UsageDayRow[]): Parameters<typeof aggregateRange>[0] {
+  return {
+    async rangeRows(from: string, to: string) {
+      return rows.filter((r) => r.day >= from && r.day <= to)
+    },
+  } as Parameters<typeof aggregateRange>[0]
+}
+
+describe('aggregateRange', () => {
+  it('folds store rows — requests expand from the per-row count', async () => {
+    const store = memoryStore([
       { day: '2026-08-01', provider: 'deepseek', model: 'deepseek/deepseek-chat', inputTokens: 100, outputTokens: 50, cacheReadTokens: 40, cacheWriteTokens: 0, requests: 1, turns: 0, lastSeen: 0 },
       { day: '2026-08-02', provider: 'deepseek', model: 'deepseek/deepseek-chat', inputTokens: 200, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, requests: 1, turns: 2, lastSeen: 0 },
-    ]
-    const samples: UsageSample[] = []
-    for (const row of rows) {
-      if (row.inputTokens + row.outputTokens > 0) {
-        samples.push({
-          day: row.day,
-          model: row.model,
-          inputTokens: row.inputTokens,
-          outputTokens: row.outputTokens,
-          cacheReadTokens: row.cacheReadTokens,
-          cacheWriteTokens: row.cacheWriteTokens,
-        })
-      }
-      for (let i = 0; i < row.turns; i++) {
-        samples.push({ day: row.day, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, turn: true })
-      }
-    }
-    const out = aggregateSamples(samples, { from: '2026-08-01', to: '2026-08-02' })
+    ])
+    const out = await aggregateRange(store, '2026-08-01', '2026-08-02')
     expect(out.tokens).toBe(350)
     expect(out.turns).toBe(2)
     expect(out.requests).toBe(2)
     expect(out.cacheMiss).toBe(300)
+  })
+
+  it('counts a request-only row (a failed call) as one request with no tokens', async () => {
+    const store = memoryStore([
+      { day: '2026-08-01', provider: 'deepseek', model: 'deepseek/deepseek-chat', inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, requests: 1, turns: 0, lastSeen: 0 },
+    ])
+    const out = await aggregateRange(store, '2026-08-01', '2026-08-01')
+    expect(out.requests).toBe(1)
+    expect(out.tokens).toBe(0)
   })
 })

@@ -4,7 +4,7 @@
  * fix commit and dsh-token-meter's usage projection).
  */
 import { describe, expect, it } from 'vitest'
-import { UsageFold } from '../src/collector.ts'
+import { UsageCollector, UsageFold } from '../src/collector.ts'
 import type { UsageSessionEvent } from '../src/context-types.ts'
 
 function event(type: string, turn: number, step: number, time: number, data: Record<string, unknown>): UsageSessionEvent {
@@ -60,11 +60,87 @@ describe('UsageFold', () => {
     expect(third!.inputTokens).toBe(50)
   })
 
+  it('marks every ended turn (reasonix TurnDone parity)', () => {
+    const fold = new UsageFold()
+    const t1 = fold.fold({ type: 'turn/end', seq: 0, time: T, data: { turn: 1, reason: { kind: 'completed' } } })
+    expect(t1).not.toBeNull()
+    expect(t1!.turn).toBe(true)
+    expect(t1!.day).toBe('2026-08-02')
+    expect(t1!.inputTokens + t1!.outputTokens).toBe(0)
+    // A failed turn ends too and counts the same way.
+    const t2 = fold.fold({ type: 'turn/end', seq: 1, time: T, data: { turn: 2, reason: { kind: 'error', error: { message: 'x' } } } })
+    expect(t2).not.toBeNull()
+    expect(t2!.turn).toBe(true)
+  })
+
+  it('marks each provider call: step/start and started retries', () => {
+    const fold = new UsageFold()
+    const call = fold.fold({ type: 'step/start', seq: 0, time: T, data: { turn: 1, step: 1 } })
+    expect(call).not.toBeNull()
+    expect(call!.request).toBe(true)
+    expect(call!.inputTokens + call!.outputTokens).toBe(0)
+    // A retried call is another actual provider call.
+    const retry = fold.fold({ type: 'llm/retry-started', seq: 1, time: T, data: { turn: 1, step: 1, retry: 1 } })
+    expect(retry).not.toBeNull()
+    expect(retry!.request).toBe(true)
+    // The route-only request/context event is not a call.
+    expect(fold.fold(event('request/context', 1, 1, T, { provider: 'deepseek', model: 'chat' }))).toBeNull()
+  })
+
   it('treats the same key across different turn/step as distinct', () => {
     const fold = new UsageFold()
     const a = fold.fold(event('assistant/message', 1, 1, T, { usage: { inputTokens: 10, outputTokens: 1 } }))
     const b = fold.fold(event('assistant/message', 2, 1, T, { usage: { inputTokens: 20, outputTokens: 2 } }))
     expect(a).not.toBeNull()
     expect(b).not.toBeNull()
+  })
+})
+
+describe('UsageCollector.backfill', () => {
+  function memoryStore(preRows = 0) {
+    const state = {
+      recorded: [] as Array<Record<string, unknown>>,
+      cleared: 0,
+      seen: new Set<string>(),
+      marked: [] as string[][],
+    }
+    return {
+      state,
+      seenSessions: async () => new Set(state.seen),
+      markSeenSessions: async (ids: Iterable<string>) => { const arr = [...ids]; state.marked.push(arr); for (const id of arr) state.seen.add(id) },
+      clearDays: async () => { state.cleared++ },
+      count: async () => preRows,
+      record: async (sample: Record<string, unknown>) => { state.recorded.push(sample) },
+    } as unknown as ConstructorParameters<typeof UsageCollector>[1] & { state: typeof state }
+  }
+
+  function persistence(ids: string[], events: Record<string, unknown>[]) {
+    return {
+      list: async () => ids.map((id) => ({ id })),
+      inspect: async (id: string) => ({ id, events }),
+    } as unknown as ConstructorParameters<typeof UsageCollector>[2]
+  }
+
+  it('rebuilds a pre-cursor store once, then never re-folds seen sessions', async () => {
+    const ctx = { on: () => {} }
+    const store = memoryStore(3) // rows without a cursor: the ≤0.1.1 shape
+    const collector = new UsageCollector(ctx as never, store as never)
+    const events = [
+      { type: 'step/start', seq: 0, time: T, data: { turn: 1, step: 1 } },
+      { type: 'assistant/message', seq: 1, time: T, data: { turn: 1, step: 1, usage: { inputTokens: 10, outputTokens: 5 } } },
+      { type: 'turn/end', seq: 2, time: T, data: { turn: 1, reason: { kind: 'completed' } } },
+    ]
+    await collector.backfill(persistence(['s1'], events), { list: () => [] } as never)
+    expect(store.state.cleared).toBe(1) // old-semantics rows dropped
+    expect(store.state.recorded.length).toBe(3) // request marker + usage + turn
+    expect(store.state.marked).toEqual([['s1']])
+
+    // A second boot: the cursor holds s1, so nothing re-folds and the rows stay.
+    const store2pre = 0
+    const storeB = memoryStore(store2pre)
+    storeB.state.seen.add('s1')
+    await collector.backfill(persistence(['s1'], events), { list: () => [] } as never)
+    expect(storeB.state.recorded.length).toBe(0)
+    expect(storeB.state.cleared).toBe(0)
   })
 })

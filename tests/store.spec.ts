@@ -12,6 +12,9 @@ function memoryDomain(): UsageStorageDomain {
   const table: UsageKvTable<string, UsageDayRow> = {
     get: (k) => records.get(k),
     entries: () => records.entries() as IterableIterator<[string, UsageDayRow]>,
+    keys: () => records.keys() as IterableIterator<string>,
+    get size() { return records.size },
+    delete: async (k) => records.delete(k),
     put: async (k, v) => { records.set(k, v) },
     update: async (k, fn) => {
       // Mirror the real storage-domain KvTable.update contract: it requires
@@ -40,6 +43,10 @@ describe('UsageStore', () => {
     const store = new UsageStore(memoryDomain())
     await store.record({ day: '2026-08-01', model: 'deepseek/deepseek-chat', inputTokens: 100, outputTokens: 50, cacheReadTokens: 40, cacheWriteTokens: 0 })
     await store.record({ day: '2026-08-01', model: 'deepseek/deepseek-chat', inputTokens: 200, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 10 })
+    // Requests come only from the per-call markers (step/start / retry), not
+    // from the usage samples — counting both would double every call.
+    await store.record({ day: '2026-08-01', model: 'deepseek/deepseek-chat', inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, request: true })
+    await store.record({ day: '2026-08-01', model: 'deepseek/deepseek-chat', inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, request: true })
     const rows = await store.rangeRows('2026-08-01', '2026-08-01')
     expect(rows).toHaveLength(1)
     expect(rows[0]!.inputTokens).toBe(300)
@@ -47,6 +54,15 @@ describe('UsageStore', () => {
     expect(rows[0]!.cacheReadTokens).toBe(40)
     expect(rows[0]!.cacheWriteTokens).toBe(10)
     expect(rows[0]!.requests).toBe(2)
+  })
+
+  it('counts a failed call marker as one request with no tokens', async () => {
+    const store = new UsageStore(memoryDomain())
+    await store.record({ day: '2026-08-01', model: 'deepseek/deepseek-chat', inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, request: true })
+    const rows = await store.rangeRows('2026-08-01', '2026-08-01')
+    expect(rows).toHaveLength(1)
+    expect(rows[0]!.requests).toBe(1)
+    expect(rows[0]!.inputTokens + rows[0]!.outputTokens).toBe(0)
   })
 
   it('keeps different models and days on separate rows', async () => {

@@ -54,13 +54,22 @@ export const usageDayRowSchema = z.object({
 /** The domain's global singleton: the backfill cursor. Session ids already
  *  replayed into the store live here, so a reboot's backfill only folds
  *  sessions it has never seen (a full replay would double every counter —
- *  the fold's replace semantics only dedupe within one pass). */
+ *  the fold's replace semantics only dedupe within one pass).
+ *
+ *  `liveFirstSeq` records, per session the LIVE listener observed, the seq
+ *  of its first observed event (or -1 when the boundary was unknown). The
+ *  next boot's backfill replays exactly the log PREFIX before that boundary
+ *  — events the live path never saw — recovering pre-attach history that a
+ *  plain id cursor would have locked away forever. */
 export const usageHistoryDomain = defineDomain({
   name: 'usage_history',
   version: 1,
   global: {
-    schema: z.object({ backfilledSessions: z.array(z.string()) }),
-    initial: { backfilledSessions: [] as string[] },
+    schema: z.object({
+      backfilledSessions: z.array(z.string()),
+      liveFirstSeq: z.record(z.string(), z.number()).optional(),
+    }),
+    initial: { backfilledSessions: [] as string[], liveFirstSeq: {} },
   },
   tables: {
     days: domainTable<string, UsageDayRow>(usageDayRowSchema),
@@ -76,6 +85,12 @@ export class UsageStore {
   private table: UsageKvTable<string, UsageDayRow> | null = null
   private domainHandle: UsageDomain | null = null
   private ready: Promise<void>
+  /** Set when the domain could not be opened (already-open race, corrupted
+   *  file, ...). The store then runs DEGRADED: every operation fails
+   *  per-call with a clear error and nothing persists, but no rejecting
+   *  promise is ever left unobserved — an escaping rejection here used to
+   *  be able to take the whole host down. */
+  private openError?: unknown
   /** Serializes read-modify-write cycles on the backfill cursor. The domain
    *  only guarantees single-write ordering on its chain — a global.set is a
    *  whole-value overwrite, so two concurrent markSeenSessions calls would
@@ -85,22 +100,35 @@ export class UsageStore {
   private markChain: Promise<void> = Promise.resolve()
 
   constructor(ctx: UsageStorageDomain) {
-    this.ready = ctx.open(usageHistoryDomain).then(async (domain) => {
-      this.domainHandle = domain
-      this.table = domain.table('days') as UsageKvTable<string, UsageDayRow>
-      // One-time rebuild of pre-cursor rows (≤0.1.1 wrote the old request
-      // semantics and no turns at all): rows paired with a completely empty
-      // cursor cannot be told apart from a half-written new-world store, and
-      // both recover by dropping the rows and letting the backfill replay
-      // from scratch. Running inside ready() means every later record, mark,
-      // or cursor read — including the live listener's first writes — lands
-      // after the decision, so no ordering race exists.
-      const value = domain.global?.get() as { backfilledSessions?: string[] } | undefined
-      const cursorEmpty = (value?.backfilledSessions?.length ?? 0) === 0
-      if (cursorEmpty && this.table.keys().next().done === false) {
-        for (const key of [...this.table.keys()]) await this.table.delete(key)
-      }
-    })
+    // initialize() absorbs EVERY failure (sync throw surfaced through an
+    // async boundary included): this.ready must always resolve, so awaiting
+    // it can never itself become the unhandled rejection that kills the
+    // process. Callers observe degradation per operation via requireTable().
+    this.ready = this.initialize(ctx)
+      .catch((err) => { this.openError = err })
+  }
+
+  private async initialize(ctx: UsageStorageDomain): Promise<void> {
+    const domain = await ctx.open(usageHistoryDomain)
+    this.domainHandle = domain
+    this.table = domain.table('days') as UsageKvTable<string, UsageDayRow>
+    // One-time rebuild of pre-cursor rows (≤0.1.1 wrote the old request
+    // semantics and no turns at all): rows paired with a completely empty
+    // cursor cannot be told apart from a half-written new-world store, and
+    // both recover by dropping the rows and letting the backfill replay
+    // from scratch. Running inside ready() means every later record, mark,
+    // or cursor read — including the live listener's first writes — lands
+    // after the decision, so no ordering race exists.
+    const value = domain.global?.get() as { backfilledSessions?: string[] } | undefined
+    const cursorEmpty = (value?.backfilledSessions?.length ?? 0) === 0
+    if (cursorEmpty && this.table.keys().next().done === false) {
+      for (const key of [...this.table.keys()]) await this.table.delete(key)
+    }
+  }
+
+  /** The open failure when running degraded, else undefined (diagnostics). */
+  get degradation(): unknown {
+    return this.openError
   }
 
   /** Session ids already replayed into the store (the backfill cursor).
@@ -110,8 +138,20 @@ export class UsageStore {
    *  pass. */
   async seenSessions(): Promise<Set<string>> {
     await this.ready
-    const value = this.domainHandle?.global?.get() as { backfilledSessions?: string[] } | undefined
+    const value = this.cursor()
     return new Set(value?.backfilledSessions ?? [])
+  }
+
+  /** Per-session seq of the first LIVE-observed event (see the domain's
+   *  `liveFirstSeq` doc). -1 = observed with an unknown boundary. */
+  async liveSequences(): Promise<Map<string, number>> {
+    await this.ready
+    const value = this.cursor()
+    return new Map(Object.entries(value?.liveFirstSeq ?? {}))
+  }
+
+  private cursor(): { backfilledSessions?: string[]; liveFirstSeq?: Record<string, number> } | undefined {
+    return this.domainHandle?.global?.get() as { backfilledSessions?: string[]; liveFirstSeq?: Record<string, number> } | undefined
   }
 
   /** Persist session ids as replayed (merges into the cursor). Calls are
@@ -120,12 +160,76 @@ export class UsageStore {
   async markSeenSessions(ids: Iterable<string>): Promise<void> {
     const write = this.markChain.then(async () => {
       await this.ready
-      const seen = await this.seenSessions()
+      const value = this.cursor()
+      const seen = new Set(value?.backfilledSessions ?? [])
       for (const id of ids) seen.add(id)
-      await this.domainHandle?.global?.set({ backfilledSessions: [...seen] })
+      await this.domainHandle?.global?.set({
+        backfilledSessions: [...seen],
+        liveFirstSeq: value?.liveFirstSeq ?? {},
+      })
     })
     // Keep the chain alive regardless of failure: one rejected write must
     // not poison every later mark (the caller observes the rejection).
+    this.markChain = write.then(
+      () => undefined,
+      () => undefined,
+    )
+    return write
+  }
+
+  /** Record the first LIVE-observed seq per session (merges; the EARLIEST
+   *  boundary wins — it is the safe partition point for prefix replays).
+   *  Serialized through {@link markChain} like every other global rewrite. */
+  async markLiveSequences(entries: Iterable<readonly [string, number]>): Promise<void> {
+    const write = this.markChain.then(async () => {
+      await this.ready
+      const value = this.cursor()
+      const merged: Record<string, number> = { ...(value?.liveFirstSeq ?? {}) }
+      let changed = false
+      for (const [id, seq] of entries) {
+        const prev = merged[id]
+        if (prev === undefined || seq < prev) {
+          merged[id] = seq
+          changed = true
+        }
+      }
+      if (!changed) return
+      await this.domainHandle?.global?.set({
+        backfilledSessions: value?.backfilledSessions ?? [],
+        liveFirstSeq: merged,
+      })
+    })
+    this.markChain = write.then(
+      () => undefined,
+      () => undefined,
+    )
+    return write
+  }
+
+  /** Drop every row and the whole cursor. The next backfill replays all
+   *  persisted sessions from scratch (the store-rebuild escape hatch for
+   *  corrupted history or attribution-logic upgrades).
+   *
+   *  `preserveLiveBoundaries` names sessions whose live observation window
+   *  must survive the wipe: a still-live session's first-observed seq is
+   *  what lets the immediately-following backfill replay its log PREFIX
+   *  instead of skipping it whole — dropping the boundary would strand the
+   *  session's entire pre-reset history forever. */
+  async reset(preserveLiveBoundaries?: ReadonlySet<string>): Promise<void> {
+    const write = this.markChain.then(async () => {
+      await this.ready
+      const table = this.requireTable()
+      for (const key of [...table.keys()]) await table.delete(key)
+      const liveFirstSeq: Record<string, number> = {}
+      if (preserveLiveBoundaries && preserveLiveBoundaries.size > 0) {
+        const current = this.cursor()?.liveFirstSeq ?? {}
+        for (const id of preserveLiveBoundaries) {
+          const seq = current[id]
+          if (seq !== undefined) liveFirstSeq[id] = seq
+        }
+      }
+      await this.domainHandle?.global?.set({ backfilledSessions: [], liveFirstSeq })
+    })
     this.markChain = write.then(
       () => undefined,
       () => undefined,
@@ -139,6 +243,10 @@ export class UsageStore {
   }
 
   private requireTable(): UsageKvTable<string, UsageDayRow> {
+    if (this.openError !== undefined) {
+      const detail = this.openError instanceof Error ? this.openError.message : String(this.openError)
+      throw new Error(`usage store degraded (domain unavailable: ${detail})`)
+    }
     if (!this.table) throw new Error('usage store not ready')
     return this.table
   }

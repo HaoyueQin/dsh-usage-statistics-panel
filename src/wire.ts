@@ -13,7 +13,7 @@ import type { UsageHttpRequest, UsageHttpResponse } from './context-types.ts'
 /** One day's token usage and turn count in a trend series. */
 export interface DailyTokenUsage {
   day: string // "YYYY-MM-DD", local calendar
-  total: number
+  total: number // provider-inclusive tokens (input+output+cache reads/writes)
   byModel: Record<string, number> // model ref -> tokens
   byProvider: Record<string, number> // provider name -> tokens
   requests: number // usage events (API calls)
@@ -42,7 +42,7 @@ export interface UsageStatsRange {
   from: string // inclusive
   to: string // inclusive
   // Totals
-  tokens: number
+  tokens: number // provider-inclusive (input + output + cache reads/writes)
   requests: number // usage events (API calls)
   turns: number // completed turns
   cacheHit: number

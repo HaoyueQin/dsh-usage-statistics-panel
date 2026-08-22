@@ -22,6 +22,8 @@ export type UsageStatsKey =
   | 'refresh'
   | 'loading'
   | 'tokens'
+  | 'tokensHint'
+  | 'cachedTokens'
   | 'sessions'
   | 'requests'
   | 'activeDays'
@@ -56,6 +58,8 @@ export const en: Record<UsageStatsKey, string> = {
   refresh: 'Refresh',
   loading: 'Loading',
   tokens: 'Token usage',
+  tokensHint: 'Provider-visible total: uncached input + output + cached tokens',
+  cachedTokens: 'cached',
   sessions: 'Sessions',
   requests: 'Requests',
   activeDays: 'Active days',
@@ -91,6 +95,8 @@ export const zh: Record<UsageStatsKey, string> = {
   refresh: '刷新',
   loading: '加载中',
   tokens: 'Tokens 用量',
+  tokensHint: '服务商总口径：未缓存输入 + 输出 + 缓存命中 token',
+  cachedTokens: '缓存命中',
   sessions: '会话数量',
   requests: '请求数量',
   activeDays: '活跃天数',
@@ -126,6 +132,8 @@ export const zhTW: Record<UsageStatsKey, string> = {
   refresh: '重新整理',
   loading: '載入中',
   tokens: 'Tokens 用量',
+  tokensHint: '服務商總口徑：未快取輸入 + 輸出 + 快取命中 token',
+  cachedTokens: '快取命中',
   sessions: '會話數量',
   requests: '請求數量',
   activeDays: '活躍天數',

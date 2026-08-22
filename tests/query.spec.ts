@@ -56,13 +56,26 @@ describe('aggregateSamples', () => {
       sample({ day: '2026-08-02', model: 'anthropic/claude', request: true }),
     ]
     const out = aggregateSamples(samples, { from: '2026-08-01', to: '2026-08-02' })
-    expect(out.tokens).toBe(750)
+    // The headline total is PROVIDER-INCLUSIVE (reasonix TotalTokens parity):
+    // uncached input + output + cache reads + cache writes — the number a
+    // provider dashboard reports for the same calls.
+    expect(out.tokens).toBe(1000)
     expect(out.requests).toBe(3)
     expect(out.cacheHit).toBe(220)
     // The uncached input side is the cache miss: inputTokens (100+200+300).
     expect(out.cacheMiss).toBe(600)
     expect(out.activeDays).toBe(2)
     expect(out.turns).toBe(0)
+  })
+
+  it('keeps the hit-rate denominators disjoint from the inclusive headline', () => {
+    const out = aggregateSamples(
+      [sample({ day: '2026-08-01', model: 'm', inputTokens: 100, outputTokens: 50, cacheReadTokens: 4000, cacheWriteTokens: 20 })],
+      { from: '2026-08-01', to: '2026-08-01' },
+    )
+    expect(out.tokens).toBe(4170) // 100 miss-input + 50 output + 4000 cached + 20 written
+    expect(out.cacheHit).toBe(4000)
+    expect(out.cacheMiss).toBe(100) // rate denominators stay on the input side only
   })
 
   it('counts turns separately; turn-only days do not add to active days', () => {

@@ -260,8 +260,10 @@ function isEmptyRange(stats: UsageStatsRange): boolean {
 }
 
 function StatCards({ stats, t }: { stats: UsageStatsRange; t: Translator }) {
-  const cards: Array<{ icon: typeof Coins; label: string; value: string; sm?: boolean; wrap?: boolean; hint?: string; modelRef?: boolean }> = [
-    { icon: Coins, label: t('tokens'), value: formatTokens(stats.tokens) },
+  const cards: Array<{ icon: typeof Coins; label: string; value: string; sm?: boolean; wrap?: boolean; hint?: string; modelRef?: boolean; sub?: string }> = [
+    // The headline is provider-inclusive (uncached input + output + cached
+    // tokens) — the number a provider dashboard reports for the same calls.
+    { icon: Coins, label: t('tokens'), value: formatTokens(stats.tokens), hint: t('tokensHint') },
     { icon: MessageSquare, label: t('sessions'), value: String(stats.turns) },
     { icon: MessagesSquare, label: t('requests'), value: String(stats.requests) },
     // The two long-valued cards (tokens, top model) bookend the grid's first
@@ -269,7 +271,15 @@ function StatCards({ stats, t }: { stats: UsageStatsRange; t: Translator }) {
     // under it — both get the wide track, the four short numerics fill the
     // rest (mirrors the reasonix card sizing).
     { icon: Cpu, label: t('topModel'), value: stats.topModel || '—', hint: t('topModelHint'), modelRef: true },
-    { icon: Activity, label: t('cacheRate'), value: cacheRateText(stats.cacheHit, stats.cacheMiss), hint: t('cacheRateHint') },
+    {
+      icon: Activity,
+      label: t('cacheRate'),
+      value: cacheRateText(stats.cacheHit, stats.cacheMiss),
+      hint: t('cacheRateHint'),
+      // The absolute cached volume lives under the percentage: the rate
+      // alone hides how many tokens the cache actually served.
+      sub: `${formatCompact(stats.cacheHit)} ${t('cachedTokens')}`,
+    },
     { icon: CalendarDays, label: t('activeDays'), value: String(stats.activeDays) },
   ]
   return (
@@ -294,12 +304,13 @@ function StatCards({ stats, t }: { stats: UsageStatsRange; t: Translator }) {
             </div>
           ) : c.wrap ? (
             <div className={clsx(css.cardValue, css.cardValueSm, css.cardValueWrap)}>{c.value}</div>
+          ) : c.sub !== undefined ? (
+            <div className={clsx(css.cardValue, css.cardModelLines)}>
+              <FitText text={c.value} className={css.cardValue} maxSize={22} />
+              <div className={css.cardSub}>{c.sub}</div>
+            </div>
           ) : (
-            <FitText
-              text={c.value}
-              className={clsx(css.cardValue, c.sm && css.cardValueSm)}
-              maxSize={c.sm ? 14 : 22}
-            />
+            <FitText text={c.value} className={clsx(css.cardValue, c.sm && css.cardValueSm)} maxSize={c.sm ? 14 : 22} />
           )}
         </div>
       ))}

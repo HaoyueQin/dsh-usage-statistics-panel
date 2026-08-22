@@ -7,14 +7,21 @@
  *   step's final `usage` (TokenUsage); `assistant/chunk` carries an early
  *   `usage` sample from the streaming adapter; `request/context` carries the
  *   provider/model route. A completed call's usage is attributed to the model
- *   the request used. Both the fold bucket and the route are keyed by the
- *   session id carried by every callback, so concurrent sessions never share
- *   dedupe state or attribution.
+ *   the request used — in priority order: the message's own `source`
+ *   (authoritative per call), then the session's last-known route, which
+ *   comes from observed `request/context` events OR is lazily seeded from
+ *   the live Session's `requestContext()` fold. That seed matters because
+ *   `request/context` only lands in the log on route CHANGES: a session that
+ *   predates this collector would otherwise attribute nothing. Both the fold
+ *   bucket and the route are keyed by the session id carried by every
+ *   callback, so concurrent sessions never share dedupe state or attribution.
  * - backfill: on first boot (when the domain is empty) the collector
  *   enumerates every persisted session (`sessionPersistence.list()`) and
  *   replays its full event log (`inspect(id)`) through a FRESH per-session
  *   fold, so historical usage is accounted from the day the plugin is
- *   installed.
+ *   installed. Sessions the live listener already touched replay only their
+ *   pre-observation PREFIX (see markLiveSession) — recovering history the
+ *   live path never saw without double counting what it did.
  *
  * Idempotence: within ONE session, the same (turn, step) may report usage
  * more than once (a streaming sample then the final assistant/message;
@@ -25,10 +32,8 @@
  * step 1, and each must count. The store's per-day rows accumulate, so
  * re-folding the same log must not add twice: live events are only folded
  * once per event, and every session the live listener touches is written
- * into the durable backfill cursor, so a later boot's backfill never
- * re-processes it (the cursor is what makes a restart safe — without it a
- * disposed session would be replayed from its persisted log on top of the
- * samples the live path already recorded).
+ * into the durable backfill cursor with its first observed seq, so a later
+ * boot's backfill never re-processes what the live path already recorded.
  */
 
 import type { Context } from './context-types.ts'
@@ -46,7 +51,9 @@ interface UsageEventData {
 
 /** The assistant/message payload. */
 interface AssistantMessageData extends UsageEventData {
-  message?: unknown
+  message?: {
+    source?: { provider?: string; model?: string }
+  }
 }
 
 /** The assistant/chunk payload. */
@@ -74,6 +81,10 @@ export interface CollectorStatus {
   scannedSessions: number
   lastSessionId?: string
   error?: string
+  /** Live samples the store refused (degraded domain, write failure, ...).
+   *  Recording is observational and must never take the host down, so
+   *  failures are counted here instead of escaping as rejections. */
+  recordFailures: number
 }
 
 /** How many completed sessions accumulate before one batched cursor write.
@@ -200,6 +211,7 @@ export class UsageCollector {
     scannedSessions: 0,
     lastSessionId: undefined,
     error: undefined,
+    recordFailures: 0,
   }
   /** One fold bucket per live session id: (turn, step) dedupe keys are
    *  session-scoped, so concurrent sessions never collide. */
@@ -213,8 +225,9 @@ export class UsageCollector {
    *  this boot — one entry per session, not per event. */
   private liveMarked = new Set<string>()
   /** Coalescing buffer for cursor writes: a burst of first events flushes as
-   *  one markSeenSessions call instead of one global rewrite per session. */
-  private liveMarkBuffer = new Set<string>()
+   *  one markLiveSequences call instead of one global rewrite per session.
+   *  Value = the first observed seq (-1 sentinel when unknown). */
+  private liveMarkBuffer = new Map<string, number>()
   private liveMarkFlushScheduled = false
 
   constructor(
@@ -229,6 +242,31 @@ export class UsageCollector {
     return typeof id === 'string' && id !== '' ? id : '(unknown-session)'
   }
 
+  /** Canonical "provider/model" (or bare model) ref from a route shape. */
+  private static refOf(rc: { provider?: string; model?: string } | undefined | null): string | undefined {
+    if (!rc) return undefined
+    if (rc.provider && rc.model) return `${rc.provider}/${rc.model}`
+    return rc.model || undefined
+  }
+
+  /** The session's own route fold, read through the live Session object.
+   *  `request/context` only lands in the log on route CHANGES, so a session
+   *  that predates this collector (host restart, plugin reload) would never
+   *  re-announce its route — the authoritative per-session fold is the only
+   *  way to attribute such sessions instead of dropping their usage into
+   *  "(unknown)". */
+  private routeFor(sid: string): string | undefined {
+    const known = this.routes.get(sid)
+    if (known !== undefined) return known
+    const sessions = (this.ctx as unknown as {
+      sessions?: { get?(id: string): { requestContext?(): { provider?: string; model?: string } | undefined } | undefined }
+    }).sessions
+    const rc = sessions?.get?.(sid)?.requestContext?.()
+    const ref = UsageCollector.refOf(rc)
+    if (ref !== undefined) this.routes.set(sid, ref)
+    return ref
+  }
+
   private foldFor(sessionId: string): UsageFold {
     let fold = this.folds.get(sessionId)
     if (!fold) {
@@ -239,24 +277,25 @@ export class UsageCollector {
   }
 
   /** Write a live session into the durable backfill cursor (coalesced per
-   *  tick). This is the restart-safety invariant: `SessionStore.list()`
-   *  only reports LIVE sessions, so once a session is disposed its samples
-   *  exist only in the store rows and in the persisted log — without the
-   *  cursor, the next boot's backfill would replay that log on top of the
-   *  already-recorded rows and double every counter. The sentinel id for
-   *  unidentifiable sessions never matches a persisted header, so it is
-   *  not marked. */
-  private markLiveSession(sessionId: string): void {
+   *  tick) together with the seq of its FIRST observed event. This is the
+   *  restart-safety invariant, upgraded: `SessionStore.list()` only reports
+   *  LIVE sessions, and the first-observed seq partitions the persisted log
+   *  into [0, firstSeq) — which no live pass ever folded, so the next boot's
+   *  backfill replays exactly that prefix to recover pre-attach history —
+   *  and [firstSeq, ∞), which the live path owns. The sentinel -1 records
+   *  "observed with an unknown boundary" and replays nothing (never risk a
+   *  duplicate). */
+  private markLiveSession(sessionId: string, firstSeq: number | undefined): void {
     if (sessionId === '(unknown-session)' || this.liveMarked.has(sessionId)) return
     this.liveMarked.add(sessionId)
-    this.liveMarkBuffer.add(sessionId)
+    this.liveMarkBuffer.set(sessionId, typeof firstSeq === 'number' ? firstSeq : -1)
     if (this.liveMarkFlushScheduled) return
     this.liveMarkFlushScheduled = true
     queueMicrotask(() => {
       this.liveMarkFlushScheduled = false
-      const batch = [...this.liveMarkBuffer]
+      const batch = [...this.liveMarkBuffer.entries()]
       this.liveMarkBuffer.clear()
-      if (batch.length > 0) void this.store.markSeenSessions(batch)
+      if (batch.length > 0) void this.store.markLiveSequences(batch)
     })
   }
 
@@ -269,19 +308,33 @@ export class UsageCollector {
     }
     ctx.on?.('session/event', (session: { id: string }, event: UsageSessionEvent) => {
       const sid = UsageCollector.sessionIdOf(session)
-      this.markLiveSession(sid)
+      this.markLiveSession(sid, typeof event?.seq === 'number' ? event.seq : undefined)
       if (event.type === 'request/context') {
         const data = event.data as RequestContextData
         if (data.provider && data.model) this.routes.set(sid, `${data.provider}/${data.model}`)
         else if (data.model) this.routes.set(sid, data.model)
       }
+      // The message itself names the model that served THIS call (every
+      // shipped adapter stamps message.source). It is authoritative for the
+      // sample below AND refreshes the session's last-known route for later
+      // chunk-borne samples, which carry no model of their own.
+      let fromSource: string | undefined
+      if (event.type === 'assistant/message') {
+        fromSource = UsageCollector.refOf((event.data as AssistantMessageData).message?.source)
+        if (fromSource !== undefined) this.routes.set(sid, fromSource)
+      }
       const sample = this.foldFor(sid).fold(event)
       if (!sample) return
       // Turn markers carry no model attribution (the store lands them on the
-      // synthetic "(turns)" row); everything else attributes to THIS
-      // session's last-known route — never another session's.
-      if (!sample.turn) sample.model = this.routes.get(sid) || undefined
-      void this.store.record(sample)
+      // synthetic "(turns)" row); everything else attributes to the event's
+      // own source first, then this session's route (observed or seeded).
+      if (!sample.turn) sample.model = fromSource ?? this.routeFor(sid)
+      // Recording is observational: a store refusal (degraded domain, disk
+      // failure, ...) is counted, never allowed to escape as an unhandled
+      // rejection — those take the whole host down.
+      void this.store.record(sample).catch(() => {
+        this.status.recordFailures++
+      })
     })
     // Drop a disposed session's buckets so a long-running host does not
     // accumulate one small map entry per session forever.
@@ -297,15 +350,29 @@ export class UsageCollector {
     return this.status.running
   }
 
+  /** Session ids this collector generation has observed live. Their cursor
+   *  boundaries are the authoritative prefix-partition points — the reset
+   *  path preserves exactly these so a rebuild can replay each live
+   *  session's pre-observation history instead of stranding it. */
+  observedSessions(): string[] {
+    return [...this.liveMarked]
+  }
+
   /** Run the one-time backfill: enumerate persisted sessions and replay each
    *  through its own fold. Idempotent — re-running on a populated store only
-   *  re-folds sessions the store hasn't seen (guarded by a per-session
-   *  cursor persisted in the domain global; the live listener writes every
-   *  session it touches into the same cursor, so the split of work between
-   *  the live path and the replay path is stable across restarts). Resolves
-   *  early (mid-scan) when `signal` aborts — the fiber teardown path uses
-   *  this so disposal does not leave a fire-and-forget scan writing behind
-   *  it. */
+   *  re-folds work the store hasn't seen:
+   *  - a session in neither cursor set replays FULLY;
+   *  - a session with a live observation boundary replays only the log
+   *    PREFIX before that seq (never folded by any live pass) — including a
+   *    session that is STILL LIVE right now, whose post-boundary events the
+   *    live path owns;
+   *  - a fully-backfilled session with no live boundary is skipped;
+   *  - a live session without a usable boundary is skipped (its events are
+   *    owned by this boot's live pass — or it resumed mid-scan and our
+   *    boundary snapshot is stale; stale absence must never widen a replay).
+   *  Resolves early (mid-scan) when `signal` aborts — the fiber teardown
+   *  path uses this so disposal does not leave a fire-and-forget scan
+   *  writing behind it. */
   async backfill(persistence: UsageSessionPersistence, sessions: UsageSessionStore, signal?: AbortSignal): Promise<void> {
     if (this.status.running) return
     if (signal?.aborted) return
@@ -313,12 +380,12 @@ export class UsageCollector {
     this.status.error = undefined
     try {
       const headers = await persistence.list(signal)
-      const liveIds = new Set(sessions.list().map((s) => s.id))
-      // The per-session cursor keeps a reboot's backfill from re-folding
-      // sessions the store already saw: the fold's replace semantics dedupe
-      // within one pass only, so a full replay would double every counter.
+      // The cursor keeps a reboot's backfill from re-folding sessions the
+      // store already saw: the fold's replace semantics dedupe within one
+      // pass only, so a full replay would double every counter.
       const seen = await this.store.seenSessions()
-      const targets = headers.filter((h) => !liveIds.has(h.id) && !seen.has(h.id))
+      const liveSeq = await this.store.liveSequences()
+      const targets = headers.filter((h) => !(seen.has(h.id) && !liveSeq.has(h.id)))
       this.status.total = targets.length
       this.status.done = 0
       const concurrency = this.options.backfillConcurrency ?? 4
@@ -336,13 +403,31 @@ export class UsageCollector {
           if (i >= targets.length) return
           const header = targets[i]!
           this.status.lastSessionId = header.id
+          const boundary = liveSeq.get(header.id)
           // Liveness recheck at replay time: the snapshot above ages as the
-          // scan runs, and a session resumed mid-scan is owned by the live
-          // listener (which writes the cursor itself) — replaying it here
-          // too would double its usage.
-          if (sessions.list().some((s) => s.id === header.id)) {
+          // scan runs. A LIVE session is only safe to touch when its cursor
+          // boundary is known and non-negative (prefix replay); otherwise
+          // its events belong to the live path of this boot — or it resumed
+          // mid-scan with a boundary written after our snapshot, and the
+          // stale absence must not widen what we replay.
+          const isLiveNow = sessions.list().some((s) => s.id === header.id)
+          const liveOwnedWhole = isLiveNow && (boundary === undefined || boundary < 0)
+          if (liveOwnedWhole) {
             this.status.done++
             continue
+          }
+          // Seq partition for everything below:
+          // - no boundary recorded → no live pass ever folded this log →
+          //   replay from scratch;
+          // - negative sentinel (-1, observed with unknown boundary) →
+          //   replay nothing rather than risk a duplicate;
+          // - valid boundary N → replay exactly [0, N).
+          const fromScratch = boundary === undefined
+          const replayNothing = !fromScratch && boundary < 0
+          const skipLiveOwned = (ev: UsageSessionEvent): boolean => {
+            if (replayNothing) return true
+            if (fromScratch) return false
+            return typeof ev.seq === 'number' && ev.seq >= (boundary as number)
           }
           // One FRESH fold per session replay: (turn, step) keys are
           // session-scoped, so concurrent replays must never share a fold.
@@ -352,10 +437,18 @@ export class UsageCollector {
             const inspection = await persistence.inspect(header.id, signal)
             for (const ev of inspection.events) {
               if (signal?.aborted) return
+              if (skipLiveOwned(ev)) continue
               if (ev.type === 'request/context') {
                 const data = ev.data as RequestContextData
                 if (data.provider && data.model) route = `${data.provider}/${data.model}`
                 else if (data.model) route = data.model
+              } else if (ev.type === 'assistant/message') {
+                // The message's own source names the model that served that
+                // call — authoritative even when request/context is missing
+                // from old logs. It also refreshes last-known route for any
+                // following chunk-borne samples.
+                const ref = UsageCollector.refOf((ev.data as AssistantMessageData).message?.source)
+                if (ref !== undefined) route = ref
               }
               const sample = fold.fold(ev)
               if (sample) {

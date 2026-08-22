@@ -177,6 +177,14 @@
   gap: 1px;
 }
 
+/* A muted second line under a card value (the absolute cached-token volume
+   under the hit-rate percentage). */
+.cardSub {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  line-height: 1.2;
+}
+
 /* ── sections / chart chrome ───────────────────────────────────────────── */
 
 .section {

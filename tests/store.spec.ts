@@ -15,7 +15,7 @@ function memoryDomain(): UsageStorageDomain {
  *  global starts at `globalValue` (mirroring an absent cursor). */
 function memoryDomainWith(
   records: Map<string, UsageDayRow>,
-  globalValue?: { backfilledSessions: string[] },
+  globalValue?: { backfilledSessions: string[]; liveFirstSeq?: Record<string, number> },
 ): UsageStorageDomain {
   const table: UsageKvTable<string, UsageDayRow> = {
     get: (k) => records.get(k),
@@ -37,9 +37,13 @@ function memoryDomainWith(
       return next
     },
   }
+  const state = { global: globalValue }
   const domain: UsageDomain = {
     table: () => table as UsageKvTable<string, unknown>,
-    global: { get: () => globalValue, set: async () => {} },
+    global: {
+      get: () => state.global,
+      set: async (value) => { state.global = value as typeof globalValue },
+    },
   }
   return {
     open: async () => domain,
@@ -160,5 +164,71 @@ describe('UsageStore', () => {
     ])
     const seen = await store.seenSessions()
     expect([...seen].sort()).toEqual(['a', 'b', 'c'])
+  })
+
+  it('merges live observation sequences keeping the earliest boundary per session', async () => {
+    const store = new UsageStore(memoryDomain())
+    await store.markLiveSequences([['a', 5], ['b', 7]])
+    // A later boot may observe the same session at an earlier seq? No — but
+    // concurrent flushes can reorder, so min() keeps the safest boundary.
+    await store.markLiveSequences([['a', 3]])
+    const seq = await store.liveSequences()
+    expect(seq.get('a')).toBe(3)
+    expect(seq.get('b')).toBe(7)
+  })
+
+  it('keeps backfilledSessions intact when merging live sequences', async () => {
+    const records = new Map<string, UsageDayRow>()
+    const store = new UsageStore(memoryDomainWith(records, { backfilledSessions: ['s1'] }))
+    await store.readyPromise()
+    await store.markLiveSequences([['s2', 4]])
+    const seen = await store.seenSessions()
+    expect([...seen]).toEqual(['s1'])
+    const seq = await store.liveSequences()
+    expect(seq.get('s2')).toBe(4)
+  })
+
+  it('resets rows and the whole cursor on reset()', async () => {
+    const records = new Map<string, UsageDayRow>()
+    const store = new UsageStore(memoryDomainWith(records, { backfilledSessions: ['s1'], liveFirstSeq: { s2: 3 } }))
+    await store.readyPromise()
+    await store.record({ day: '2026-08-01', model: 'm', inputTokens: 5, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 })
+    expect(await store.count()).toBe(1)
+    await store.reset()
+    expect(await store.count()).toBe(0)
+    expect(await store.seenSessions()).toEqual(new Set())
+    expect((await store.liveSequences()).size).toBe(0)
+  })
+
+  it('reset() preserves the live boundaries of the still-observed sessions', async () => {
+    const records = new Map<string, UsageDayRow>()
+    const store = new UsageStore(memoryDomainWith(records, { backfilledSessions: ['s1'], liveFirstSeq: { s2: 3, s3: 9 } }))
+    await store.readyPromise()
+    // Only s2 is still being observed live: its boundary must survive the
+    // wipe so the follow-up backfill can prefix-replay its log; everything
+    // else (rows, backfilled ids, s3's boundary) is gone.
+    await store.reset(new Set(['s2']))
+    expect(await store.count()).toBe(0)
+    expect(await store.seenSessions()).toEqual(new Set())
+    const seq = await store.liveSequences()
+    expect(seq.get('s2')).toBe(3)
+    expect(seq.has('s3')).toBe(false)
+  })
+
+  it('degrades instead of rejecting forever when the domain cannot open', async () => {
+    // The 2026-08-22 hot-reload crash: a second open of the same domain used
+    // to leave this.ready permanently rejected — an unhandled rejection one
+    // `void record()` away from taking the host down. Now the failure is
+    // captured and every operation fails per-call with a clear error.
+    const store = new UsageStore({
+      open: async () => {
+        throw Object.assign(new Error("domain 'usage_history' is already open"), { name: 'DomainError' })
+      },
+    } as unknown as UsageStorageDomain)
+    await store.readyPromise() // resolves (degraded), never rejects
+    expect(store.degradation).toBeInstanceOf(Error)
+    await expect(store.seenSessions()).resolves.toEqual(new Set())
+    await expect(store.record({ day: '2026-08-01', model: 'm', inputTokens: 1, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 }))
+      .rejects.toThrow(/degraded/)
   })
 })

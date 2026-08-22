@@ -88,15 +88,28 @@ export interface UsageSessionPersistence {
   inspect(id: string, signal?: AbortSignal): Promise<{ meta: UsageSessionHeader; events: UsageSessionEvent[] }>
 }
 
-/** The live session store (mirror of @deepseek-ai/dsh-session SessionStore). */
-export interface UsageSessionStore {
-  list(): UsageSessionHandle[]
+/** The route a session's log records for its model calls (mirror of
+ *  dsh-agent-loop RequestContext). */
+export interface UsageSessionRoute {
+  provider?: string
+  model?: string
+  contextWindow?: number
 }
 
+/** A live session handle (mirror of @deepseek-ai/dsh-session SessionStore
+ *  members this plugin touches; `requestContext` is the authoritative fold
+ *  of the log's `request/context` events that every real Session exposes). */
 export interface UsageSessionHandle {
   id: string
   cwd?: string
   createdAt?: number
+  requestContext?(): UsageSessionRoute | undefined
+}
+
+/** The live session store (mirror of @deepseek-ai/dsh-session SessionStore). */
+export interface UsageSessionStore {
+  list(): UsageSessionHandle[]
+  get(id: string): UsageSessionHandle | undefined
 }
 
 /** A storage domain table (mirror of @deepseek-ai/dsh-storage-domain KvTable). */

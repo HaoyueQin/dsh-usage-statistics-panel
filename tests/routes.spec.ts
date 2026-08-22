@@ -82,7 +82,8 @@ describe('aggregateRange', () => {
       { day: '2026-08-02', provider: 'deepseek', model: 'deepseek/deepseek-chat', inputTokens: 200, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, requests: 1, turns: 2, lastSeen: 0 },
     ])
     const out = await aggregateRange(store, '2026-08-01', '2026-08-02')
-    expect(out.tokens).toBe(350)
+    // Provider-inclusive headline: 150+40 + 200 + nothing = 390.
+    expect(out.tokens).toBe(390)
     expect(out.turns).toBe(2)
     expect(out.requests).toBe(2)
     expect(out.cacheMiss).toBe(300)
@@ -103,7 +104,8 @@ describe('aggregateRange', () => {
     ])
     const out = await aggregateRange(store, '2026-08-01', '2026-08-01')
     expect(out.cacheHit).toBe(5000)
-    expect(out.tokens).toBe(0)
+    // Provider-inclusive: a pure-cache call's cached tokens ARE the total.
+    expect(out.tokens).toBe(5000)
   })
 
   it('reports per-day turns in the daily series', async () => {

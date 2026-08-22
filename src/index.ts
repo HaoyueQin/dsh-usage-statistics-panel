@@ -30,8 +30,41 @@ export interface UsageStatsConfig {
   backfillConcurrency?: number
 }
 
+/**
+ * The store is a PROCESS-level singleton, keyed on globalThis.
+ *
+ * Why: `storageDomain.open()` allows each domain name to be opened exactly
+ * once per process and offers no close. A hot reload (fiber dispose +
+ * re-import + fresh `apply()`) therefore constructs a NEW UsageStore whose
+ * open('usage_history') hits "DomainError: domain 'usage_history' is already
+ * open" — which surfaces as a FATAL host load failure and takes the whole
+ * backend down (observed twice, 2026-08-22). The module cache is cleared by
+ * every reload, so module-level state cannot carry the instance across; the
+ * host's globalThis can. Reusing one store across fibers is safe: the domain
+ * handle stays valid for the process lifetime, the collector (whose listeners
+ * ride ctx.effect disposers) is per-fiber, and every other resource this
+ * plugin mounts is effect-managed.
+ */
+const STORE_KEY = '__dshUsageStatisticsPanelStore'
+
+/** Reset the process-level store cache (test seam only). */
+export function _resetSharedStoreForTests(): void {
+  delete (globalThis as unknown as Record<string, unknown>)[STORE_KEY]
+}
+
+function sharedStore(storageDomain: Context['storageDomain']): UsageStore {
+  const g = globalThis as unknown as { [STORE_KEY]?: UsageStore }
+  const existing = g[STORE_KEY]
+  if (existing) return existing
+  // The constructor never throws on an unavailable domain — it degrades
+  // internally (see UsageStore.initialize) — so caching it here is safe.
+  const created = new UsageStore(storageDomain)
+  g[STORE_KEY] = created
+  return created
+}
+
 export function apply(ctx: Context, config: UsageStatsConfig = {}): void {
-  const store = new UsageStore(ctx.storageDomain)
+  const store = sharedStore(ctx.storageDomain)
   const collector = new UsageCollector(ctx, store, {
     source: config.source,
     backfillConcurrency: config.backfillConcurrency,
@@ -44,9 +77,21 @@ export function apply(ctx: Context, config: UsageStatsConfig = {}): void {
     return rt?.trustedHosts ?? []
   }
 
+  // One abortable scan at a time: the initial boot backfill and any /reset
+  // rescan share this controller slot, so a rebuild cancels the scan before
+  // it and fiber teardown aborts whatever is in flight.
+  let scanController: AbortController | null = null
+  const rescan = async (): Promise<void> => {
+    scanController?.abort()
+    const controller = new AbortController()
+    scanController = controller
+    await store.readyPromise()
+    await collector.backfill(ctx.sessionPersistence, ctx.sessions, controller.signal)
+  }
+
   // Mount the fenced route. The disposer runs on fiber teardown (HMR-safe).
   ctx.effect(() => {
-    const route = buildUsageRoute(ctx, { store, collector, trustedHosts })
+    const route = buildUsageRoute(ctx, { store, collector, trustedHosts, rescan })
     const dispose = ctx.webServer.register(route as never)
     return dispose
   }, 'dsh-usage-statistics-panel: routes')
@@ -58,14 +103,9 @@ export function apply(ctx: Context, config: UsageStatsConfig = {}): void {
   // domain.
   ctx.effect(() => {
     collector.start()
-    const controller = new AbortController()
-    void store.readyPromise().then(() => {
-      if (!controller.signal.aborted) {
-        void collector.backfill(ctx.sessionPersistence, ctx.sessions, controller.signal)
-      }
-    })
+    void rescan()
     return () => {
-      controller.abort()
+      scanController?.abort()
     }
   }, 'dsh-usage-statistics-panel: collector')
 }

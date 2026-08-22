@@ -3,6 +3,8 @@
  * Methods:
  *   - range  { range, from?, to?, source? } -> UsageStatsRange
  *   - status {} -> BackfillStatus
+ *   - reset  {} -> drop every row + cursor, then rescan all persisted
+ *              sessions (the store-rebuild escape hatch)
  * The prefix route /usage/api is registered on the webserver; each request
  * passes the browser-trust fence (Host-header loopback or trustedHosts).
  */
@@ -22,6 +24,9 @@ export interface RoutesDeps {
   collector: UsageCollector
   /** Resolve the trusted-host list live (webRuntime.trustedHosts). */
   trustedHosts: () => string[]
+  /** Drop and re-run the full backfill (wired by the host half so the route
+   *  can rebuild the store after a reset). */
+  rescan: () => Promise<void>
 }
 
 /** Parse a strict `YYYY-MM-DD` calendar date (rejects rolled-over shapes
@@ -141,6 +146,21 @@ export function buildUsageRoute(ctx: Context, deps: RoutesDeps): UsageWebRoute {
         return
       }
       if (method === 'POST' && url.endsWith('/status')) {
+        writeJson(res, { ok: true, value: deps.collector.status })
+        return
+      }
+      if (method === 'POST' && url.endsWith('/reset')) {
+        // Rebuild escape hatch: wipe rows + cursor, then replay every
+        // persisted session under the CURRENT attribution rules. Refuse a
+        // concurrent scan instead of racing it. The still-observed sessions'
+        // live boundaries survive the wipe — without them the rescan could
+        // only skip those logs whole and their pre-reset history would be
+        // stranded.
+        if (deps.collector.running) {
+          throw new UsageError(409, 'usage stats: backfill already running')
+        }
+        await deps.store.reset(new Set(deps.collector.observedSessions()))
+        await deps.rescan()
         writeJson(res, { ok: true, value: deps.collector.status })
         return
       }

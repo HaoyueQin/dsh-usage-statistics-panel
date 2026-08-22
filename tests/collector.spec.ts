@@ -139,7 +139,9 @@ describe('UsageCollector.backfill', () => {
     return {
       state,
       seenSessions: async () => new Set(state.seen),
+      liveSequences: async () => new Map<string, number>(),
       markSeenSessions: async (ids: Iterable<string>) => { const arr = [...ids]; state.marked.push(arr); for (const id of arr) state.seen.add(id) },
+      markLiveSequences: async () => {},
       count: async () => preRows,
       record: async (sample: Record<string, unknown>) => { state.recorded.push(sample) },
     } as unknown as ConstructorParameters<typeof UsageCollector>[1] & { state: typeof state }
@@ -176,14 +178,18 @@ describe('UsageCollector.backfill', () => {
 
   it('does not double-count a session the live listener already recorded (restart regression)', async () => {
     // Boot 1: a live session S11 produces usage; the listener must write it
-    // into the durable cursor so boot 2's backfill skips its persisted log.
+    // into the durable cursor (with its first observed seq) so boot 2's
+    // backfill skips its persisted log.
     const seenAcrossBoots = new Set<string>()
+    const liveSeqAcrossBoots = new Map<string, number>()
     function durableStore() {
       const recorded: Array<Record<string, unknown>> = []
       return {
         recorded,
         seenSessions: async () => new Set(seenAcrossBoots),
+        liveSequences: async () => new Map(liveSeqAcrossBoots),
         markSeenSessions: async (ids: Iterable<string>) => { for (const id of ids) seenAcrossBoots.add(id) },
+        markLiveSequences: async (entries: Iterable<readonly [string, number]>) => { for (const [id, seq] of entries) if (!liveSeqAcrossBoots.has(id)) liveSeqAcrossBoots.set(id, seq) },
         count: async () => recorded.length,
         record: async (sample: Record<string, unknown>) => { recorded.push(sample) },
       } as unknown as ConstructorParameters<typeof UsageCollector>[1] & { recorded: Array<Record<string, unknown>> }
@@ -197,7 +203,10 @@ describe('UsageCollector.backfill', () => {
     expect(store1.recorded).toHaveLength(1)
     // Drain the coalesced cursor write.
     await new Promise((resolve) => setTimeout(resolve, 0))
-    expect(seenAcrossBoots.has('S11')).toBe(true)
+    // The cursor now holds the session under its LIVE boundary (seq 0), not
+    // as fully backfilled: boot 2 replays nothing because every event of
+    // this log was already observed live.
+    expect(liveSeqAcrossBoots.get('S11')).toBe(0)
 
     // Boot 2: S11 is disposed (absent from the live list) but persisted —
     // the backfill must NOT replay its log on top of the live-recorded row.
@@ -243,7 +252,9 @@ describe('UsageCollector live attribution', () => {
     return {
       recorded,
       seenSessions: async () => new Set<string>(),
+      liveSequences: async () => new Map<string, number>(),
       markSeenSessions: async (ids: Iterable<string>) => { for (const _ of ids) {} },
+      markLiveSequences: async () => {},
       count: async () => recorded.length,
       record: async (sample: Record<string, unknown>) => { recorded.push(sample) },
     } as unknown as ConstructorParameters<typeof UsageCollector>[1] & { recorded: Array<Record<string, unknown>> }
@@ -297,5 +308,226 @@ describe('UsageCollector live attribution', () => {
     emit(listeners, 'session/event', { id: 'A' }, { type: 'assistant/message', seq: 1, time: T, data: { turn: 9, step: 9, usage: { inputTokens: 5, outputTokens: 5 } } })
     expect(store.recorded).toHaveLength(1)
     expect(store.recorded[0]!.model).toBeUndefined()
+  })
+})
+
+describe('live attribution without request/context (the (unknown) regression)', () => {
+  function recordingStore() {
+    const recorded: Array<Record<string, unknown>> = []
+    return {
+      recorded,
+      seenSessions: async () => new Set<string>(),
+      liveSequences: async () => new Map<string, number>(),
+      markSeenSessions: async (ids: Iterable<string>) => { for (const _ of ids) {} },
+      markLiveSequences: async () => {},
+      count: async () => recorded.length,
+      record: async (sample: Record<string, unknown>) => { recorded.push(sample) },
+    } as unknown as ConstructorParameters<typeof UsageCollector>[1] & { recorded: Array<Record<string, unknown>> }
+  }
+
+  /** A ctx whose sessions store answers get(id).requestContext() with `rc` —
+   *  the authoritative route fold every real Session exposes. */
+  function captureCtxWithSessionRoute(rc: { provider?: string; model?: string } | undefined) {
+    const base = captureCtx()
+    const ctx = Object.assign(base.ctx, {
+      sessions: { get: (_id: string) => ({ requestContext: () => rc }) },
+    })
+    return { listeners: base.listeners, ctx }
+  }
+
+  it('attributes an assistant/message via its own message.source when no route was ever observed', () => {
+    // The regression: a session that predates the collector (host restart /
+    // plugin reload) never re-emits request/context, so EVERY sample used to
+    // land in "(unknown)". The message itself carries the calling model.
+    const { ctx, listeners } = captureCtx()
+    const store = recordingStore()
+    const collector = new UsageCollector(ctx as never, store as never)
+    collector.start()
+    emit(listeners, 'session/event', { id: 'A' }, {
+      type: 'assistant/message', seq: 7, time: T,
+      data: {
+        turn: 3, step: 2,
+        usage: { inputTokens: 1000, outputTokens: 100 },
+        message: { source: { provider: 'deepseek-official', model: 'deepseek-v4-pro' } },
+      },
+    })
+    expect(store.recorded).toHaveLength(1)
+    expect(store.recorded[0]!.model).toBe('deepseek-official/deepseek-v4-pro')
+  })
+
+  it('seeds the route from the live session requestContext() fold for chunk samples', () => {
+    // A streaming usage chunk carries NO model of its own; for a session the
+    // listener attached to mid-flight the only source is the session's own
+    // log fold. The collector must consult it instead of giving up.
+    const { ctx, listeners } = captureCtxWithSessionRoute({ provider: 'opnecode-zen', model: 'x-preview-f-free' })
+    const store = recordingStore()
+    const collector = new UsageCollector(ctx as never, store as never)
+    collector.start()
+    emit(listeners, 'session/event', { id: 'A' }, {
+      type: 'assistant/chunk', seq: 9, time: T,
+      data: { turn: 1, step: 1, chunk: { type: 'usage', usage: { inputTokens: 50, outputTokens: 5 } } },
+    })
+    expect(store.recorded).toHaveLength(1)
+    expect(store.recorded[0]!.model).toBe('opnecode-zen/x-preview-f-free')
+  })
+
+  it('learns the route from message.source so later chunk samples attribute too', () => {
+    const { ctx, listeners } = captureCtx()
+    const store = recordingStore()
+    const collector = new UsageCollector(ctx as never, store as never)
+    collector.start()
+    emit(listeners, 'session/event', { id: 'A' }, {
+      type: 'assistant/message', seq: 1, time: T,
+      data: {
+        turn: 1, step: 1,
+        usage: { inputTokens: 10, outputTokens: 1 },
+        message: { source: { provider: 'p', model: 'm' } },
+      },
+    })
+    emit(listeners, 'session/event', { id: 'A' }, {
+      type: 'assistant/chunk', seq: 2, time: T,
+      data: { turn: 2, step: 1, chunk: { type: 'usage', usage: { inputTokens: 20, outputTokens: 2 } } },
+    })
+    expect(store.recorded).toHaveLength(2)
+    expect(store.recorded[0]!.model).toBe('p/m')
+    expect(store.recorded[1]!.model).toBe('p/m')
+  })
+
+  it('keeps a bare-model source (no provider) attributable', () => {
+    const { ctx, listeners } = captureCtx()
+    const store = recordingStore()
+    const collector = new UsageCollector(ctx as never, store as never)
+    collector.start()
+    emit(listeners, 'session/event', { id: 'A' }, {
+      type: 'assistant/message', seq: 1, time: T,
+      data: { turn: 1, step: 1, usage: { inputTokens: 10, outputTokens: 1 }, message: { source: { model: 'bare-model' } } },
+    })
+    expect(store.recorded[0]!.model).toBe('bare-model')
+  })
+})
+
+describe('backfill attribution and the seq-partitioned cursor', () => {
+  function partitionStore(live: Record<string, number>) {
+    const recorded: Array<Record<string, unknown>> = []
+    const marked: string[][] = []
+    return {
+      recorded,
+      marked,
+      seenSessions: async () => new Set<string>(Object.keys(live)),
+      liveSequences: async () => new Map(Object.entries(live).map(([k, v]) => [k, v] as [string, number])),
+      markSeenSessions: async (ids: Iterable<string>) => { marked.push([...ids]) },
+      markLiveSequences: async () => {},
+      count: async () => recorded.length,
+      record: async (sample: Record<string, unknown>) => { recorded.push(sample) },
+    } as unknown as ConstructorParameters<typeof UsageCollector>[1] & { recorded: Array<Record<string, unknown>>; marked: string[][] }
+  }
+
+  /** Five events: call 1 fully before any boundary, call 2 after it. */
+  const fiveEvents = [
+    { type: 'step/start', seq: 0, time: T, data: { turn: 1, step: 1 } },
+    { type: 'assistant/message', seq: 1, time: T, data: { turn: 1, step: 1, usage: { inputTokens: 10, outputTokens: 1 }, message: { source: { provider: 'p', model: 'm1' } } } },
+    { type: 'turn/end', seq: 2, time: T, data: { turn: 1, reason: { kind: 'completed' } } },
+    { type: 'step/start', seq: 3, time: T, data: { turn: 2, step: 1 } },
+    { type: 'assistant/message', seq: 4, time: T, data: { turn: 2, step: 1, usage: { inputTokens: 20, outputTokens: 2 }, message: { source: { provider: 'p', model: 'm2' } } } },
+  ]
+
+  it('replays only the pre-observation prefix of a live-marked session', async () => {
+    // The cursor now records the first LIVE-OBSERVED seq per session: events
+    // before it were never folded by any live pass, so replaying exactly
+    // that prefix recovers pre-attach history without double counting.
+    const store = partitionStore({ S1: 2 })
+    const collector = new UsageCollector({ on: () => {} } as never, store as never)
+    await collector.backfill(
+      { list: async () => [{ id: 'S1' }], inspect: async () => ({ id: 'S1', events: fiveEvents }) } as unknown as UsageSessionPersistence,
+      { list: () => [] } as never,
+    )
+    // Only seq<2 folded: the call-1 request marker + its usage (+ nothing else).
+    expect(store.recorded).toHaveLength(2)
+    expect(store.recorded.find((s) => s.request)?.day).toBe('2026-08-02')
+    expect(store.recorded.find((s) => s.inputTokens === 10)).toBeTruthy()
+    expect(store.recorded.find((s) => s.inputTokens === 20)).toBeFalsy()
+    // The prefix is now durable: the session lands in backfilledSessions.
+    expect(store.marked).toEqual([['S1']])
+  })
+
+  it('replays a live-marked session with an unknown boundary sentinel not at all', async () => {
+    // firstSeq -1 = "observed but boundary unknown" → the anti-double-count
+    // choice is to skip everything (never duplicate).
+    const store = partitionStore({ S1: -1 })
+    const collector = new UsageCollector({ on: () => {} } as never, store as never)
+    await collector.backfill(
+      { list: async () => [{ id: 'S1' }], inspect: async () => ({ id: 'S1', events: fiveEvents }) } as unknown as UsageSessionPersistence,
+      { list: () => [] } as never,
+    )
+    expect(store.recorded).toHaveLength(0)
+  })
+
+  it('prefix-replays a session that is STILL LIVE when its boundary is known', async () => {
+    // The reset/rescan flow: a continuously-live session (resumed before the
+    // scan) owns its post-boundary events, so replaying the persisted prefix
+    // recovers its pre-boundary history without any double counting.
+    const store = partitionStore({ S1: 2 })
+    const collector = new UsageCollector({ on: () => {} } as never, store as never)
+    await collector.backfill(
+      { list: async () => [{ id: 'S1' }], inspect: async () => ({ id: 'S1', events: fiveEvents }) } as unknown as UsageSessionPersistence,
+      { list: () => [{ id: 'S1' }] } as never, // S1 is live right now
+    )
+    expect(store.recorded).toHaveLength(2)
+    expect(store.recorded.find((s) => s.inputTokens === 20)).toBeFalsy()
+    expect(store.marked).toEqual([['S1']])
+  })
+
+  it('skips a live session whose boundary is missing from the snapshot (mid-scan resume)', async () => {
+    // S1 went live AFTER the cursor snapshot: a stale absence must not widen
+    // the replay into a full-log fold that would double the live samples.
+    const store = partitionStore({})
+    ;(store as unknown as { seenSessions: () => Promise<Set<string>> }).seenSessions = async () => new Set<string>()
+    const collector = new UsageCollector({ on: () => {} } as never, store as never)
+    await collector.backfill(
+      { list: async () => [{ id: 'S1' }], inspect: async () => ({ id: 'S1', events: fiveEvents }) } as unknown as UsageSessionPersistence,
+      { list: () => [{ id: 'S1' }] } as never,
+    )
+    expect(store.recorded).toHaveLength(0)
+  })
+
+  it('attributes backfilled samples via message.source even without request/context', async () => {
+    // Old logs may lack request/context entirely; the per-message source is
+    // present on every shipped adapter message, so it must win.
+    const store = partitionStore({})
+    ;(store as unknown as { seenSessions: () => Promise<Set<string>> }).seenSessions = async () => new Set<string>()
+    const collector = new UsageCollector({ on: () => {} } as never, store as never)
+    await collector.backfill(
+      { list: async () => [{ id: 'S9' }], inspect: async () => ({ id: 'S9', events: fiveEvents }) } as unknown as UsageSessionPersistence,
+      { list: () => [] } as never,
+    )
+    const m1 = store.recorded.find((s) => s.inputTokens === 10)
+    const m2 = store.recorded.find((s) => s.inputTokens === 20)
+    expect(m1?.model).toBe('p/m1')
+    expect(m2?.model).toBe('p/m2')
+  })
+})
+
+describe('live recording never escapes a rejection', () => {
+  it('counts a refusing store in status.recordFailures instead of crashing the host', async () => {
+    // The degraded-domain scenario: record() rejects. An unhandled
+    // rejection here would take the whole backend down (observed class of
+    // failure); the collector must swallow and count it.
+    const { ctx, listeners } = captureCtx()
+    const store = {
+      seenSessions: async () => new Set<string>(),
+      liveSequences: async () => new Map<string, number>(),
+      markSeenSessions: async () => {},
+      markLiveSequences: async () => {},
+      count: async () => 0,
+      record: async () => { throw new Error('degraded') },
+    }
+    const collector = new UsageCollector(ctx as never, store as never)
+    collector.start()
+    emit(listeners, 'session/event', { id: 'A' }, {
+      type: 'assistant/message', seq: 1, time: T,
+      data: { turn: 1, step: 1, usage: { inputTokens: 10, outputTokens: 1 }, message: { source: { provider: 'p', model: 'm' } } },
+    })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(collector.status.recordFailures).toBe(1)
   })
 })

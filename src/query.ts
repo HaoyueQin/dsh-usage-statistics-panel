@@ -6,9 +6,13 @@
  * model, and the per-model / per-provider ranked splits.
  *
  * The cache hit-rate is derived only from the input side (cacheHit +
- * cacheMiss), while the token total keeps the provider's totals as-is — the
- * two denominators never mix even when a provider reports totals that omit
- * cache tokens (same rule as the reasonix query).
+ * cacheMiss), while the headline token total is PROVIDER-INCLUSIVE —
+ * uncached input + output + cache reads + cache writes. That is the number
+ * a provider dashboard reports for the same calls (and reasonix's
+ * TotalTokens): DSH's TokenUsage splits DeepSeek's prompt_tokens into
+ * disjoint input/cacheRead buckets, so the naive input+output sum would
+ * hide the (typically dominant) cached share. The two rate denominators
+ * never mix with the total.
  */
 
 import type {
@@ -96,7 +100,10 @@ export function aggregateSamples(samples: Iterable<UsageSample>, filter: RangeFi
       dayRequests.set(sample.day, (dayRequests.get(sample.day) ?? 0) + 1)
       continue
     }
-    const total = sample.inputTokens + sample.outputTokens
+    // Provider-inclusive headline (dashboard parity): every bucket the
+    // provider billed for this call — uncached input, output, cache reads
+    // and writes. The hit/miss rate denominators below stay input-side only.
+    const total = sample.inputTokens + sample.outputTokens + sample.cacheReadTokens + sample.cacheWriteTokens
     out.tokens += total
     out.cacheHit += sample.cacheReadTokens
     // The uncached input side is the cache miss: DSH's TokenUsage.inputTokens

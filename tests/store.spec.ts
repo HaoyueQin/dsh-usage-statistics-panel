@@ -200,18 +200,23 @@ describe('UsageStore', () => {
     expect((await store.liveSequences()).size).toBe(0)
   })
 
-  it('reset() preserves the live boundaries of the still-observed sessions', async () => {
+  it('reset() re-bounds named sessions at their wipe-time watermarks', async () => {
     const records = new Map<string, UsageDayRow>()
     const store = new UsageStore(memoryDomainWith(records, { backfilledSessions: ['s1'], liveFirstSeq: { s2: 3, s3: 9 } }))
     await store.readyPromise()
-    // Only s2 is still being observed live: its boundary must survive the
-    // wipe so the follow-up backfill can prefix-replay its log; everything
-    // else (rows, backfilled ids, s3's boundary) is gone.
-    await store.reset(new Set(['s2']))
+    // Only s2 is still open at wipe time, and its watermark is its CURRENT
+    // log length (10), not its old attach boundary: the wipe destroys the
+    // live path's recorded samples too, so the follow-up backfill must
+    // reconstruct everything below the watermark — including the span
+    // [3,10) the live path had folded before the wipe. Everything else
+    // (rows, backfilled ids, s3's stale boundary) is gone.
+    await store.record({ day: '2026-08-01', model: 'm', inputTokens: 5, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 })
+    expect(await store.count()).toBe(1)
+    await store.reset(new Map([['s2', 10]]))
     expect(await store.count()).toBe(0)
     expect(await store.seenSessions()).toEqual(new Set())
     const seq = await store.liveSequences()
-    expect(seq.get('s2')).toBe(3)
+    expect(seq.get('s2')).toBe(10)
     expect(seq.has('s3')).toBe(false)
   })
 
@@ -230,5 +235,23 @@ describe('UsageStore', () => {
     await expect(store.seenSessions()).resolves.toEqual(new Set())
     await expect(store.record({ day: '2026-08-01', model: 'm', inputTokens: 1, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 }))
       .rejects.toThrow(/degraded/)
+  })
+
+  it('fails cursor writes per-call when degraded instead of silently no-op', async () => {
+    // A silent success here would tell callers a replay boundary was made
+    // durable when nothing persisted — the same observational contract as
+    // record(): throw per-call, count the failure upstream.
+    const store = new UsageStore({
+      open: async () => {
+        throw Object.assign(new Error("domain 'usage_history' is already open"), { name: 'DomainError' })
+      },
+    } as unknown as UsageStorageDomain)
+    await store.readyPromise()
+    await expect(store.markSeenSessions(['a'])).rejects.toThrow(/degraded/)
+    await expect(store.markLiveSequences([['a', 1]])).rejects.toThrow(/degraded/)
+    await expect(store.reset()).rejects.toThrow(/degraded/)
+    // One rejection must not poison the chain: later writes still observe
+    // the degradation clearly rather than hanging or losing ids quietly.
+    await expect(store.markSeenSessions(['b'])).rejects.toThrow(/degraded/)
   })
 })

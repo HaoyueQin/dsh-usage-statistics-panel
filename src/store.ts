@@ -56,11 +56,14 @@ export const usageDayRowSchema = z.object({
  *  sessions it has never seen (a full replay would double every counter —
  *  the fold's replace semantics only dedupe within one pass).
  *
- *  `liveFirstSeq` records, per session the LIVE listener observed, the seq
- *  of its first observed event (or -1 when the boundary was unknown). The
- *  next boot's backfill replays exactly the log PREFIX before that boundary
- *  — events the live path never saw — recovering pre-attach history that a
- *  plain id cursor would have locked away forever. */
+ *  `liveFirstSeq` records, per session, the EXCLUSIVE END of the range a
+ *  backfill may replay: [0, value) is backfill-owned, [value, ∞) is
+ *  live-path-owned. It is written at two moments — when the live listener
+ *  first observes a session (that first event's seq, or -1 when the boundary
+ *  was unknown), and by /reset (the session's wipe-time log length, because
+ *  the wipe destroyed everything below it and the rebuild must reconstruct
+ *  exactly that span from the log). The next boot's backfill replays exactly
+ *  the prefix before the boundary. */
 export const usageHistoryDomain = defineDomain({
   name: 'usage_history',
   version: 1,
@@ -79,6 +82,13 @@ export const usageHistoryDomain = defineDomain({
 /** key: `day|provider|model`. */
 export function dayRowKey(day: string, provider: string, model: string): string {
   return `${day}|${provider}|${model}`
+}
+
+/** The domain global's value: the backfill cursor (see the
+ *  `usageHistoryDomain` doc for the field semantics). */
+interface UsageCursor {
+  backfilledSessions?: string[]
+  liveFirstSeq?: Record<string, number>
 }
 
 export class UsageStore {
@@ -150,8 +160,20 @@ export class UsageStore {
     return new Map(Object.entries(value?.liveFirstSeq ?? {}))
   }
 
-  private cursor(): { backfilledSessions?: string[]; liveFirstSeq?: Record<string, number> } | undefined {
-    return this.domainHandle?.global?.get() as { backfilledSessions?: string[]; liveFirstSeq?: Record<string, number> } | undefined
+  private cursor(): UsageCursor | undefined {
+    return this.domainHandle?.global?.get() as UsageCursor | undefined
+  }
+
+  /** The cursor value for a read-modify-write cycle. Degraded stores fail
+   *  here too: the cursor-writing methods must honor the same per-call
+   *  failure contract as record() — silently succeeding while persisting
+   *  nothing would make callers believe a replay boundary was durable. */
+  private requireCursor(): UsageCursor {
+    if (this.openError !== undefined) {
+      const detail = this.openError instanceof Error ? this.openError.message : String(this.openError)
+      throw new Error(`usage store degraded (domain unavailable: ${detail})`)
+    }
+    return this.cursor() ?? {}
   }
 
   /** Persist session ids as replayed (merges into the cursor). Calls are
@@ -160,12 +182,12 @@ export class UsageStore {
   async markSeenSessions(ids: Iterable<string>): Promise<void> {
     const write = this.markChain.then(async () => {
       await this.ready
-      const value = this.cursor()
-      const seen = new Set(value?.backfilledSessions ?? [])
+      const value = this.requireCursor()
+      const seen = new Set(value.backfilledSessions ?? [])
       for (const id of ids) seen.add(id)
       await this.domainHandle?.global?.set({
         backfilledSessions: [...seen],
-        liveFirstSeq: value?.liveFirstSeq ?? {},
+        liveFirstSeq: value.liveFirstSeq ?? {},
       })
     })
     // Keep the chain alive regardless of failure: one rejected write must
@@ -183,8 +205,8 @@ export class UsageStore {
   async markLiveSequences(entries: Iterable<readonly [string, number]>): Promise<void> {
     const write = this.markChain.then(async () => {
       await this.ready
-      const value = this.cursor()
-      const merged: Record<string, number> = { ...(value?.liveFirstSeq ?? {}) }
+      const value = this.requireCursor()
+      const merged: Record<string, number> = { ...(value.liveFirstSeq ?? {}) }
       let changed = false
       for (const [id, seq] of entries) {
         const prev = merged[id]
@@ -195,7 +217,7 @@ export class UsageStore {
       }
       if (!changed) return
       await this.domainHandle?.global?.set({
-        backfilledSessions: value?.backfilledSessions ?? [],
+        backfilledSessions: value.backfilledSessions ?? [],
         liveFirstSeq: merged,
       })
     })
@@ -206,27 +228,29 @@ export class UsageStore {
     return write
   }
 
-  /** Drop every row and the whole cursor. The next backfill replays all
-   *  persisted sessions from scratch (the store-rebuild escape hatch for
-   *  corrupted history or attribution-logic upgrades).
+  /** Drop every row and the whole cursor, re-bounding each named session at
+   *  its WIPE-TIME WATERMARK (the store-rebuild escape hatch for corrupted
+   *  history or attribution-logic upgrades).
    *
-   *  `preserveLiveBoundaries` names sessions whose live observation window
-   *  must survive the wipe: a still-live session's first-observed seq is
-   *  what lets the immediately-following backfill replay its log PREFIX
-   *  instead of skipping it whole — dropping the boundary would strand the
-   *  session's entire pre-reset history forever. */
-  async reset(preserveLiveBoundaries?: ReadonlySet<string>): Promise<void> {
+   *  The watermark matters because the wipe destroys the live path's already-
+   *  recorded samples too: a still-open session's post-attach usage exists in
+   *  no log-replay-free zone — it MUST be reconstructed from the persisted
+   *  log like everything else. Bounding that session at its old attach
+   *  boundary would make the follow-up backfill replay only the pre-attach
+   *  prefix and strand the live-recorded span forever; bounding it at the
+   *  log length captured at wipe time makes the backfill rebuild exactly the
+   *  destroyed range [0, watermark) once, while events from the watermark on
+   *  stay exclusive to the still-running live path. Sessions without a
+   *  usable watermark carry the -1 sentinel (replay nothing — never risk a
+   *  duplicate). */
+  async reset(boundaries?: ReadonlyMap<string, number>): Promise<void> {
     const write = this.markChain.then(async () => {
       await this.ready
       const table = this.requireTable()
       for (const key of [...table.keys()]) await table.delete(key)
       const liveFirstSeq: Record<string, number> = {}
-      if (preserveLiveBoundaries && preserveLiveBoundaries.size > 0) {
-        const current = this.cursor()?.liveFirstSeq ?? {}
-        for (const id of preserveLiveBoundaries) {
-          const seq = current[id]
-          if (seq !== undefined) liveFirstSeq[id] = seq
-        }
+      if (boundaries) {
+        for (const [id, seq] of boundaries) liveFirstSeq[id] = seq
       }
       await this.domainHandle?.global?.set({ backfilledSessions: [], liveFirstSeq })
     })

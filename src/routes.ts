@@ -24,9 +24,15 @@ export interface RoutesDeps {
   collector: UsageCollector
   /** Resolve the trusted-host list live (webRuntime.trustedHosts). */
   trustedHosts: () => string[]
-  /** Drop and re-run the full backfill (wired by the host half so the route
-   *  can rebuild the store after a reset). */
-  rescan: () => Promise<void>
+  /** Whether a /reset rebuild pipeline is currently in flight (its scan
+   *  makes the collector report running too — callers use this to tell that
+   *  benign state apart from a boot scan and COALESCE onto the pipeline
+   *  instead of refusing). */
+  isRebuilding: () => boolean
+  /** Wipe the store at wipe-time live watermarks and re-run the full
+   *  backfill (wired by the host half; concurrent calls coalesce into one
+   *  rebuild). */
+  resetAndRescan: () => Promise<void>
 }
 
 /** Parse a strict `YYYY-MM-DD` calendar date (rejects rolled-over shapes
@@ -151,16 +157,16 @@ export function buildUsageRoute(ctx: Context, deps: RoutesDeps): UsageWebRoute {
       }
       if (method === 'POST' && url.endsWith('/reset')) {
         // Rebuild escape hatch: wipe rows + cursor, then replay every
-        // persisted session under the CURRENT attribution rules. Refuse a
-        // concurrent scan instead of racing it. The still-observed sessions'
-        // live boundaries survive the wipe — without them the rescan could
-        // only skip those logs whole and their pre-reset history would be
-        // stranded.
-        if (deps.collector.running) {
+        // persisted session under the CURRENT attribution rules. Refuse only
+        // while a BOOT scan (not started by a reset) is in flight; an
+        // overlapping reset rides the coalescing pipeline instead — one
+        // wipe+rebuild, every caller gets its outcome. Live sessions are
+        // re-bounded at their wipe-time log length so the rebuild also
+        // reconstructs what the live path had recorded before the wipe.
+        if (deps.collector.running && !deps.isRebuilding()) {
           throw new UsageError(409, 'usage stats: backfill already running')
         }
-        await deps.store.reset(new Set(deps.collector.observedSessions()))
-        await deps.rescan()
+        await deps.resetAndRescan()
         writeJson(res, { ok: true, value: deps.collector.status })
         return
       }

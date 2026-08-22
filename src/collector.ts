@@ -81,9 +81,10 @@ export interface CollectorStatus {
   scannedSessions: number
   lastSessionId?: string
   error?: string
-  /** Live samples the store refused (degraded domain, write failure, ...).
-   *  Recording is observational and must never take the host down, so
-   *  failures are counted here instead of escaping as rejections. */
+  /** Store operations this generation refused (degraded domain, write
+   *  failure, ...): live samples AND durable cursor writes. Recording is
+   *  observational and must never take the host down, so failures are
+   *  counted here instead of escaping as rejections. */
   recordFailures: number
 }
 
@@ -295,7 +296,9 @@ export class UsageCollector {
       this.liveMarkFlushScheduled = false
       const batch = [...this.liveMarkBuffer.entries()]
       this.liveMarkBuffer.clear()
-      if (batch.length > 0) void this.store.markLiveSequences(batch)
+      // Same observational contract as record(): a degraded store must never
+      // turn a cursor write into an unhandled rejection.
+      if (batch.length > 0) void this.store.markLiveSequences(batch).catch(() => { this.status.recordFailures++ })
     })
   }
 
@@ -350,23 +353,18 @@ export class UsageCollector {
     return this.status.running
   }
 
-  /** Session ids this collector generation has observed live. Their cursor
-   *  boundaries are the authoritative prefix-partition points — the reset
-   *  path preserves exactly these so a rebuild can replay each live
-   *  session's pre-observation history instead of stranding it. */
-  observedSessions(): string[] {
-    return [...this.liveMarked]
-  }
-
   /** Run the one-time backfill: enumerate persisted sessions and replay each
-   *  through its own fold. Idempotent — re-running on a populated store only
-   *  re-folds work the store hasn't seen:
-   *  - a session in neither cursor set replays FULLY;
-   *  - a session with a live observation boundary replays only the log
-   *    PREFIX before that seq (never folded by any live pass) — including a
-   *    session that is STILL LIVE right now, whose post-boundary events the
-   *    live path owns;
-   *  - a fully-backfilled session with no live boundary is skipped;
+   *  through its own fold. Idempotent — the cursor partitions every session's
+   *  log exactly once across boots and live passes:
+   *  - a session NOT in backfilledSessions replays up to its cursor boundary:
+   *    FULLY when none is recorded (no live pass ever folded this log), only
+   *    the PREFIX [0, boundary) when one is — including a STILL-LIVE session,
+   *    whose post-boundary events the live path owns (a /reset watermark uses
+   *    the same shape: everything below the wipe-time log length must be
+   *    rebuilt from the log because the wipe destroyed it);
+   *  - a session already in backfilledSessions is NEVER replayed again: it
+   *    lands there only after a clean replay of its full replayable range,
+   *    so re-selecting it would double that range on every later boot;
    *  - a live session without a usable boundary is skipped (its events are
    *    owned by this boot's live pass — or it resumed mid-scan and our
    *    boundary snapshot is stale; stale absence must never widen a replay).
@@ -385,7 +383,12 @@ export class UsageCollector {
       // pass only, so a full replay would double every counter.
       const seen = await this.store.seenSessions()
       const liveSeq = await this.store.liveSequences()
-      const targets = headers.filter((h) => !(seen.has(h.id) && !liveSeq.has(h.id)))
+      // seen alone decides target selection: a session enters
+      // backfilledSessions only after its whole replayable range was cleanly
+      // folded, so selecting it again would multiply that range by the boot
+      // count (the boundary bounds WHAT a not-yet-seen session may replay,
+      // never WHETHER a seen one does).
+      const targets = headers.filter((h) => !seen.has(h.id))
       this.status.total = targets.length
       this.status.done = 0
       const concurrency = this.options.backfillConcurrency ?? 4

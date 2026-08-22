@@ -4,7 +4,7 @@
  * wiring against an in-memory store.
  */
 import { describe, expect, it } from 'vitest'
-import { resolveRange } from '../src/routes.ts'
+import { resolveRange, buildUsageRoute } from '../src/routes.ts'
 
 function fixedNow(): Date {
   return new Date(2026, 7, 20, 15, 0, 0) // 2026-08-20 local
@@ -65,7 +65,7 @@ describe('resolveRange', () => {
 import { aggregateRange } from '../src/routes.ts'
 import type { UsageDayRow } from '../src/store.ts'
 import { readJsonBody } from '../src/wire.ts'
-import type { UsageHttpRequest } from '../src/context-types.ts'
+import type { UsageHttpRequest, UsageHttpResponse } from '../src/context-types.ts'
 
 function memoryStore(rows: UsageDayRow[]): Parameters<typeof aggregateRange>[0] {
   return {
@@ -141,5 +141,97 @@ describe('readJsonBody', () => {
 
   it('rejects malformed JSON with 400', async () => {
     await expect(readJsonBody(bodyReq(['{nope']))).rejects.toThrow(/invalid json/)
+  })
+})
+
+// ── POST /usage/api/reset — the store-rebuild escape hatch ─────────────────
+describe('POST /usage/api/reset', () => {
+  /** A minimal mock res collecting what writeJson wrote. */
+  function mockRes(): UsageHttpResponse & { bodyText: string; jsonStatus?: number } {
+    const res = {
+      statusCode: undefined as number | undefined,
+      jsonStatus: undefined as number | undefined,
+      bodyText: '',
+      writeHead(status: number) {
+        res.jsonStatus = status
+        return res
+      },
+      end(payload: string) {
+        res.bodyText = payload
+      },
+    }
+    return res as unknown as UsageHttpResponse & { bodyText: string; jsonStatus?: number }
+  }
+
+  /** A request the trust fence accepts (loopback Host, no browser markers). */
+  function post(url: string): UsageHttpRequest {
+    return { url, method: 'POST', headers: { host: '127.0.0.1:8090' } } as unknown as UsageHttpRequest
+  }
+
+  function deps() {
+    const calls = { resets: 0, rescans: 0 }
+    const base = {
+      store: {
+        reset: async () => { calls.resets++ },
+      },
+      collector: { running: false, status: { running: false, done: 0, total: 0 } },
+      trustedHosts: () => [] as string[],
+      isRebuilding: () => false,
+      // The host-half coalescing pipeline stands in directly: the route owns
+      // the 409 fence, the pipeline owns wipe + rebuild.
+      resetAndRescan: async () => { calls.rescans++ },
+    }
+    return { deps: base as unknown as Parameters<typeof buildUsageRoute>[1], calls }
+  }
+
+  it('delegates the wipe+rebuild to the pipeline and answers with status', async () => {
+    const route = buildUsageRoute({} as never, deps().deps)
+    const res = mockRes()
+    await route.handler(post('/usage/api/reset'), res)
+    expect(res.jsonStatus).toBe(200)
+    const body = JSON.parse(res.bodyText) as { ok: boolean; value: { running: boolean } }
+    expect(body.ok).toBe(true)
+    expect(body.value.running).toBe(false)
+  })
+
+  it('refuses with 409 while a boot scan is in flight and never wipes', async () => {
+    const mock = deps()
+    ;(mock.deps.collector as unknown as { running: boolean }).running = true
+    // isRebuilding stays false: this simulates the boot backfill, which the
+    // route must not yank mid-pass.
+    const route = buildUsageRoute({} as never, mock.deps)
+    const res = mockRes()
+    await route.handler(post('/usage/api/reset'), res)
+    expect(res.jsonStatus).toBe(409)
+    const body = JSON.parse(res.bodyText) as { ok: boolean; error: { message: string } }
+    expect(body.ok).toBe(false)
+    expect(body.error.message).toMatch(/already running/)
+    expect(mock.calls.resets).toBe(0)
+    expect(mock.calls.rescans).toBe(0)
+  })
+
+  it('coalesces onto an in-flight reset rebuild instead of refusing', async () => {
+    const mock = deps()
+    // The rebuild pipeline's own backfill makes the collector report
+    // running — but isRebuilding is true, so this is not a boot scan:
+    // the caller must ride the pipeline, not get a 409.
+    ;(mock.deps.collector as unknown as { running: boolean }).running = true
+    ;(mock.deps as unknown as { isRebuilding(): boolean }).isRebuilding = () => true
+    const route = buildUsageRoute({} as never, mock.deps)
+    const res = mockRes()
+    await route.handler(post('/usage/api/reset'), res)
+    expect(res.jsonStatus).toBe(200)
+    expect(JSON.parse(res.bodyText).ok).toBe(true)
+    expect(mock.calls.rescans).toBe(1)
+  })
+
+  it('keeps untrusted hosts out of the rebuild path', async () => {
+    const mock = deps()
+    const route = buildUsageRoute({} as never, mock.deps)
+    const res = mockRes()
+    const req = { url: '/usage/api/reset', method: 'POST', headers: { host: 'evil.example.com' } } as unknown as UsageHttpRequest
+    await route.handler(req, res)
+    expect(res.jsonStatus).toBe(403)
+    expect(mock.calls.rescans).toBe(0)
   })
 })

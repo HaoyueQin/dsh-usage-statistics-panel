@@ -98,12 +98,17 @@ export interface UsageSessionRoute {
 
 /** A live session handle (mirror of @deepseek-ai/dsh-session SessionStore
  *  members this plugin touches; `requestContext` is the authoritative fold
- *  of the log's `request/context` events that every real Session exposes). */
+ *  of the log's `request/context` events and `seq` the log's next-sequence
+ *  watermark — both exposed by every real Session). */
 export interface UsageSessionHandle {
   id: string
   cwd?: string
   createdAt?: number
   requestContext?(): UsageSessionRoute | undefined
+  /** The session log's next event seq (= its current length; the real
+   *  Session exposes this as a getter). /reset captures it as the wipe-time
+   *  rebuild watermark. */
+  seq?: number
 }
 
 /** The live session store (mirror of @deepseek-ai/dsh-session SessionStore). */

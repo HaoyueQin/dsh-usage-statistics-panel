@@ -9,3 +9,5 @@ coverage/
 .zcode/
 *.tgz
 dsh-*.png
+verify-redesign-*.png
+.reasonix/

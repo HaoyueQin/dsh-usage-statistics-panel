@@ -201,12 +201,15 @@ describe('UsageCollector.backfill', () => {
     emit(ctx1.listeners, 'session/event', { id: 'S11' }, { type: 'request/context', seq: 0, time: T, data: { provider: 'deepseek', model: 'model-a' } })
     emit(ctx1.listeners, 'session/event', { id: 'S11' }, { type: 'assistant/message', seq: 1, time: T, data: { turn: 1, step: 1, usage: { inputTokens: 1000, outputTokens: 500 } } })
     expect(store1.recorded).toHaveLength(1)
-    // Drain the coalesced cursor write.
+    // Drain the coalesced cursor write, then run boot 1's own backfill: S11
+    // is persisted, so it is a target (not yet seen) bounded at seq 0 — a
+    // clean empty-range replay that marks it seen without re-recording.
     await new Promise((resolve) => setTimeout(resolve, 0))
-    // The cursor now holds the session under its LIVE boundary (seq 0), not
-    // as fully backfilled: boot 2 replays nothing because every event of
-    // this log was already observed live.
+    await collector1.backfill(persistence(['S11'], events), { list: () => [] } as never)
+    // The cursor holds the session under its LIVE boundary (seq 0) AND as
+    // backfilled: boot 2 must skip it on the strength of that mark alone.
     expect(liveSeqAcrossBoots.get('S11')).toBe(0)
+    expect(seenAcrossBoots.has('S11')).toBe(true)
 
     // Boot 2: S11 is disposed (absent from the live list) but persisted —
     // the backfill must NOT replay its log on top of the live-recorded row.
@@ -214,6 +217,68 @@ describe('UsageCollector.backfill', () => {
     const collector2 = new UsageCollector({ on: () => {} } as never, store2 as never)
     await collector2.backfill(persistence(['S11'], events), { list: () => [] } as never)
     expect(store2.recorded).toHaveLength(0)
+  })
+
+  it('never re-replays a seen session across boots even with a live boundary recorded (prefix regression)', async () => {
+    // The 2026-08-22 regression: boot 1 attaches MID-session (first observed
+    // seq = 2), backfills the prefix [0,2) and marks the session seen — but
+    // boot 2 re-selected the session because the target filter only excluded
+    // seen sessions WITHOUT a live boundary. Every restart then multiplied
+    // the prefix usage once more. A session in backfilledSessions has had its
+    // whole replayable range folded; the boundary must bound WHAT a not-yet-
+    // seen session may replay, never re-open a seen one.
+    const fiveEvents = [
+      { type: 'step/start', seq: 0, time: T, data: { turn: 1, step: 1 } },
+      { type: 'assistant/message', seq: 1, time: T, data: { turn: 1, step: 1, usage: { inputTokens: 10, outputTokens: 1 }, message: { source: { provider: 'p', model: 'm1' } } } },
+      { type: 'turn/end', seq: 2, time: T, data: { turn: 1, reason: { kind: 'completed' } } },
+      { type: 'step/start', seq: 3, time: T, data: { turn: 2, step: 1 } },
+      { type: 'assistant/message', seq: 4, time: T, data: { turn: 2, step: 1, usage: { inputTokens: 20, outputTokens: 2 }, message: { source: { provider: 'p', model: 'm2' } } } },
+    ] as unknown as typeof events
+    const seenAcrossBoots = new Set<string>()
+    const liveSeqAcrossBoots = new Map<string, number>()
+    const recorded: Array<Record<string, unknown>> = []
+    function durableStore() {
+      return {
+        recorded,
+        seenSessions: async () => new Set(seenAcrossBoots),
+        liveSequences: async () => new Map(liveSeqAcrossBoots),
+        markSeenSessions: async (ids: Iterable<string>) => { for (const id of ids) seenAcrossBoots.add(id) },
+        // Earliest-wins, like the real UsageStore merge.
+        markLiveSequences: async (entries: Iterable<readonly [string, number]>) => {
+          for (const [id, seq] of entries) {
+            const prev = liveSeqAcrossBoots.get(id)
+            if (prev === undefined || seq < prev) liveSeqAcrossBoots.set(id, seq)
+          }
+        },
+        count: async () => recorded.length,
+        record: async (sample: Record<string, unknown>) => { recorded.push(sample) },
+      } as unknown as ConstructorParameters<typeof UsageCollector>[1] & { recorded: Array<Record<string, unknown>> }
+    }
+    const countInput10 = (): number => recorded.filter((s) => s.inputTokens === 10).length
+
+    // Boot 1: the live listener first observes event seq 2 (mid-session);
+    // the prefix [0,2) is then backfilled and marked seen.
+    const ctxListeners: Array<(...a: unknown[]) => void> = []
+    const collector1 = new UsageCollector({ on: (_e: string, l: never) => { ctxListeners.push(l as unknown as (...a: unknown[]) => void) } } as never, durableStore() as never)
+    collector1.start()
+    for (const ev of fiveEvents.slice(2)) {
+      for (const l of ctxListeners) l({ id: 'S1' }, ev)
+    }
+    await new Promise((resolve) => setTimeout(resolve, 0)) // drain the cursor flush
+    await collector1.backfill(persistence(['S1'], fiveEvents as unknown as Record<string, unknown>[]), { list: () => [] } as never)
+    const afterBoot1 = countInput10()
+    expect(afterBoot1).toBe(1)
+    // Exactly the state that used to trigger the bug:
+    expect(seenAcrossBoots.has('S1')).toBe(true)
+    expect(liveSeqAcrossBoots.get('S1')).toBe(2)
+
+    // Boot 2: same durable cursor, session disposed but persisted — nothing
+    // may be recorded again.
+    const collector2 = new UsageCollector({ on: () => {} } as never, durableStore() as never)
+    await collector2.backfill(persistence(['S1'], fiveEvents as unknown as Record<string, unknown>[]), { list: () => [] } as never)
+    expect(countInput10()).toBe(afterBoot1) // no second copy of the prefix
+    const input20 = recorded.filter((s) => s.inputTokens === 20).length
+    expect(input20).toBe(1) // live-owned segment still counted exactly once
   })
 
   it('skips a target that became live after the snapshot (liveness recheck)', async () => {
@@ -406,14 +471,41 @@ describe('live attribution without request/context (the (unknown) regression)', 
   })
 })
 
+describe('cursor-write failures are observational too', () => {
+  it('counts a rejecting cursor write instead of leaving an unhandled rejection', async () => {
+    // The degraded-store contract now covers the DURABLE CURSOR too: a
+    // markLiveSequences refusal surfaces as status.recordFailures, never
+    // as an escaping rejection from the coalescing microtask flush.
+    const { ctx, listeners } = captureCtx()
+    let cursorWrites = 0
+    const store = {
+      seenSessions: async () => new Set<string>(),
+      liveSequences: async () => new Map<string, number>(),
+      markSeenSessions: async () => {},
+      markLiveSequences: async () => { cursorWrites++; throw new Error('degraded cursor') },
+      count: async () => 0,
+      record: async () => {},
+    }
+    const collector = new UsageCollector(ctx as never, store as never)
+    collector.start()
+    emit(listeners, 'session/event', { id: 'A' }, {
+      type: 'assistant/message', seq: 1, time: T,
+      data: { turn: 1, step: 1, usage: { inputTokens: 10, outputTokens: 1 } },
+    })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(cursorWrites).toBe(1)
+    expect(collector.status.recordFailures).toBe(1)
+  })
+})
+
 describe('backfill attribution and the seq-partitioned cursor', () => {
-  function partitionStore(live: Record<string, number>) {
+  function partitionStore(live: Record<string, number>, backfilled: string[] = []) {
     const recorded: Array<Record<string, unknown>> = []
     const marked: string[][] = []
     return {
       recorded,
       marked,
-      seenSessions: async () => new Set<string>(Object.keys(live)),
+      seenSessions: async () => new Set<string>(backfilled),
       liveSequences: async () => new Map(Object.entries(live).map(([k, v]) => [k, v] as [string, number])),
       markSeenSessions: async (ids: Iterable<string>) => { marked.push([...ids]) },
       markLiveSequences: async () => {},
@@ -481,7 +573,6 @@ describe('backfill attribution and the seq-partitioned cursor', () => {
     // S1 went live AFTER the cursor snapshot: a stale absence must not widen
     // the replay into a full-log fold that would double the live samples.
     const store = partitionStore({})
-    ;(store as unknown as { seenSessions: () => Promise<Set<string>> }).seenSessions = async () => new Set<string>()
     const collector = new UsageCollector({ on: () => {} } as never, store as never)
     await collector.backfill(
       { list: async () => [{ id: 'S1' }], inspect: async () => ({ id: 'S1', events: fiveEvents }) } as unknown as UsageSessionPersistence,
@@ -494,7 +585,6 @@ describe('backfill attribution and the seq-partitioned cursor', () => {
     // Old logs may lack request/context entirely; the per-message source is
     // present on every shipped adapter message, so it must win.
     const store = partitionStore({})
-    ;(store as unknown as { seenSessions: () => Promise<Set<string>> }).seenSessions = async () => new Set<string>()
     const collector = new UsageCollector({ on: () => {} } as never, store as never)
     await collector.backfill(
       { list: async () => [{ id: 'S9' }], inspect: async () => ({ id: 'S9', events: fiveEvents }) } as unknown as UsageSessionPersistence,

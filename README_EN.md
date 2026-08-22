@@ -25,7 +25,7 @@ All charts are hand-drawn SVG with no chart library; the palette uses GitHub Pri
 - **26-week activity heatmap**: GitHub-style day cells, hover for the day's detail
 - **Daily token trend**: stacked bars with a smooth cache hit-rate curve (Catmull-Rom), hover for the per-model breakdown
 - **Model usage**: donut + list; the top five models keep distinct colours, the tail collapses into an expandable "Other" row
-- **History backfill**: on first enable, the plugin enumerates and replays existing session logs (currently-live sessions are skipped, so their pre-boot history is not counted) so historical usage is accounted from day one
+- **History backfill**: on first enable, the plugin enumerates and replays existing session logs; for a live session the collector attached to mid-flight, its pre-attachment history is recovered on the next boot by replaying the log prefix below the recorded seq boundary, so historical usage is accounted from day one as faithfully as the logs allow
 - **Local persistence**: data lands in `$DSH_HOME/storages/usage_history.json` (storage-domain), fully local, no external services
 
 ## Install
@@ -40,9 +40,13 @@ Once mounted, a "Usage statistics" page appears in the left navigation of the Se
 
 ## Data source
 
-The collector is observational: it subscribes to the session event stream (`session/event`), reads provider-reported `TokenUsage` from `assistant/message` and `assistant/chunk` (input / output / cache-read / cache-write), dedupes by `(turn, step)` WITHIN one session (each call counts once, keeping the first report — the shipped adapters report identical values on the streaming sample and the final message; concurrent sessions never swallow each other's samples), and attributes to the provider/model from `request/context`. On first enable it also backfills by replaying persisted session logs.
+The collector is observational: it subscribes to the session event stream (`session/event`), reads provider-reported `TokenUsage` from `assistant/message` and `assistant/chunk` (input / output / cache-read / cache-write), and dedupes by `(turn, step)` WITHIN one session (each call counts once, keeping the first report — the shipped adapters report identical values on the streaming sample and the final message; concurrent sessions never swallow each other's samples). Model attribution prefers the message's own `source` (stamped per call) and falls back to the session's route fold (`request/context` events or the session's `requestContext()`), so a host restart never drops samples into the "(unknown)" bucket. On first enable it also backfills by replaying persisted session logs.
 
 > Note: usage accumulates from the day the panel is enabled (including the backfill). Sessions whose logs predate the feature carry no provider-reported usage and cannot be reconstructed.
+
+**Token semantics**: the headline token total on the cards and in the trend is PROVIDER-INCLUSIVE — uncached input + output + cache reads + cache writes, matching what a provider dashboard reports for the same calls (DeepSeek splits prompt tokens into disjoint input/cache-read buckets, so a naive input+output sum would hide the typically dominant cached share). The average cache hit-rate keeps an input-side-only denominator (hits + misses), and the hit-rate card also shows the absolute cached volume; the two denominators never mix.
+
+**Rebuilding stats**: `POST /usage/api/reset` (behind the same trust fence as the panel) wipes the local statistics and replays every persisted session log under the CURRENT attribution rules — the escape hatch for corrupted history or attribution-logic upgrades. Sessions still open at reset time are re-bounded at their wipe-time log length: everything below is rebuilt by the replay, everything after stays with the live collector, and nothing counts twice.
 
 ## Development
 

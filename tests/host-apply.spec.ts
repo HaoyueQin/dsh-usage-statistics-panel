@@ -98,3 +98,98 @@ describe('apply(): hot-reload safety', () => {
     await new Promise((resolve) => setTimeout(resolve, 0))
   })
 })
+
+
+// ── /reset rebuild pipeline: watermark reset + concurrent-call coalescing ──
+describe('/reset rebuild pipeline (host half)', () => {
+  interface CapturedRoute {
+    handler: (req: unknown, res: unknown) => Promise<void>
+  }
+
+  function resetCtx() {
+    const routes: CapturedRoute[] = []
+    let listCalls = 0
+    const gates: Array<() => void> = []
+    const ctx = {
+      effect: (fn: () => () => void) => { fn() },
+      on: () => {},
+      webServer: {
+        register: (route: never) => {
+          routes.push(route as unknown as CapturedRoute)
+          return () => {}
+        },
+      },
+      sessionPersistence: {
+        // Every backfill pass blocks on a gate so the test can observe the
+        // exact moment a scan is in flight — and prove a second overlapping
+        // /reset starts NO second pass.
+        list: async () => {
+          listCalls++
+          await new Promise<void>((resolve) => gates.push(resolve))
+          return []
+        },
+        inspect: async () => ({ meta: {}, events: [] }),
+      },
+      sessions: { list: () => [], get: () => undefined },
+      storageDomain: { open: async () => memoryDomain() },
+    }
+    return { ctx: ctx as unknown as Record<string, unknown>, routes, gates, listCalls: () => listCalls }
+  }
+
+  function callRoute(route: CapturedRoute, url: string): Promise<{ status?: number; body: string }> {
+    let captured: { status?: number; body: string } = { body: '' }
+    const res = {
+      writeHead: (status: number) => {
+        captured.status = status
+        return res
+      },
+      end: (payload: string) => {
+        captured.body = payload
+      },
+    }
+    return route.handler(
+      { url, method: 'POST', headers: { host: '127.0.0.1:8090' } },
+      res,
+    ).then(() => captured)
+  }
+
+  it('coalesces overlapping resets into one wipe+rebuild pass', async () => {
+    _resetSharedStoreForTests()
+    const { ctx, routes, gates, listCalls } = resetCtx()
+    apply(ctx as never)
+    expect(routes).toHaveLength(1)
+    const route = routes[0]!
+
+    // Boot scan: the chain from apply() to persistence.list() is async, so
+    // wait for the gate to be registered, then release it and let the scan
+    // unwind.
+    for (let i = 0; i < 100 && gates.length === 0; i++) await new Promise((resolve) => setTimeout(resolve, 5))
+    expect(gates.length).toBeGreaterThan(0)
+    gates.shift()!()
+    for (let i = 0; i < 200; i++) {
+      const status = JSON.parse((await callRoute(route, '/usage/api/status')).body) as { value: { running: boolean } }
+      if (!status.value.running) break
+      await new Promise((resolve) => setTimeout(resolve, 5))
+    }
+    const idle = JSON.parse((await callRoute(route, '/usage/api/status')).body) as { value: { running: boolean } }
+    expect(idle.value.running).toBe(false)
+
+    // Reset A reaches its own (gated) rebuild scan…
+    const promiseA = callRoute(route, '/usage/api/reset')
+    for (let i = 0; i < 100 && listCalls() < 2; i++) await new Promise((resolve) => setTimeout(resolve, 5))
+    expect(listCalls()).toBe(2)
+    // …then reset B arrives while that scan is in flight: it must ride the
+    // SAME pipeline (one wipe+rebuild), not start a second pass nor 409.
+    const promiseB = callRoute(route, '/usage/api/reset')
+    await new Promise((resolve) => setTimeout(resolve, 15))
+    expect(listCalls()).toBe(2)
+
+    gates.shift()!()
+    const [a, b] = await Promise.all([promiseA, promiseB])
+    expect(a.status).toBe(200)
+    expect(b.status).toBe(200)
+    expect(JSON.parse(a.body).ok).toBe(true)
+    expect(JSON.parse(b.body).ok).toBe(true)
+    expect(listCalls()).toBe(2) // exactly one rebuild pass ran
+  })
+})

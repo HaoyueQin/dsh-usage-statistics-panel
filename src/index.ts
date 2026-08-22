@@ -89,9 +89,50 @@ export function apply(ctx: Context, config: UsageStatsConfig = {}): void {
     await collector.backfill(ctx.sessionPersistence, ctx.sessions, controller.signal)
   }
 
+  // The /reset rebuild pipeline. Concurrent callers COALESCE into one
+  // in-flight run instead of racing it: two overlapping rebuilds would wipe
+  // each other's partial results and could answer ok with a half-scanned
+  // store (the second run's backfill call would hit the collector's
+  // running guard and no-op). Coalescing keeps exactly one wipe+rebuild in
+  // flight; everyone who asked gets its outcome.
+  let resetInFlight: Promise<void> | null = null
+  const isRebuilding = (): boolean => resetInFlight !== null
+  const resetAndRescan = (): Promise<void> => {
+    if (resetInFlight) return resetInFlight
+    resetInFlight = (async () => {
+      // Watermark every LIVE session at wipe time. The wipe destroys the
+      // live path's already-recorded samples too, so each open session must
+      // be re-bounded at its CURRENT log length — not at its old attach
+      // boundary — or the follow-up backfill would rebuild only the
+      // pre-attach prefix and strand everything the live pass recorded
+      // since. [0, watermark) is then rebuilt from the log exactly once;
+      // events from the watermark on stay exclusive to the running live
+      // path. A session whose seq cannot be read keeps its previous cursor
+      // boundary, or the -1 sentinel when none exists (replay nothing —
+      // never risk a duplicate). Dead sessions get no entry: nothing
+      // live-owned is outstanding for them, so a full replay is exact.
+      const previous = await store.liveSequences()
+      const boundaries = new Map<string, number>()
+      for (const handle of ctx.sessions.list()) {
+        const seq = handle.seq
+        if (typeof seq === 'number' && Number.isFinite(seq) && seq >= 0) {
+          boundaries.set(handle.id, seq)
+          continue
+        }
+        const old = previous.get(handle.id)
+        boundaries.set(handle.id, typeof old === 'number' ? old : -1)
+      }
+      await store.reset(boundaries)
+      await rescan()
+    })().finally(() => {
+      resetInFlight = null
+    })
+    return resetInFlight
+  }
+
   // Mount the fenced route. The disposer runs on fiber teardown (HMR-safe).
   ctx.effect(() => {
-    const route = buildUsageRoute(ctx, { store, collector, trustedHosts, rescan })
+    const route = buildUsageRoute(ctx, { store, collector, trustedHosts, isRebuilding, resetAndRescan })
     const dispose = ctx.webServer.register(route as never)
     return dispose
   }, 'dsh-usage-statistics-panel: routes')

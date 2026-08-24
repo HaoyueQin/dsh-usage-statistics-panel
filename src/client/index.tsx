@@ -10,9 +10,14 @@ import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
 // Type-only: the keyed slot's declaration. Cross-plugin collaboration goes
 // through cordis services; a value import fails the client bundle-purity gate.
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
+// Type-only: pulls the sidebar's SlotMap merge ('sidebar.footer.action') into
+// this program so the quick-entry registration below typechecks against the
+// shell's declared hole.
+import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type { InjectFace, PropsLocale, PropsRuntime, TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import { UsageStatsPanel } from './UsageStatsPanel.tsx'
+import { SidebarEntry } from './SidebarEntry.tsx'
 import { registerSettingsNavIcon } from './settings-nav-icon.ts'
 import { LOCALE_NS, en, zh, zhTW, type UsageStatsKey } from './locales.ts'
 
@@ -76,4 +81,15 @@ export function apply(ctx: ClientContext): void {
     locale: LOCALE_NS,
     inject: (): UsageStatsInjected => ({}),
   }, UsageStatsSection))
+
+  // The sidebar quick entry: registered into the sidebar's footer-action list
+  // slot so it stacks above the Settings trigger. The component itself returns
+  // null until the user enables the preference in the panel's settings row, so
+  // the slot stays declared and the button appears/disappears reactively.
+  ctx.slots.inject('sidebar.footer.action', () => ctx.slots.register({
+    name: 'sidebar.footer.action',
+    id: 'usage-statistics',
+    order: 0,
+    locale: LOCALE_NS,
+  }, SidebarEntry))
 }

@@ -1,0 +1,48 @@
+/**
+ * Sidebar quick-entry button styles — the same foot-row geometry as the
+ * official Settings trigger (42px row / 36px rail circle), so the entry sits
+ * visually as one more foot control directly above Settings. All values ride
+ * the DSH semantic tokens.
+ */
+
+.entry {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: calc(100% + 4px);
+  height: 42px;
+  margin: 4px -2px 0;
+  padding: 0 10px 0 8px;
+  box-sizing: border-box;
+  border: none;
+  border-radius: 12px;
+  background: transparent;
+  cursor: pointer;
+  overflow: hidden;
+  color: var(--dsw-alias-label-primary);
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 22px;
+}
+
+.entry:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+/* Rail entry: the same 36x36 circle box as the other rail controls. */
+.entry.rail {
+  width: 36px;
+  height: 36px;
+  margin: 8px 0 0;
+  justify-content: center;
+  gap: 0;
+  padding: 0;
+  border-radius: 50%;
+}
+
+.label {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}

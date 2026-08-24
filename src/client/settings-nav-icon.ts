@@ -15,9 +15,9 @@
  */
 export const SETTINGS_NAV_MARKER = 'data-dsh-usage-stats-nav'
 
-/** The lucide BarChart3 path data (24x24 stroke icon). */
-const BAR_CHART_PATH =
-  'M3 3v18h18 M18 17V9 M13 17V5 M8 17v-3'
+// The path is shared with the sidebar quick entry (stats-icon.tsx) so both
+// surfaces always render the identical BarChart3 glyph.
+import { STATS_ICON_PATH as BAR_CHART_PATH } from './stats-icon.tsx'
 
 function buildIcon(): SVGElement {
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')

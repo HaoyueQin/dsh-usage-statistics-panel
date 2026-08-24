@@ -584,6 +584,87 @@
   color: var(--dsw-alias-label-tertiary);
 }
 
+/* ── sidebar quick-entry preference ────────────────────────────────────── */
+
+/* The framed container at the bottom of the panel: the same bordered-card
+   anatomy as the summary cards, holding the official settings-row layout
+   (title over a small description on the left, the switch control on the
+   right). */
+.entryOption {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-layer-1);
+}
+
+.entryOptionText {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.entryOptionTitle {
+  font-size: 14px;
+  line-height: 22px;
+  font-weight: 400;
+  color: var(--dsw-alias-label-primary);
+}
+
+.entryOptionDesc {
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+/* The switch control: the official DSH switch anatomy (track + thumb, the
+   \"on\" state flips the track to the business primary and slides the thumb)
+   scaled up from the 20x10 toolbar variant to a comfortably clickable
+   40x22 row switch with an 18px thumb. */
+.switch {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+.switchTrack {
+  position: relative;
+  display: inline-block;
+  flex: none;
+  width: 40px;
+  height: 22px;
+  border-radius: 11px;
+  background: var(--dsw-alias-border-l2);
+  transition: background-color 120ms var(--ds-ease-in-out);
+}
+
+.switchThumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--dsw-alias-bg-layer-1);
+  transition: transform 120ms var(--ds-ease-in-out);
+}
+
+.switchTrack[data-on='true'] {
+  background: var(--dsw-alias-state-business-primary);
+}
+
+.switchTrack[data-on='true'] .switchThumb {
+  transform: translateX(18px);
+}
+
 /* ── chart palette ──────────────────────────────────────────────────────── */
 
 /* Light variant (the theme's default): model colours are the reasonix

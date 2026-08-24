@@ -23,6 +23,7 @@ import { ChartTip } from './ChartTip.tsx'
 import { formatTokens, formatCompact, formatPercent, cacheRate, cacheRateText, daysBetween, localDay, indexOfDay, shortDay, providerOf, modelNameOf, smoothPath, niceTicks } from './format.ts'
 import type { UsageStatsKey } from './locales.ts'
 import type { UsageStatsTranslator } from './index.tsx'
+import { sidebarEntryState } from './sidebar-entry-state.ts'
 import css from './UsageStatsPanel.module.css'
 
 type Translator = UsageStatsTranslator
@@ -110,27 +111,18 @@ export function UsageStatsPanel({ t }: { t: Translator }): JSX.Element {
     void load()
   }, [load])
 
-  // Colours follow the order models were first used (walking the daily series
-  // chronologically).
-  const modelOrder = useMemo(() => {
-    const seen: string[] = []
-    for (const d of stats?.daily ?? []) {
-      for (const m of Object.keys(d.byModel).sort()) {
-        if (!seen.includes(m)) seen.push(m)
-      }
-    }
-    for (const m of stats?.models ?? []) {
-      if (!seen.includes(m.model)) seen.push(m.model)
-    }
-    return seen
-  }, [stats])
-
+  // A model's colour is its TOKEN rank (the host returns `models` sorted by
+  // token volume), matching reasonix: rank 1..5 take --dsw-chart-1..5 and the
+  // aggregated tail is the gray --dsw-chart-other. First-seen order would
+  // scramble the rank colours (the top model could lose its blue, and a
+  // top-5 model could fall into the gray bucket), so the rank is looked up in
+  // `stats.models`, never in the daily walk.
   const colorForModel = useCallback((model: string): string => {
     if (model === OTHER_MODEL) return OTHER_COLOR
-    const rank = modelOrder.indexOf(model)
-    if (rank >= 0 && rank < TOP_MODELS) return `var(--dsw-chart-${rank + 1})`
-    return OTHER_COLOR
-  }, [modelOrder])
+    const slot = (stats?.models ?? []).findIndex((m) => m.model === model)
+    const rank = Math.min(slot < 0 ? 0 : slot, TOP_MODELS - 1) + 1
+    return `var(--dsw-chart-${rank})`
+  }, [stats])
 
   // Top-5 grouping: models beyond the top five by token volume collapse into
   // the OTHER_MODEL bucket for the donut and the daily stacks; the per-day
@@ -246,6 +238,7 @@ export function UsageStatsPanel({ t }: { t: Translator }): JSX.Element {
       {!loading && !error && stats && isEmptyRange(stats) && (
         <div className={css.empty}>{t('empty')}</div>
       )}
+      <EntryOption t={t} />
     </div>
   )
 }
@@ -257,6 +250,40 @@ export function UsageStatsPanel({ t }: { t: Translator }): JSX.Element {
  *  but no tokens) both carry real usage and must not read as "no data". */
 function isEmptyRange(stats: UsageStatsRange): boolean {
   return stats.tokens === 0 && stats.cacheHit === 0 && stats.requests === 0 && stats.turns === 0
+}
+
+// ── Sidebar quick-entry preference ────────────────────────────────────────
+
+/**
+ * The framed preference at the bottom of the panel: toggling it shows a
+ * "Usage statistics" shortcut above the Settings button in the left sidebar.
+ * The switch mirrors the official DSH switch (role=switch, track + thumb);
+ * the shared store lives in the same bundle as the sidebar entry, so the two
+ * stay in sync instantly.
+ */
+function EntryOption({ t }: { t: Translator }) {
+  const [enabled, setEnabled] = useState(sidebarEntryState.enabled)
+  useEffect(() => sidebarEntryState.subscribe(() => { setEnabled(sidebarEntryState.enabled) }), [])
+  return (
+    <div className={css.entryOption}>
+      <div className={css.entryOptionText}>
+        <div className={css.entryOptionTitle}>{t('sidebarEntry')}</div>
+        <div className={css.entryOptionDesc}>{t('sidebarEntryDesc')}</div>
+      </div>
+      <button
+        type="button"
+        className={css.switch}
+        role="switch"
+        aria-checked={enabled}
+        aria-label={t('sidebarEntry')}
+        onClick={() => { sidebarEntryState.setEnabled(!enabled) }}
+      >
+        <span className={css.switchTrack} data-on={enabled || undefined} aria-hidden="true">
+          <span className={css.switchThumb} />
+        </span>
+      </button>
+    </div>
+  )
 }
 
 function StatCards({ stats, t }: { stats: UsageStatsRange; t: Translator }) {

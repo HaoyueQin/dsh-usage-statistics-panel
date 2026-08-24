@@ -7,6 +7,7 @@
 ![License](https://img.shields.io/github/license/HaoyueQin/dsh-usage-statistics-panel)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.6-blue)
 ![dsh-plugin](https://img.shields.io/badge/dsh-plugin-4D6BFE)
+[![Awesome DSH Plugin](https://awesome-dsh-plugin.com/badge.svg)](https://awesome-dsh-plugin.com)
 
 DSH web 插件的用量统计面板：按天 Token 趋势、GitHub 风格活跃热力图、缓存命中率曲线、按模型用量拆分（环形图 + 列表），在设置页新增一个"使用统计"页面。
 

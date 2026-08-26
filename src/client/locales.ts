@@ -46,6 +46,18 @@ export type UsageStatsKey =
   | 'empty'
   | 'sidebarEntry'
   | 'sidebarEntryDesc'
+  | 'cachePrecision'
+  | 'cachePrecisionDesc'
+  | 'tokenDetail'
+  | 'tokenDetailDesc'
+  | 'stats.counts'
+  | 'stats.llm'
+  | 'stats.toolCall'
+  | 'stats.ttftAverage'
+  | 'stats.tokensPerSecond'
+  | 'stats.cacheHit'
+  | 'stats.tokens'
+  | 'stats.tokensDetail'
 
 export const en: Record<UsageStatsKey, string> = {
   nav: 'Usage statistics',
@@ -83,7 +95,19 @@ export const en: Record<UsageStatsKey, string> = {
   asOf: 'As of',
   empty: 'No usage data in this time range yet. Token usage is recorded from the day the panel is installed, including a one-time scan of your existing sessions.',
   sidebarEntry: 'Sidebar shortcut',
-  sidebarEntryDesc: 'Show a "Usage statistics" shortcut above the Settings button in the left sidebar.',
+  sidebarEntryDesc: 'Show a "Usage statistics" shortcut above the Settings button in the sidebar.',
+  cachePrecision: 'Precise cache hit rate',
+  cachePrecisionDesc: 'Show the cache hit rate with two decimals in the conversation bottom bar.',
+  tokenDetail: 'Conversation token breakdown',
+  tokenDetailDesc: 'Show total, cache hit/miss and output tokens in the conversation bottom bar.',
+  'stats.counts': '{turns} turns · {steps} steps',
+  'stats.llm': 'LLM {duration}',
+  'stats.toolCall': 'Tool call {duration}',
+  'stats.ttftAverage': 'TTFT avg {duration}',
+  'stats.tokensPerSecond': '{throughput} tok/s',
+  'stats.cacheHit': 'Cache hit {percent}%',
+  'stats.tokens': 'Input {input} tok · Output {output} tok',
+  'stats.tokensDetail': 'Total {total} tok · Input {input} tok · Cache hit {hit} tok · Cache miss {miss} tok · Output {output} tok',
 }
 
 export const zh: Record<UsageStatsKey, string> = {
@@ -122,7 +146,19 @@ export const zh: Record<UsageStatsKey, string> = {
   asOf: '统计截至',
   empty: '当前时间范围内暂无用量数据。Token 用量从本面板启用后开始累计，并会一次性回扫已有的历史会话。',
   sidebarEntry: '侧边栏快捷入口',
-  sidebarEntryDesc: '在左侧栏的设置按钮上方显示“使用统计”快捷入口。',
+  sidebarEntryDesc: '在左侧栏设置按钮上方显示“使用统计”快捷入口。',
+  cachePrecision: '精确缓存命中率',
+  cachePrecisionDesc: '在会话底部信息栏以两位小数显示缓存命中率。',
+  tokenDetail: '会话 Token 明细',
+  tokenDetailDesc: '在会话底部信息栏显示总 Token、命中/未命中缓存与输出明细。',
+  'stats.counts': '{turns} 轮 · {steps} 步',
+  'stats.llm': 'LLM {duration}',
+  'stats.toolCall': '工具调用 {duration}',
+  'stats.ttftAverage': '首 token 平均 {duration}',
+  'stats.tokensPerSecond': '{throughput} tok/s',
+  'stats.cacheHit': '缓存命中 {percent}%',
+  'stats.tokens': '输入 {input} tok · 输出 {output} tok',
+  'stats.tokensDetail': '总 {total} tok · 输入 {input} tok · 命中缓存 {hit} tok · 未命中缓存 {miss} tok · 输出 {output} tok',
 }
 
 export const zhTW: Record<UsageStatsKey, string> = {
@@ -161,5 +197,17 @@ export const zhTW: Record<UsageStatsKey, string> = {
   asOf: '統計截至',
   empty: '目前時間範圍內尚無用量資料。Token 用量自本面板啟用後開始累計，並會一次掃描既有的歷史會話。',
   sidebarEntry: '側邊欄快捷入口',
-  sidebarEntryDesc: '在左側欄的設定按鈕上方顯示「使用統計」快捷入口。',
+  sidebarEntryDesc: '在左側欄設定按鈕上方顯示「使用統計」快捷入口。',
+  cachePrecision: '精確快取命中率',
+  cachePrecisionDesc: '在會話底部資訊欄以兩位小數顯示快取命中率。',
+  tokenDetail: '會話 Token 明細',
+  tokenDetailDesc: '在會話底部資訊欄顯示總 Token、命中/未命中快取與輸出明細。',
+  'stats.counts': '{turns} 輪 · {steps} 步',
+  'stats.llm': 'LLM {duration}',
+  'stats.toolCall': '工具呼叫 {duration}',
+  'stats.ttftAverage': '首 token 平均 {duration}',
+  'stats.tokensPerSecond': '{throughput} tok/s',
+  'stats.cacheHit': '快取命中 {percent}%',
+  'stats.tokens': '輸入 {input} tok · 輸出 {output} tok',
+  'stats.tokensDetail': '總 {total} tok · 輸入 {input} tok · 命中快取 {hit} tok · 未命中快取 {miss} tok · 輸出 {output} tok',
 }

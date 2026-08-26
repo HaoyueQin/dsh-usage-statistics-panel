@@ -24,6 +24,7 @@ import { formatTokens, formatCompact, formatPercent, cacheRate, cacheRateText, d
 import type { UsageStatsKey } from './locales.ts'
 import type { UsageStatsTranslator } from './index.tsx'
 import { sidebarEntryState } from './sidebar-entry-state.ts'
+import { statsLineState } from './stats-line-state.ts'
 import css from './UsageStatsPanel.module.css'
 
 type Translator = UsageStatsTranslator
@@ -238,7 +239,10 @@ export function UsageStatsPanel({ t }: { t: Translator }): JSX.Element {
       {!loading && !error && stats && isEmptyRange(stats) && (
         <div className={css.empty}>{t('empty')}</div>
       )}
-      <EntryOption t={t} />
+      <div className={css.prefGroup}>
+        <EntryOption t={t} />
+        <StatsLineOptions t={t} />
+      </div>
     </div>
   )
 }
@@ -255,34 +259,87 @@ function isEmptyRange(stats: UsageStatsRange): boolean {
 // ── Sidebar quick-entry preference ────────────────────────────────────────
 
 /**
- * The framed preference at the bottom of the panel: toggling it shows a
- * "Usage statistics" shortcut above the Settings button in the left sidebar.
- * The switch mirrors the official DSH switch (role=switch, track + thumb);
- * the shared store lives in the same bundle as the sidebar entry, so the two
- * stay in sync instantly.
+ * One framed preference row: title + subtitle on the left, the switch on the
+ * right. The switch mirrors the official DSH switch (role=switch, track +
+ * thumb); the shared store keeps the settings row and the consumer in sync
+ * instantly because both run in the same client bundle.
  */
-function EntryOption({ t }: { t: Translator }) {
-  const [enabled, setEnabled] = useState(sidebarEntryState.enabled)
-  useEffect(() => sidebarEntryState.subscribe(() => { setEnabled(sidebarEntryState.enabled) }), [])
+function SettingToggle({ title, desc, checked, ariaLabel, onChange }: {
+  title: string
+  desc: string
+  checked: boolean
+  ariaLabel: string
+  onChange: (next: boolean) => void
+}) {
   return (
-    <div className={css.entryOption}>
+    <div className={css.prefRow}>
       <div className={css.entryOptionText}>
-        <div className={css.entryOptionTitle}>{t('sidebarEntry')}</div>
-        <div className={css.entryOptionDesc}>{t('sidebarEntryDesc')}</div>
+        <div className={css.entryOptionTitle}>{title}</div>
+        <div className={css.entryOptionDesc}>{desc}</div>
       </div>
       <button
         type="button"
         className={css.switch}
         role="switch"
-        aria-checked={enabled}
-        aria-label={t('sidebarEntry')}
-        onClick={() => { sidebarEntryState.setEnabled(!enabled) }}
+        aria-checked={checked}
+        aria-label={ariaLabel}
+        onClick={() => { onChange(!checked) }}
       >
-        <span className={css.switchTrack} data-on={enabled || undefined} aria-hidden="true">
+        <span className={css.switchTrack} data-on={checked || undefined} aria-hidden="true">
           <span className={css.switchThumb} />
         </span>
       </button>
     </div>
+  )
+}
+
+/**
+ * The framed preference at the bottom of the panel: toggling it shows a
+ * "Usage statistics" shortcut above the Settings button in the left sidebar.
+ */
+function EntryOption({ t }: { t: Translator }) {
+  const [enabled, setEnabled] = useState(sidebarEntryState.enabled)
+  useEffect(() => sidebarEntryState.subscribe(() => { setEnabled(sidebarEntryState.enabled) }), [])
+  return (
+    <SettingToggle
+      title={t('sidebarEntry')}
+      desc={t('sidebarEntryDesc')}
+      checked={enabled}
+      ariaLabel={t('sidebarEntry')}
+      onChange={(next) => { sidebarEntryState.setEnabled(next) }}
+    />
+  )
+}
+
+/**
+ * The two bottom-bar enhancement preferences, below the sidebar entry:
+ * "Precise cache hit rate" (two decimals in the conversation stats line) and
+ * "Session token breakdown" (total / input / cache hit / cache miss / output).
+ */
+function StatsLineOptions({ t }: { t: Translator }) {
+  const [cachePrecision, setCachePrecision] = useState(statsLineState.cachePrecision)
+  const [tokenDetail, setTokenDetail] = useState(statsLineState.tokenDetail)
+  useEffect(() => statsLineState.subscribe(() => {
+    setCachePrecision(statsLineState.cachePrecision)
+    setTokenDetail(statsLineState.tokenDetail)
+  }), [])
+  return (
+    <>
+      <SettingToggle
+        title={t('cachePrecision')}
+        desc={t('cachePrecisionDesc')}
+        checked={cachePrecision}
+        ariaLabel={t('cachePrecision')}
+        onChange={(next) => { statsLineState.setCachePrecision(next) }}
+      />
+      <SettingToggle
+        title={t('tokenDetail')}
+        desc={t('tokenDetailDesc')}
+        checked={tokenDetail}
+        ariaLabel={t('tokenDetail')}
+        onChange={(next) => { statsLineState.setTokenDetail(next) }}
+      />
+    </>
   )
 }
 

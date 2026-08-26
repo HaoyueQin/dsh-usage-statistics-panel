@@ -11,3 +11,4 @@ coverage/
 dsh-*.png
 verify-redesign-*.png
 .reasonix/
+.verify-backup/

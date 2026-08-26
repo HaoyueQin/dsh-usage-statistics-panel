@@ -29,7 +29,8 @@ afterEach(() => {
 describe('panel quick-entry preference', () => {
   it('renders the framed option with a switch and persists the toggle', () => {
     render(<UsageStatsSection {...({ t } as UsageStatsSectionProps)} />)
-    const sw = screen.getByRole('switch')
+    // Three rows now share the row family; the sidebar entry is the first.
+    const sw = screen.getAllByRole('switch')[0]!
     expect(sw.getAttribute('aria-checked')).toBe('false')
     expect(screen.getByText('sidebarEntry')).toBeTruthy()
     expect(screen.getByText('sidebarEntryDesc')).toBeTruthy()

@@ -1,0 +1,25 @@
+/* Session stats row (shadow of the official StatsLine): 12/20 tertiary
+   text under the flow, aligned to the shared message column axis
+   (--dsh-chat-content-width). Replicated from the official
+   StatsLine.module.css so the shadowed line is visually identical. */
+
+.root {
+  display: block;
+  text-align: center;
+  max-width: var(--dsh-chat-content-width);
+  width: 100%;
+  margin: 0 auto;
+  box-sizing: border-box;
+  padding: 4px calc(var(--dsh-composer-side-clearance) + 16px) 0px;
+  font-size: 12px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-tertiary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sep {
+  color: var(--dsw-alias-separator-primary);
+  margin: 0 10px;
+}

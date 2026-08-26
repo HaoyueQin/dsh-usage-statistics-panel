@@ -14,10 +14,14 @@ import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 // this program so the quick-entry registration below typechecks against the
 // shell's declared hole.
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
+// Type-only: pulls the composer.dock SlotMap merge (conversation contract) so
+// the stats-line takeover registration below typechecks against the declared hole.
+import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type { InjectFace, PropsLocale, PropsRuntime, TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import { UsageStatsPanel } from './UsageStatsPanel.tsx'
 import { SidebarEntry } from './SidebarEntry.tsx'
+import { StatsLineEnhanced } from './StatsLineEnhanced.tsx'
 import { registerSettingsNavIcon } from './settings-nav-icon.ts'
 import { LOCALE_NS, en, zh, zhTW, type UsageStatsKey } from './locales.ts'
 
@@ -92,4 +96,17 @@ export function apply(ctx: ClientContext): void {
     order: 0,
     locale: LOCALE_NS,
   }, SidebarEntry))
+
+  // The bottom-bar takeover: shadow the official StatsLine entry (same id
+  // 'stats', lower priority — the slot's lowest live entry renders) so the
+  // official line stays byte-equal while both toggles are off and gains the
+  // two readouts (two-decimal cache hit rate, five-item token breakdown) when
+  // they are on. Disposal restores the official entry automatically.
+  ctx.slots.inject('conversation.composer.dock', () => ctx.slots.register({
+    name: 'conversation.composer.dock',
+    id: 'stats',
+    order: 0,
+    priority: -1,
+    locale: LOCALE_NS,
+  }, StatsLineEnhanced))
 }

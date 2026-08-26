@@ -75,8 +75,7 @@
     "bundle": "tsdown",
     "watch": "tsdown --watch",
     "prepare": "tsdown",
-    "pretest": "pnpm build",
-    "test": "vitest run",
+    "test": "pnpm build && vitest run",
     "test:watch": "vitest"
   },
   "license": "MIT",

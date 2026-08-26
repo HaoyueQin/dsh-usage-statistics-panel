@@ -75,6 +75,7 @@
     "bundle": "tsdown",
     "watch": "tsdown --watch",
     "prepare": "tsdown",
+    "pretest": "pnpm build",
     "test": "vitest run",
     "test:watch": "vitest"
   },

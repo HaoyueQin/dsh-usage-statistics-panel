@@ -4,6 +4,11 @@
  * imports `katex/dist/katex.min.css` at the top of its `lib/index.js`).
  * Inlining routes them through Vite's transform, which stubs css imports
  * (the default `css: false`).
+ *
+ * Maintenance note: this list is the minimal set for the CURRENT tests. If a
+ * future test value-imports another `@deepseek-ai/*` package whose built
+ * lib/ brings a css side-effect import (e.g. dsh-client-ui-slots), add it
+ * here or the css parsing fails.
  */
 import { defineConfig } from 'vitest/config'
 

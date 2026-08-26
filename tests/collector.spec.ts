@@ -346,6 +346,35 @@ describe('UsageCollector live attribution', () => {
     expect(b?.inputTokens).toBe(2000)
   })
 
+  it('records a route-less request marker without a model (the first call of a session)', () => {
+    // agent-loop appends step/start BEFORE request/context (core/agent-loop
+    // agent.ts), so the FIRST request marker of a fresh — or subagent —
+    // session cannot carry model attribution. The request must still count
+    // exactly once; only its per-model slot stays unknown.
+    const { ctx, listeners } = captureCtx()
+    const store = recordingStore()
+    const collector = new UsageCollector(ctx as never, store as never)
+    collector.start()
+    emit(listeners, 'session/event', { id: 'fresh' }, { type: 'step/start', seq: 0, time: T, data: { turn: 1, step: 1 } })
+    emit(listeners, 'session/event', { id: 'fresh' }, { type: 'turn/end', seq: 1, time: T, data: { turn: 1 } })
+    const request = store.recorded.find((s) => s.request === true)
+    expect(request).toBeDefined()
+    expect(request!.model).toBeUndefined()
+    expect(store.recorded.filter((s) => s.request === true)).toHaveLength(1)
+  })
+
+  it('records every keyless usage emission (no dedupe slot without turn/step)', () => {
+    const { ctx, listeners } = captureCtx()
+    const store = recordingStore()
+    const collector = new UsageCollector(ctx as never, store as never)
+    collector.start()
+    emit(listeners, 'session/event', { id: 'K' }, { type: 'assistant/message', seq: 0, time: T, data: { usage: { inputTokens: 10, outputTokens: 5 } } })
+    emit(listeners, 'session/event', { id: 'K' }, { type: 'assistant/message', seq: 1, time: T, data: { usage: { inputTokens: 10, outputTokens: 5 } } })
+    // Documented contract: no (turn, step) → no dedupe → both count.
+    expect(store.recorded).toHaveLength(2)
+    expect((store.recorded[0] as Record<string, unknown>).inputTokens).toBe(10)
+  })
+
   it('records the FIRST emission for a repeated (turn, step) into the store', () => {
     // Documents the observable store semantics: the duplicate is swallowed,
     // so the early streaming sample is what the rows hold. Shipped adapters

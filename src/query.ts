@@ -106,10 +106,11 @@ export function aggregateSamples(samples: Iterable<UsageSample>, filter: RangeFi
     const total = sample.inputTokens + sample.outputTokens + sample.cacheReadTokens + sample.cacheWriteTokens
     out.tokens += total
     out.cacheHit += sample.cacheReadTokens
-    // The uncached input side is the cache miss: DSH's TokenUsage.inputTokens
-    // counts input minus cache hits (see llm-deepseek's mapUsage), so it maps
-    // to reasonix's cacheMiss without double counting cacheWriteTokens.
-    out.cacheMiss += sample.inputTokens
+    // The miss side is everything prompt-side that was NOT a cache read:
+    // uncached input plus cache writes. (This matches the official stats
+    // line's billedInputTokens split — cacheHit/(cacheHit+cacheMiss) is the
+    // same ratio on both surfaces; for DeepSeek cacheWrite is always 0.) */
+    out.cacheMiss += sample.inputTokens + sample.cacheWriteTokens
     const model = sample.model && sample.model !== '' ? sample.model : '(unknown)'
     modelTotals.set(model, (modelTotals.get(model) ?? 0) + total)
     providerTotals.set(providerOf(model), (providerTotals.get(providerOf(model)) ?? 0) + total)
@@ -123,7 +124,7 @@ export function aggregateSamples(samples: Iterable<UsageSample>, filter: RangeFi
     byModel.set(model, (byModel.get(model) ?? 0) + total)
     dayTotals.set(sample.day, (dayTotals.get(sample.day) ?? 0) + total)
     dayCacheHit.set(sample.day, (dayCacheHit.get(sample.day) ?? 0) + sample.cacheReadTokens)
-    dayCacheMiss.set(sample.day, (dayCacheMiss.get(sample.day) ?? 0) + sample.inputTokens)
+    dayCacheMiss.set(sample.day, (dayCacheMiss.get(sample.day) ?? 0) + sample.inputTokens + sample.cacheWriteTokens)
   }
 
   out.activeDays = active.size

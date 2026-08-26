@@ -124,6 +124,11 @@ export class UsageFold {
       return { day: dayKey(ev.time), inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, turn: true }
     }
     if (ev.type === 'step/start' || ev.type === 'llm/retry-started') {
+      // Attribution note: agent-loop appends step/start BEFORE request/context
+      // (core/agent-loop agent.ts), so the FIRST request marker of a fresh —
+      // or subagent — session reaches the fold with no route known yet and is
+      // recorded model-less (the store's "(unknown)" row). The REQUEST COUNT is
+      // never lost; only the per-model slot of that one marker stays unknown.
       // One actual provider call. reasonix counts every provider call as a
       // request (usage.RequestCount, defaulting to 1) — including calls that
       // fail and report no tokens. DSH's TokenUsage has no RequestCount field,
@@ -176,7 +181,14 @@ export class UsageFold {
       cacheReadTokens: usage2.cacheReadTokens ?? 0,
       cacheWriteTokens: usage2.cacheWriteTokens ?? 0,
     }
-    if (key === null) return sample
+    if (key === null) {
+      // No (turn, step) marker: every emission counts (no dedupe slot). The
+      // shipped adapters always stamp both on usage events, so this path is
+      // a defensive tail, not a live double-count source. ponytail: a
+      // synthetic key (e.g. by time+usage hash) could dedupe it if an
+      // adapter ever reports usage without turn/step.
+      return sample
+    }
     const prev = this.seen.get(key)
     // Track the newest report internally either way; the fold must NEVER
     // mutate an object the store already received.

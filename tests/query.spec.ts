@@ -63,7 +63,7 @@ describe('aggregateSamples', () => {
     expect(out.requests).toBe(3)
     expect(out.cacheHit).toBe(220)
     // The uncached input side is the cache miss: inputTokens (100+200+300).
-    expect(out.cacheMiss).toBe(600)
+    expect(out.cacheMiss).toBe(630) // uncached 600 + cacheWrite 30 — the miss side includes cache writes
     expect(out.activeDays).toBe(2)
     expect(out.turns).toBe(0)
   })
@@ -75,7 +75,7 @@ describe('aggregateSamples', () => {
     )
     expect(out.tokens).toBe(4170) // 100 miss-input + 50 output + 4000 cached + 20 written
     expect(out.cacheHit).toBe(4000)
-    expect(out.cacheMiss).toBe(100) // rate denominators stay on the input side only
+    expect(out.cacheMiss).toBe(120) // uncached 100 + cacheWrite 20 — same miss denominator as the official stats line
   })
 
   it('counts turns separately; turn-only days do not add to active days', () => {

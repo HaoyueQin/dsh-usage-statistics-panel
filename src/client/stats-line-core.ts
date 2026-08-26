@@ -126,7 +126,11 @@ export function cacheHitPercentPrecise(usage: TokenUsageLike): string | null {
   const missedInputTokens = usage.uncachedInputTokens + usage.cacheWriteTokens
   if (missedInputTokens === 0) return '100.00'
   const percent = Math.round(usage.cacheReadTokens * 10_000 / denominator) / 100
-  return percent.toFixed(2)
+  // Rounding guard, mirroring the official integer path: while ANY miss
+  // exists, a 99.995%+ ratio must render 99.99 (its two-decimal ceiling),
+  // never the full-hit 100.00 — the precise readout would otherwise claim
+  // a perfect hit the data does not have.
+  return Math.min(percent, 99.99).toFixed(2)
 }
 
 /** Plugin readout: the five-item breakdown of one usage sample. */
@@ -143,8 +147,11 @@ export function tokenBreakdown(usage: TokenUsageLike): TokenBreakdown {
   }
 }
 
-/** Compact token count: 517 / 12.2K / 517K / 1.2M (official). */
-export function formatTokens(n: number): string {
+/** Compact token count: 517 / 12.2K / 517K / 1.2M (official formatTokens).
+ *  Named formatTokensCompact (not formatTokens) — the panel's format.ts
+ *  exports the exact-thousands-separator formatTokens, and the two must not
+ *  be confused across modules. */
+export function formatTokensCompact(n: number): string {
   const scaled = (v: number): string =>
     v >= 100 ? String(Math.round(v)) : String(Math.round(v * 10) / 10)
   if (n < 1_000) return String(n)

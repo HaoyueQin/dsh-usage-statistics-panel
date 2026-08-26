@@ -26,7 +26,7 @@ import { LOCALE_NS } from './locales.ts'
 import { statsLineState } from './stats-line-state.ts'
 import {
   billedInputTokens, cacheHitPercent, cacheHitPercentPrecise, deriveStats,
-  formatDuration, formatTokens, formatTokensPerSecond, tokenBreakdown,
+  formatDuration, formatTokensCompact, formatTokensPerSecond, tokenBreakdown,
 } from './stats-line-core.ts'
 import css from './StatsLineEnhanced.module.css'
 
@@ -87,16 +87,16 @@ export const StatsLineEnhanced = memo(function StatsLineEnhanced(
     if (tokenDetail) {
       const b = tokenBreakdown(usage)
       groups.push(t('stats.tokensDetail', {
-        total: formatTokens(b.total),
-        input: formatTokens(b.input),
-        hit: formatTokens(b.cacheHit),
-        miss: formatTokens(b.cacheMiss),
-        output: formatTokens(b.output),
+        total: formatTokensCompact(b.total),
+        input: formatTokensCompact(b.input),
+        hit: formatTokensCompact(b.cacheHit),
+        miss: formatTokensCompact(b.cacheMiss),
+        output: formatTokensCompact(b.output),
       }))
     } else {
       groups.push(t('stats.tokens', {
-        input: formatTokens(billedInputTokens(usage)),
-        output: formatTokens(usage.outputTokens),
+        input: formatTokensCompact(billedInputTokens(usage)),
+        output: formatTokensCompact(usage.outputTokens),
       }))
     }
   }

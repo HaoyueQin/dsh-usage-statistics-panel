@@ -43,6 +43,18 @@ export const sidebarEntryState = {
   },
 }
 
+// Cross-instance sync (dual-channel bundles / multiple tabs): a storage event
+// from another instance re-reads the value; same-instance writes never fire it.
+if (typeof window !== 'undefined') {
+  window.addEventListener('storage', (event) => {
+    if (event.key !== STORAGE_KEY) return
+    const next = readStored()
+    if (next === enabled) return
+    enabled = next
+    for (const listener of listeners) listener()
+  })
+}
+
 /** Test-only: re-read persisted storage so a fresh test starts clean. */
 export function resetSidebarEntryStateForTests(): void {
   enabled = readStored()

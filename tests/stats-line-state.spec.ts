@@ -70,4 +70,32 @@ describe('statsLineState', () => {
     statsLineState.setTokenDetail(true)
     expect(statsLineState.tokenDetail).toBe(true)
   })
+  it('syncs from a storage event written by another bundle instance or tab', () => {
+    const fn = vi.fn()
+    statsLineState.subscribe(fn)
+    // The other instance already persisted the new blob; this instance's
+    // in-memory store is still the old default.
+    window.localStorage.setItem(STORAGE_KEY, '{"cachePrecision":true,"tokenDetail":false}')
+    window.dispatchEvent(new StorageEvent('storage', {
+      key: STORAGE_KEY,
+      newValue: '{"cachePrecision":true,"tokenDetail":false}',
+    }))
+    expect(statsLineState.cachePrecision).toBe(true)
+    expect(statsLineState.tokenDetail).toBe(false)
+    expect(fn).toHaveBeenCalledTimes(1)
+  })
+
+  it('ignores storage events for unrelated keys or unchanged values', () => {
+    const fn = vi.fn()
+    statsLineState.subscribe(fn)
+    window.dispatchEvent(new StorageEvent('storage', { key: 'some-other-key', newValue: 'x' }))
+    expect(fn).not.toHaveBeenCalled()
+    // Same persisted value: no state change, no notification.
+    window.localStorage.setItem(STORAGE_KEY, '{"cachePrecision":false,"tokenDetail":false}')
+    window.dispatchEvent(new StorageEvent('storage', {
+      key: STORAGE_KEY,
+      newValue: '{"cachePrecision":false,"tokenDetail":false}',
+    }))
+    expect(fn).not.toHaveBeenCalled()
+  })
 })

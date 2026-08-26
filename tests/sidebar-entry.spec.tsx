@@ -46,6 +46,21 @@ describe('panel quick-entry preference', () => {
   })
 })
 
+describe('sidebarEntryState cross-instance sync', () => {
+  it('syncs from a storage event written by another bundle instance or tab', () => {
+    const fn = vi.fn()
+    sidebarEntryState.subscribe(fn)
+    window.localStorage.setItem(STORAGE_KEY, '1')
+    window.dispatchEvent(new StorageEvent('storage', { key: STORAGE_KEY, newValue: '1' }))
+    expect(sidebarEntryState.enabled).toBe(true)
+    expect(fn).toHaveBeenCalledTimes(1)
+    window.localStorage.setItem(STORAGE_KEY, '0')
+    window.dispatchEvent(new StorageEvent('storage', { key: STORAGE_KEY, newValue: '0' }))
+    expect(sidebarEntryState.enabled).toBe(false)
+    expect(fn).toHaveBeenCalledTimes(2)
+  })
+})
+
 describe('SidebarEntry', () => {
   it('renders nothing while the preference is off', () => {
     render(<SidebarEntry {...({ wide: true, t: entryT } as SidebarEntryProps)} />)

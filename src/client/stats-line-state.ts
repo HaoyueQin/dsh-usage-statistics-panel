@@ -79,6 +79,21 @@ export const statsLineState = {
   },
 }
 
+// Cross-instance sync: the official channel (lib/client.js) and the plugin
+// registry channel (lib/client-registry.js) each carry their own module store,
+// and separate browser tabs do too. storage events fire on OTHER instances'
+// writes, so this listener re-reads and notifies; same-instance writes never
+// fire it (no double notify).
+if (typeof window !== 'undefined') {
+  window.addEventListener('storage', (event) => {
+    if (event.key !== STORAGE_KEY) return
+    const next = readStored()
+    if (next.cachePrecision === prefs.cachePrecision && next.tokenDetail === prefs.tokenDetail) return
+    prefs = next
+    notify()
+  })
+}
+
 /** Test-only: re-read persisted storage so a fresh test starts clean. */
 export function resetStatsLineStateForTests(): void {
   prefs = readStored()

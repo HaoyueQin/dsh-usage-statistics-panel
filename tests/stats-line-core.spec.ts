@@ -9,7 +9,7 @@ import { describe, expect, it } from 'vitest'
 import type { AssistantMessageNode } from '@deepseek-ai/dsh-client-runtime/client'
 import {
   assistantStepReading, billedInputTokens, cacheHitPercent, cacheHitPercentPrecise,
-  deriveStats, formatDuration, formatTokens, formatTokensPerSecond, tokenBreakdown,
+  deriveStats, formatDuration, formatTokensCompact, formatTokensPerSecond, tokenBreakdown,
   type StepReading, type TokenUsageLike, type WindowStats,
 } from '../src/client/stats-line-core.ts'
 
@@ -37,6 +37,8 @@ describe('cacheHitPercent (official integer floor, replicated)', () => {
   it('replicates the official rounding ties', () => {
     expect(cacheHitPercent(usage({ uncachedInputTokens: 14, cacheReadTokens: 986 }))).toBe('99')
     expect(cacheHitPercent(usage({ uncachedInputTokens: 5, cacheReadTokens: 995 }))).toBe('99.5')
+    expect(cacheHitPercent(usage({ uncachedInputTokens: 1, cacheReadTokens: 9_999 }))).toBe('99.99')
+    expect(cacheHitPercent(usage({ uncachedInputTokens: 5, cacheReadTokens: 9_995 }))).toBe('99.95')
     expect(cacheHitPercent(usage({ uncachedInputTokens: 0, cacheReadTokens: 10_000 }))).toBe('100')
   })
 
@@ -61,17 +63,33 @@ describe('cacheHitPercentPrecise', () => {
       .toBe('90.00')
   })
 
+  it('never claims a full 100.00 while any miss exists (rounding guard)', () => {
+    // 99.996% must not read as 100.00 — the official line keeps 99.9x while
+    // missedInputTokens > 0, so the precise readout must too.
+    expect(cacheHitPercentPrecise(usage({ uncachedInputTokens: 4, cacheReadTokens: 99_996 }))).toBe('99.99')
+    expect(cacheHitPercentPrecise(usage({ uncachedInputTokens: 1, cacheReadTokens: 99_999 }))).toBe('99.99')
+    // A真 100% (miss = 0) still renders as 100.00.
+    expect(cacheHitPercentPrecise(usage({ uncachedInputTokens: 0, cacheReadTokens: 10_000 }))).toBe('100.00')
+    // Just below the rounding boundary stays exact.
+    expect(cacheHitPercentPrecise(usage({ uncachedInputTokens: 421, cacheReadTokens: 99_579 }))).toBe('99.58')
+  })
+
   it('returns null when no billed input exists', () => {
     expect(cacheHitPercentPrecise(usage({}))).toBeNull()
   })
 })
 
 describe('official formatters (replicated)', () => {
-  it('formats token counts compactly', () => {
-    expect(formatTokens(517)).toBe('517')
-    expect(formatTokens(12_240)).toBe('12.2K')
-    expect(formatTokens(517_000)).toBe('517K')
-    expect(formatTokens(1_230_000)).toBe('1.2M')
+  it('formats token counts compactly, mirroring the official boundary behavior', () => {
+    expect(formatTokensCompact(517)).toBe('517')
+    expect(formatTokensCompact(12_240)).toBe('12.2K')
+    expect(formatTokensCompact(517_000)).toBe('517K')
+    expect(formatTokensCompact(1_230_000)).toBe('1.2M')
+    // Official edge: 999_999 rounds to '1000K' (the official scaled() has no
+    // carry-merge), so this locks the replication rather than "fixing" it.
+    expect(formatTokensCompact(999_999)).toBe('1000K')
+    expect(formatTokensCompact(1_000_000)).toBe('1M')
+    expect(formatTokensCompact(1_999_000)).toBe('2M')
   })
 
   it('formats durations and throughput', () => {

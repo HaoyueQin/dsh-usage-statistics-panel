@@ -52,6 +52,8 @@ function buildIcon(): SVGElement {
  */
 export function registerSettingsNavIcon(label: () => string): () => void {
   let disposed = false
+  /** Shell glyphs we removed per button, restored on disposal (HMR/unload). */
+  const removedGears = new WeakMap<HTMLButtonElement, SVGElement>()
 
   const swapIcon = (button: HTMLButtonElement): void => {
     if (disposed) return
@@ -60,7 +62,10 @@ export function registerSettingsNavIcon(label: () => string): () => void {
     // becomes the button's only glyph. (Reached only when the button carries
     // none of our marker icons, so the first SVG is the shell's own glyph.)
     const gear = button.querySelector<SVGElement>('svg')
-    if (gear) gear.remove()
+    if (gear) {
+      gear.remove()
+      removedGears.set(button, gear)
+    }
     const icon = buildIcon()
     icon.setAttribute(SETTINGS_NAV_MARKER + '-icon', '')
     button.prepend(icon)
@@ -110,7 +115,11 @@ export function registerSettingsNavIcon(label: () => string): () => void {
     disposed = true
     observer.disconnect()
     document.querySelectorAll(`[${SETTINGS_NAV_MARKER}]`)
-      .forEach((element) => element.removeAttribute(SETTINGS_NAV_MARKER))
+      .forEach((element) => {
+        element.removeAttribute(SETTINGS_NAV_MARKER)
+        const gear = removedGears.get(element as HTMLButtonElement)
+        if (gear) element.prepend(gear)
+      })
     document.querySelectorAll(`[${SETTINGS_NAV_MARKER}-icon]`)
       .forEach((element) => element.remove())
   }

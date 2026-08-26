@@ -13,7 +13,7 @@
  * semantic tokens. The functionality replicates the reasonix usage stats
  * feature; the implementation is DSH-native.
  */
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type RefObject } from 'react'
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type RefObject } from 'react'
 import clsx from 'clsx'
 import { Activity, CalendarDays, ChevronDown, ChevronRight, Coins, Cpu, MessageSquare, MessagesSquare } from 'lucide-react'
 import { Button, Input } from '@deepseek-ai/dsh-client-ui-primitives'
@@ -223,7 +223,10 @@ export function UsageStatsPanel({ t }: { t: Translator }): JSX.Element {
 
       {error && <div className={css.errorBanner}>{error}</div>}
       {loading && !stats && <div className={css.loading}>{t('loading')}…</div>}
-      {!loading && stats && (
+      {/* Content stays mounted across refreshes (stats keeps its last value):
+          only the FIRST load shows the spinner, so a range switch or a manual
+          refresh never blanks the whole data area. */}
+      {stats && (
         <>
           <StatCards stats={stats} t={t} />
           <Heatmap daily={heatDaily} from={heatWindow.from} to={heatWindow.to} t={t} panelRef={panelRef} />
@@ -236,7 +239,7 @@ export function UsageStatsPanel({ t }: { t: Translator }): JSX.Element {
           )}
         </>
       )}
-      {!loading && !error && stats && isEmptyRange(stats) && (
+      {!error && stats && isEmptyRange(stats) && (
         <div className={css.empty}>{t('empty')}</div>
       )}
       <div className={css.prefGroup}>
@@ -271,11 +274,14 @@ function SettingToggle({ title, desc, checked, ariaLabel, onChange }: {
   ariaLabel: string
   onChange: (next: boolean) => void
 }) {
+  // One description id per row; the switch names it so a screen reader
+  // announces the explanation alongside the title.
+  const descId = useId()
   return (
     <div className={css.prefRow}>
       <div className={css.entryOptionText}>
         <div className={css.entryOptionTitle}>{title}</div>
-        <div className={css.entryOptionDesc}>{desc}</div>
+        <div className={css.entryOptionDesc} id={descId}>{desc}</div>
       </div>
       <button
         type="button"
@@ -283,6 +289,7 @@ function SettingToggle({ title, desc, checked, ariaLabel, onChange }: {
         role="switch"
         aria-checked={checked}
         aria-label={ariaLabel}
+        aria-describedby={descId}
         onClick={() => { onChange(!checked) }}
       >
         <span className={css.switchTrack} data-on={checked || undefined} aria-hidden="true">
@@ -782,6 +789,7 @@ function ModelUsage({ models, t, colorForModel, panelRef }: { models: GroupedMod
                   transform={`rotate(-90 ${CX} ${CX})`}
                   style={{ strokeWidth: active ? SW + 5 : SW, transition: 'stroke-width 0.12s ease' }}
                   tabIndex={0}
+                  role="button"
                   aria-label={tipLabel}
                   onMouseEnter={(e) => {
                     setHover(m.model)
@@ -829,16 +837,11 @@ function ModelUsage({ models, t, colorForModel, panelRef }: { models: GroupedMod
                 onMouseLeave={() => setHover(null)}
                 {...(isOther
                   ? {
-                      role: 'button',
-                      tabIndex: 0,
+                      // Mouse convenience only: the keyboard path is the real
+                      // modelToggle button inside (aria-expanded + Enter/Space),
+                      // so the row itself carries no role/tabIndex — a
+                      // role=button li would nest two interactive elements.
                       onClick: () => setExpandedOther(!expandedOther),
-                      onKeyDown: (e: ReactKeyboardEvent<HTMLLIElement>) => {
-                        if (e.target !== e.currentTarget) return
-                        if (e.key === 'Enter' || e.key === ' ') {
-                          e.preventDefault()
-                          setExpandedOther(!expandedOther)
-                        }
-                      },
                     }
                   : {})}
               >

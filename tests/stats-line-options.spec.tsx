@@ -37,6 +37,18 @@ describe('bottom-bar preference rows', () => {
     expect(screen.getByText('tokenDetailDesc')).toBeTruthy()
   })
 
+  it('associates each switch with its description via aria-describedby', () => {
+    render(<UsageStatsSection {...({ t } as UsageStatsSectionProps)} />)
+    const switches = screen.getAllByRole('switch')
+    for (const sw of switches) {
+      const described = sw.getAttribute('aria-describedby')
+      expect(described).not.toBeNull()
+      const descEl = document.getElementById(described!)
+      expect(descEl).not.toBeNull()
+      expect(descEl!.textContent).toBeTruthy()
+    }
+  })
+
   it('toggles the precise cache hit rate and persists it as JSON', () => {
     render(<UsageStatsSection {...({ t } as UsageStatsSectionProps)} />)
     const switches = screen.getAllByRole('switch')

@@ -15,6 +15,7 @@
 import { defineDomain, domainTable } from '@deepseek-ai/dsh-storage-domain'
 import type { UsageStorageDomain, UsageKvTable, UsageDomain } from './context-types.ts'
 import type { UsageSample } from './query.ts'
+import { providerOf } from './query.ts'
 import { z } from 'zod'
 
 /** True when a KvTable.update() failure is the "no record to update" miss
@@ -360,5 +361,3 @@ function emptyRow(day: string, provider: string, model: string): UsageDayRow {
     lastSeen: Date.now(),
   }
 }
-
-import { providerOf } from './query.ts'

@@ -320,6 +320,13 @@ export class UsageCollector {
     this.started = true
     const ctx = this.ctx as unknown as {
       on?: (event: string, listener: (...args: never[]) => void) => void
+      logger?: { warn(message: unknown): void }
+    }
+    if (typeof ctx.on !== 'function') {
+      // A cordis Context always has `on`; the optional chaining below is
+      // defensive. If it is ever missing, the LIVE path would die silently
+      // while the backfill still works — surface that instead of hiding it.
+      ctx.logger?.warn('[dsh-usage-statistics-panel] live session-event subscription unavailable (ctx.on missing); only the boot backfill will record usage')
     }
     ctx.on?.('session/event', (session: { id: string }, event: UsageSessionEvent) => {
       const sid = UsageCollector.sessionIdOf(session)

@@ -451,6 +451,13 @@ const HEAT_GAP = 3 // breathing gap between cells; mirrors the legend swatch gap
 const HEAT_RX = 3 // cell corner radius; matches the legend swatch (css .heatCell)
 
 function Heatmap({ daily, from, to, t, panelRef }: { daily: DailyTokenUsage[]; from: string; to: string; t: Translator; panelRef: RefObject<HTMLDivElement | null> }) {
+  // Memoized so a hover/tip state change re-renders without rebuilding the
+  // per-day lookup (the daily array is stable between fetches).
+  const byDay = useMemo(() => {
+    const map = new Map<string, DailyTokenUsage>()
+    for (const d of daily) map.set(d.day, d)
+    return map
+  }, [daily])
   const [tip, setTip] = useState<{ day: string; tokens: number; requests: number; cacheHit: number; cacheMiss: number; anchor: Element } | null>(null)
   const wrapRef = useRef<HTMLDivElement>(null)
   const [geom, setGeom] = useState<{ size: number; cols: number }>({ size: HEAT_BASE, cols: HEAT_WEEKS })
@@ -485,8 +492,6 @@ function Heatmap({ daily, from, to, t, panelRef }: { daily: DailyTokenUsage[]; f
     return () => ro.disconnect()
   }, [from])
 
-  const byDay = new Map<string, DailyTokenUsage>()
-  for (const d of daily) byDay.set(d.day, d)
   const allDays = daysBetween(from, to)
   if (allDays.length === 0) return null
   const days = allDays.slice(-Math.min(geom.cols * 7, allDays.length))

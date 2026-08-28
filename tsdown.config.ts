@@ -47,7 +47,13 @@ const CLIENT_EXTERNALS = [
   '@deepseek-ai/dsh-client-web-react',
   '@deepseek-ai/dsh-client-ui-primitives',
   '@deepseek-ai/dsh-client-schema-form',
+  // Both kernel generations' client-runtime module ids: 0.1.1-rc.2 seeds the
+  // table with `dsh-client-runtime/client`, 0.1.2-alpha.1 renamed the package
+  // to `dsh-client-store`. This plugin only TYPE-imports the runtime/client
+  // face today, so neither entry reaches the built bundle — they are listed
+  // so a future value import is kept external (never inlined) on either host.
   '@deepseek-ai/dsh-client-runtime/client',
+  '@deepseek-ai/dsh-client-store',
 ]
 
 /**

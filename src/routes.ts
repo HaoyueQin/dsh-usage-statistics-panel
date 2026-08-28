@@ -141,21 +141,26 @@ export function buildUsageRoute(ctx: Context, deps: RoutesDeps): UsageWebRoute {
       writeJson(res, { ok: false, error: { code: 'forbidden', message: 'untrusted host' } }, 403)
       return
     }
+    // Match on the request PATH only: the route is registered as a /usage/api
+    // prefix, so a raw `endsWith` would also swallow deeper paths like
+    // /usage/api/x/range, and a query string would break the comparison and
+    // 404 a legitimate endpoint. Strip ?/# and compare exactly.
     const url = req.url ?? ''
+    const path = url.split(/[?#]/, 1)[0]!
     const method = req.method ?? 'GET'
     try {
-      if (method === 'POST' && url.endsWith('/range')) {
+      if (method === 'POST' && path === '/usage/api/range') {
         const body = (await readJsonBody(req)) as Partial<UsageStatsRequest>
         const { from, to } = resolveRange(body as UsageStatsRequest)
         const stats = await aggregateRange(deps.store, from, to)
         writeJson(res, { ok: true, value: stats })
         return
       }
-      if (method === 'POST' && url.endsWith('/status')) {
+      if (method === 'POST' && path === '/usage/api/status') {
         writeJson(res, { ok: true, value: deps.collector.status })
         return
       }
-      if (method === 'POST' && url.endsWith('/reset')) {
+      if (method === 'POST' && path === '/usage/api/reset') {
         // Rebuild escape hatch: wipe rows + cursor, then replay every
         // persisted session under the CURRENT attribution rules. Refuse only
         // while a BOOT scan (not started by a reset) is in flight; an
@@ -170,7 +175,7 @@ export function buildUsageRoute(ctx: Context, deps: RoutesDeps): UsageWebRoute {
         writeJson(res, { ok: true, value: deps.collector.status })
         return
       }
-      writeJson(res, { ok: false, error: { code: 'not_found', message: `unknown endpoint ${url}` } }, 404)
+      writeJson(res, { ok: false, error: { code: 'not_found', message: `unknown endpoint ${path}` } }, 404)
     } catch (err) {
       // Log the real failure server-side (the fence keeps untrusted callers
       // out, so this is a trusted client or an internal fault); writeError

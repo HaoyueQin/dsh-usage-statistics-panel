@@ -185,14 +185,30 @@ function makeCssPlugin(pluginId: string): NonNullable<UserConfig['plugins']> {
       // CSS Modules (x.module.css) become hashed class maps; plain css is
       // inlined verbatim.
       if (fileId.endsWith('.module.css')) {
+        // The CSS Modules `[hash]` mixes the transform's `filename` STRING into
+        // the hash (verified against lightningcss directly). Feeding the
+        // absolute path made the class names differ per build machine — the
+        // npm and GitHub-release tarballs of one version shipped non-identical
+        // bundles (observed: `D:\Project\...` vs `/home/runner/...` produced
+        // different `[hash]_local` names for the identical stylesheet). Feed
+        // the repository-relative POSIX path instead: the string is identical
+        // on every machine, so the hash depends only on the file's own
+        // identity and content, and every build of one source tree is
+        // reproducible.
+        const stableFileId = relative(REPOSITORY_ROOT, fileId).split(sep).join('/')
         const { code, exports: cssExports } = transform({
-          filename: fileId,
+          filename: stableFileId,
           code: source,
           cssModules: { pattern: `[hash]_[local]` },
           minify: true,
         })
+        // lightningcss returns the exports map in Rust-HashMap order, which is
+        // randomized per build — sort the keys so the generated class-map
+        // literal (and thus the whole bundle) is byte-reproducible.
         const classMap: Record<string, string> = {}
-        for (const [local, exp] of Object.entries(cssExports ?? {})) classMap[local] = exp.name
+        for (const [local, exp] of Object.entries(cssExports ?? {}).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) {
+          classMap[local] = exp.name
+        }
         return [
           injectTag(pluginId, fileId, code.toString()),
           `export default ${JSON.stringify(classMap)};`,

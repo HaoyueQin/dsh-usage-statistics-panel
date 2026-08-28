@@ -181,4 +181,32 @@ describe('StatsLineEnhanced', () => {
     })} />)
     expect(view.container.textContent).toBe('1 轮 · 1 步')
   })
+
+  // Kernel tolerance (≥0.1.2): the composer.dock standard selector arrives as
+  // `useChat` over ChatSnapshot (`s.legacy.nodes`) instead of `useSession`
+  // over ConversationSnapshot (`s.chat.legacy.nodes`). Same ConversationNode[],
+  // different path — the rendered line must be byte-equal across both seats.
+  it('reads the 0.1.2 chat-snapshot seat when useSession is absent', () => {
+    const useChat = ((selector: (s: unknown) => unknown) =>
+      selector({ legacy: { nodes: [assistant(1, 1), tool()] } })) as StatsLineEnhancedProps['useChat']
+    const view = render(
+      <StatsLineEnhanced useChat={useChat} useProjection={projections({ tokenUsage: USAGE })} t={t} />,
+    )
+    expect(view.container.textContent)
+      .toBe('1 轮 · 1 步| 缓存命中 90%| 输入 100 tok · 输出 5 tok')
+  })
+
+  it('prefers the 0.1.2 seat when both kernel seats are injected', () => {
+    const { source } = makeSource({ nodes: [assistant(1, 1)] })
+    const useChat = ((selector: (s: unknown) => unknown) =>
+      selector({ legacy: { nodes: [assistant(1, 1), assistant(2, 1)] } })) as StatsLineEnhancedProps['useChat']
+    const view = render(<StatsLineEnhanced {...props(source)} useChat={useChat} />)
+    // useChat wins: two steps from the 0.1.2 snapshot, not the one from the rc.2 slice.
+    expect(view.container.textContent).toContain('2 步')
+  })
+
+  it('renders nothing when neither kernel seat is injected', () => {
+    const view = render(<StatsLineEnhanced useProjection={projections({})} t={t} />)
+    expect(view.container.textContent).toBe('')
+  })
 })

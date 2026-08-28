@@ -11,10 +11,18 @@
  * cannot be imported; the replicated pure functions live in stats-line-core
  * (official 0.1.1-rc.2), and the copy ships in this plugin's own locale
  * namespace (stats.* keys mirror the official conversation dictionary).
+ *
+ * Kernel tolerance (one bundle, two DSH generations): the slot's standard
+ * session selector is injected as `useSession` on ≤0.1.1 (rc.2, snapshot path
+ * `s.chat.legacy.nodes`) and as `useChat` on ≥0.1.2 (snapshot path
+ * `s.legacy.nodes` — the ui-chat compatibility projection that officially
+ * backs StatsLine). Both seats are optional props resolved at render time;
+ * the same ConversationNode[] feeds deriveStats either way, and the durable
+ * sessionStats projection stays the primary source on both kernels.
  */
 import { Fragment, memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { ConversationSnapshot, UseProjection } from '@deepseek-ai/dsh-client-runtime/client'
+import type { ConversationNode, ConversationSnapshot, UseProjection } from '@deepseek-ai/dsh-client-runtime/client'
 import type { PropsLocale, SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
 // Type-only: merges the sessionStats key into SessionProjectionMap for useProjection.
 import type {} from '@deepseek-ai/dsh-session-stats/client'
@@ -30,24 +38,63 @@ import {
 } from './stats-line-core.ts'
 import css from './StatsLineEnhanced.module.css'
 
-/** Full props: the standard session kit (hook-shaped selector + projection
- *  seat) plus the locale seat this entry declares. */
+/**
+ * Structural type for the ≥0.1.2 `useChat` seat: the standard snapshot
+ * selector over the ui-chat ChatSnapshot, whose `legacy.nodes` compatibility
+ * projection carries the same ConversationNode[] the rc.2 ConversationSnapshot
+ * nested at `chat.legacy.nodes`. Declared locally because this plugin's
+ * rc.2-pinned devDependencies ship no 0.1.2 ui-chat contract — the seat is
+ * consumed structurally at runtime and never value-imported.
+ */
+type ChatSnapshotSelectorHook = SnapshotSelectorHook<{ legacy?: { nodes?: readonly ConversationNode[] } }>
+
+/**
+ * Full props: the standard session kit (hook-shaped selector + projection
+ * seat) plus the locale seat this entry declares.
+ *
+ * Exactly one selector seat is injected per kernel generation (≤0.1.1:
+ * `useSession`; ≥0.1.2: `useChat`), but both are optional here and resolved
+ * defensively — a future kernel dropping both degrades the fallback fold to
+ * an empty window instead of crashing the composer dock.
+ */
 export interface StatsLineEnhancedProps {
-  useSession: SnapshotSelectorHook<ConversationSnapshot>
+  /** ≤0.1.1 seat: the ConversationSnapshot selector (path `chat.legacy.nodes`). */
+  useSession?: SnapshotSelectorHook<ConversationSnapshot>
+  /** ≥0.1.2 seat: the chat-view snapshot selector (path `legacy.nodes`). */
+  useChat?: ChatSnapshotSelectorHook
   useProjection: UseProjection
   t: PropsLocale<typeof LOCALE_NS>['t']
 }
 
+/**
+ * Read the legacy ConversationNode list from either kernel's snapshot:
+ * the ≥0.1.2 ChatSnapshot nests it at `legacy.nodes`, the ≤0.1.1
+ * ConversationSnapshot at `chat.legacy.nodes`. The two paths never collide
+ * (neither snapshot type declares the other's key). Returns undefined when
+ * neither shape is present — a defensive tail, never observed in practice.
+ */
+function legacyNodesOf(snap: unknown): readonly ConversationNode[] | undefined {
+  if (snap === null || typeof snap !== 'object') return undefined
+  const direct = (snap as { legacy?: { nodes?: unknown } }).legacy?.nodes
+  if (Array.isArray(direct)) return direct as readonly ConversationNode[]
+  const nested = (snap as { chat?: { legacy?: { nodes?: unknown } } }).chat?.legacy?.nodes
+  return Array.isArray(nested) ? (nested as readonly ConversationNode[]) : undefined
+}
+
 export const StatsLineEnhanced = memo(function StatsLineEnhanced(
-  { useSession, useProjection, t }: StatsLineEnhancedProps,
+  { useChat, useSession, useProjection, t }: StatsLineEnhancedProps,
 ) {
-  const settledNodes = useSession(s => s.chat.legacy.nodes)
+  // Kernel-tolerant snapshot read: ≥0.1.2 injects `useChat`, ≤0.1.1 injects
+  // `useSession`; the injected seat is a per-kernel constant, so the ?? pick
+  // is stable across renders of one host. `?? []` only fires when neither
+  // seat arrived — deriveStats then folds an empty window instead of throwing.
+  const settledNodes = (useChat ?? useSession)?.(legacyNodesOf)
   const usage = useProjection('tokenUsage')
   // Every figure rides the durable sessionStats projection, so paging and
   // compaction cannot change any of them; an assembly without the unit falls
   // back to the window-scoped fold wholesale (same field names).
   const projected = useProjection('sessionStats')
-  const stats = useMemo(() => projected ?? deriveStats(settledNodes), [projected, settledNodes])
+  const stats = useMemo(() => projected ?? deriveStats(settledNodes ?? []), [projected, settledNodes])
 
   // Toggles live in the same client bundle as the settings panel; subscribe so
   // a flip in Settings updates the bottom bar immediately.

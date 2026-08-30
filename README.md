@@ -8,6 +8,8 @@
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.6-blue)
 ![dsh-plugin](https://img.shields.io/badge/dsh-plugin-4D6BFE)
 [![Awesome DSH Plugin](https://awesome-dsh-plugin.com/badge.svg)](https://awesome-dsh-plugin.com)
+[![Commit activity](https://img.shields.io/github/commit-activity/t/HaoyueQin/dsh-usage-statistics-panel)](https://github.com/HaoyueQin/dsh-usage-statistics-panel/graphs/commit-activity)
+[![Last commit](https://img.shields.io/github/last-commit/HaoyueQin/dsh-usage-statistics-panel)](https://github.com/HaoyueQin/dsh-usage-statistics-panel/commits)
 
 DSH web 插件的用量统计面板：按天 Token 趋势、GitHub 风格活跃热力图、缓存命中率曲线、按模型用量拆分（环形图 + 列表），在设置页新增一个"使用统计"页面。
 
@@ -71,6 +73,10 @@ pnpm build       # tsc declarations + tsdown (host ESM + 双通道 client bundle
 ## 致谢
 
 本面板是对 reasonix 用量统计功能的复刻移植：作者曾为 [DeepSeek-Reasonix](https://github.com/esengine/DeepSeek-Reasonix) 实现并贡献了该功能（PR [#7238](https://github.com/esengine/DeepSeek-Reasonix/pull/7238)、[#7503](https://github.com/esengine/DeepSeek-Reasonix/pull/7503)），本插件按 DSH 的插件规范将其移植到 DeepSeek Harness，前端图表大比例复用原实现，数据层则基于 DSH 的会话日志与 storage-domain 重新实现。
+
+## Activity
+
+[![HaoyueQin/dsh-usage-statistics-panel GitStock K-Line Chart](https://gitstock.org/HaoyueQin/dsh-usage-statistics-panel/stock.svg)](https://gitstock.org/HaoyueQin/dsh-usage-statistics-panel)
 
 ## License
 

@@ -8,6 +8,8 @@ English | [中文](README.md)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.6-blue)
 ![dsh-plugin](https://img.shields.io/badge/dsh-plugin-4D6BFE)
 [![Awesome DSH Plugin](https://awesome-dsh-plugin.com/badge.svg)](https://awesome-dsh-plugin.com)
+[![Commit activity](https://img.shields.io/github/commit-activity/t/HaoyueQin/dsh-usage-statistics-panel)](https://github.com/HaoyueQin/dsh-usage-statistics-panel/graphs/commit-activity)
+[![Last commit](https://img.shields.io/github/last-commit/HaoyueQin/dsh-usage-statistics-panel)](https://github.com/HaoyueQin/dsh-usage-statistics-panel/commits)
 
 A usage statistics panel plugin for the DSH web UI: per-day token trend, a GitHub-style activity heatmap, a cache hit-rate curve, and a per-model breakdown (donut + list), added as a "Usage statistics" page in Settings.
 
@@ -68,6 +70,10 @@ pnpm build       # tsc declarations + tsdown (host ESM + dual-channel client bun
 ## Acknowledgements
 
 This panel is a port of the usage statistics feature the author originally built for [DeepSeek-Reasonix](https://github.com/esengine/DeepSeek-Reasonix) (PR [#7238](https://github.com/esengine/DeepSeek-Reasonix/pull/7238) and [#7503](https://github.com/esengine/DeepSeek-Reasonix/pull/7503)). The front-end charts are largely reused from that implementation; the data layer is rebuilt on DSH's session logs and storage-domain.
+
+## Activity
+
+[![HaoyueQin/dsh-usage-statistics-panel GitStock K-Line Chart](https://gitstock.org/HaoyueQin/dsh-usage-statistics-panel/stock.svg)](https://gitstock.org/HaoyueQin/dsh-usage-statistics-panel)
 
 ## License
 

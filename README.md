@@ -2,6 +2,13 @@
 
 [English](README_EN.md) | 中文
 
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/banner-zh-dark.svg">
+    <img src="docs/banner-zh.svg" alt="DSH Usage Statistics Panel" width="720">
+  </picture>
+</p>
+
 ![npm version](https://img.shields.io/npm/v/dsh-usage-statistics-panel)
 ![npm downloads](https://img.shields.io/npm/dm/dsh-usage-statistics-panel)
 ![License](https://img.shields.io/github/license/HaoyueQin/dsh-usage-statistics-panel)
@@ -15,11 +22,19 @@ DSH web 插件的用量统计面板：按天 Token 趋势、GitHub 风格活跃�
 
 所有图表均为手绘 SVG，不依赖图表库；配色使用 GitHub Primer 的 data-viz 双套色板（前 5 名模型各取一个等级色，其余归入灰色 "Other" 桶），并随 DSH 主题自适应。
 
+<p align="center">
+  <img src="docs/demo-zh.svg" alt="demo：安装后设置页出现「使用统计」入口，进入面板后卡片、热力图、趋势与环形图依次点亮" width="720">
+</p>
+
 ## 预览
 
-![面板概览：汇总卡片、活跃热力图与按天 Token 趋势](docs/images/panel-overview.png)
+<p align="center">
+  <img src="docs/images/panel-overview.png" alt="面板概览：汇总卡片、活跃热力图与按天 Token 趋势" width="720">
+</p>
 
-![模型用量：环形图、列表与趋势图](docs/images/model-usage.png)
+<p align="center">
+  <img src="docs/images/model-usage.png" alt="模型用量：环形图、列表与趋势图" width="720">
+</p>
 
 ## 功能
 

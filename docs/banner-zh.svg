@@ -1,0 +1,51 @@
+﻿<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="260" viewBox="0 0 1200 260" font-family="system-ui,Segoe UI,sans-serif">
+<defs>
+<radialGradient id="gl" cx=".8" cy=".5" r=".6"><stop offset="0" stop-color="#4D6BFE" stop-opacity=".13"/><stop offset="1" stop-color="#4D6BFE" stop-opacity="0"/></radialGradient>
+<clipPath id="hw"><rect x="614" y="124" height="62" width="0"><animate attributeName="width" dur="6.4s" repeatCount="indefinite" values="0;0;172;172" keyTimes="0;.125;.3125;1"/></rect></clipPath>
+<clipPath id="tw"><rect x="800" y="110" height="94" width="0"><animate attributeName="width" dur="6.4s" repeatCount="indefinite" values="0;0;166;166" keyTimes="0;.1875;.40625;1"/></rect></clipPath>
+</defs>
+<rect width="1200" height="260" fill="#F6F8FA"/>
+<rect width="1200" height="260" fill="url(#gl)"/>
+<rect x="64" y="47" width="96" height="26" rx="13" fill="#4D6BFE"/>
+<text x="112" y="64.5" font-size="12" font-weight="600" letter-spacing=".8" fill="#fff" text-anchor="middle">DSH PLUGIN</text>
+<text x="64" y="111" font-size="35" font-weight="700" fill="#1F2328" textLength="470">DSH Usage Statistics Panel</text>
+<text x="64" y="141" font-size="15" fill="#59636E">按天 Token 趋势 · GitHub 风格活跃热力图 · 模型用量拆分</text>
+<text x="64" y="163" font-size="15" fill="#59636E">手绘 SVG · 数据纯本地 · 就在 DSH 设置页里</text>
+<circle cx="70" cy="194" r="5.5" fill="#509FFF"/><circle cx="90" cy="194" r="5.5" fill="#6D9A73"/><circle cx="110" cy="194" r="5.5" fill="#D69159"/><circle cx="130" cy="194" r="5.5" fill="#E07DB2"/><circle cx="150" cy="194" r="5.5" fill="#B68CF5"/>
+<path d="M168 194h24" stroke="#4D6BFE" stroke-width="2.5" stroke-linecap="round"/>
+<text x="200" y="198.5" font-size="12" fill="#59636E">缓存命中率</text>
+<rect x="600" y="36" width="552" height="188" rx="14" fill="#FFF" stroke="#D0D7DE"/>
+<g font-size="10.5" fill="#59636E">
+<rect x="616" y="52" width="160" height="44" rx="9" fill="#FFF" stroke="#DFE4E9"/>
+<text x="629" y="69">Tokens 用量</text><text x="629" y="88" font-size="17" font-weight="600" fill="#1F2328">923.0M</text>
+<rect x="790" y="52" width="160" height="44" rx="9" fill="#FFF" stroke="#DFE4E9"/>
+<text x="803" y="69">平均缓存命中率</text><text x="803" y="88" font-size="17" font-weight="600" fill="#1F2328">96.9%</text>
+<rect x="964" y="52" width="160" height="44" rx="9" fill="#FFF" stroke="#DFE4E9"/>
+<text x="977" y="69">活跃天数</text><text x="977" y="88" font-size="17" font-weight="600" fill="#1F2328">6</text>
+</g>
+<g><animate attributeName="opacity" dur="6.4s" repeatCount="indefinite" values="1;1;0;0" keyTimes="0;.875;.9375;1"/>
+<text x="616" y="120" font-size="10.5" fill="#59636E">活跃热力图</text>
+<g clip-path="url(#hw)">
+<path fill="#EBEDF0" d="M616 126h9v9h-9zM640 126h9v9h-9zM664 126h9v9h-9zM700 126h9v9h-9zM748 126h9v9h-9zM628 138h9v9h-9zM676 138h9v9h-9zM712 138h9v9h-9zM760 138h9v9h-9zM616 150h9v9h-9zM652 150h9v9h-9zM688 150h9v9h-9zM736 150h9v9h-9zM772 150h9v9h-9zM628 162h9v9h-9zM676 162h9v9h-9zM712 162h9v9h-9zM748 162h9v9h-9zM616 174h9v9h-9zM652 174h9v9h-9zM700 174h9v9h-9zM760 174h9v9h-9z"/><path fill="#D5DCFF" d="M628 126h9v9h-9zM676 126h9v9h-9zM724 126h9v9h-9zM760 126h9v9h-9zM616 138h9v9h-9zM652 138h9v9h-9zM688 138h9v9h-9zM736 138h9v9h-9zM772 138h9v9h-9zM640 150h9v9h-9zM676 150h9v9h-9zM724 150h9v9h-9zM640 162h9v9h-9zM664 162h9v9h-9zM700 162h9v9h-9zM736 162h9v9h-9zM772 162h9v9h-9zM628 174h9v9h-9zM688 174h9v9h-9zM736 174h9v9h-9zM772 174h9v9h-9z"/><path fill="#B8C6FF" d="M652 126h9v9h-9zM712 126h9v9h-9zM772 126h9v9h-9zM664 138h9v9h-9zM724 138h9v9h-9zM628 150h9v9h-9zM700 150h9v9h-9zM760 150h9v9h-9zM616 162h9v9h-9zM724 162h9v9h-9zM664 174h9v9h-9zM712 174h9v9h-9zM748 174h9v9h-9z"/><path fill="#9DB0FF" d="M688 126h9v9h-9zM640 138h9v9h-9zM748 138h9v9h-9zM712 150h9v9h-9zM652 162h9v9h-9zM760 162h9v9h-9zM676 174h9v9h-9z"/><path fill="#7990FE" d="M736 126h9v9h-9zM700 138h9v9h-9zM664 150h9v9h-9zM688 162h9v9h-9zM640 174h9v9h-9zM724 174h9v9h-9z"/><path fill="#4D6BFE" d="M748 150h9v9h-9z"/>
+</g>
+<g clip-path="url(#tw)">
+<path d="M800 200.5H966" stroke="#E7EAEE"/>
+<path fill="#509FFF" d="M804 200v-12h11v12zM825 200v-7h11v7zM846 200v-17h11v17zM867 200v-8h11v8zM888 200v-21h11v21zM909 200v-11h11v11zM930 200v-18h11v18zM951 200v-29h11v29z"/>
+<path fill="#6D9A73" d="M804 188v-7h11v7zM825 193v-4h11v4zM846 183v-10h11v10zM867 192v-5h11v5zM888 179v-13h11v13zM909 189v-7h11v7zM930 182v-11h11v11zM951 171v-17h11v17z"/>
+<path fill="#D69159" d="M804 181v-5h11v5zM825 189v-4h11v4zM846 173v-7h11v7zM867 187v-3h11v3zM888 166v-8h11v8zM909 182v-4h11v4zM930 171v-7h11v7zM951 154v-12h11v12z"/>
+<path d="M804 122C826 119 846 124 868 121S908 115 930 118 956 114 962 115" fill="none" stroke="#4D6BFE" stroke-width="2.5"/>
+</g>
+<g fill="none" stroke-width="11">
+<circle cx="1058" cy="148" r="28" stroke="#509FFF" stroke-dasharray="64 176.5" transform="rotate(-90 1058 148)"><animate attributeName="stroke-dasharray" dur="6.4s" repeatCount="indefinite" values="0 176.5;0 176.5;64 176.5;64 176.5" keyTimes="0;.4375;.4766;1"/></circle>
+<circle cx="1058" cy="148" r="28" stroke="#6D9A73" stroke-dasharray="45 176.5" transform="rotate(41 1058 148)"><animate attributeName="stroke-dasharray" dur="6.4s" repeatCount="indefinite" values="0 176.5;0 176.5;45 176.5;45 176.5" keyTimes="0;.4766;.5078;1"/></circle>
+<circle cx="1058" cy="148" r="28" stroke="#D69159" stroke-dasharray="35.7 176.5" transform="rotate(133 1058 148)"><animate attributeName="stroke-dasharray" dur="6.4s" repeatCount="indefinite" values="0 176.5;0 176.5;35.7 176.5;35.7 176.5" keyTimes="0;.5078;.5273;1"/></circle>
+<circle cx="1058" cy="148" r="28" stroke="#B68CF5" stroke-dasharray="17.2 176.5" transform="rotate(206.2 1058 148)"><animate attributeName="stroke-dasharray" dur="6.4s" repeatCount="indefinite" values="0 176.5;0 176.5;17.2 176.5;17.2 176.5" keyTimes="0;.5273;.5391;1"/></circle>
+<circle cx="1058" cy="148" r="28" stroke="#E07DB2" stroke-dasharray="14.1 176.5" transform="rotate(241.5 1058 148)"><animate attributeName="stroke-dasharray" dur="6.4s" repeatCount="indefinite" values="0 176.5;0 176.5;14.1 176.5;14.1 176.5" keyTimes="0;.5391;.5469;1"/></circle>
+</g>
+<g font-size="9" fill="#59636E"><animate attributeName="opacity" dur="6.4s" repeatCount="indefinite" values="0;0;1;1" keyTimes="0;.5469;.6094;1"/>
+<circle cx="1022" cy="194" r="3.5" fill="#509FFF"/><text x="1030" y="197">deepseek-v4-pro</text><text x="1136" y="197" text-anchor="end">36.4%</text>
+<circle cx="1022" cy="205" r="3.5" fill="#6D9A73"/><text x="1030" y="208">deepseek-v4-flash</text><text x="1136" y="208" text-anchor="end">25.6%</text>
+<circle cx="1022" cy="216" r="3.5" fill="#D69159"/><text x="1030" y="219">glm-5</text><text x="1136" y="219" text-anchor="end">20.3%</text>
+</g>
+</g>
+</svg>

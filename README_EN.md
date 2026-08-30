@@ -2,6 +2,13 @@
 
 English | [中文](README.md)
 
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/banner-dark.svg">
+    <img src="docs/banner.svg" alt="DSH Usage Statistics Panel" width="720">
+  </picture>
+</p>
+
 ![npm version](https://img.shields.io/npm/v/dsh-usage-statistics-panel)
 ![npm downloads](https://img.shields.io/npm/dm/dsh-usage-statistics-panel)
 ![License](https://img.shields.io/github/license/HaoyueQin/dsh-usage-statistics-panel)
@@ -15,11 +22,19 @@ A usage statistics panel plugin for the DSH web UI: per-day token trend, a GitHu
 
 All charts are hand-drawn SVG with no chart library; the palette uses GitHub Primer's data-viz two-set tokens (the top five models each get a distinct rank colour, everything else collapses into a gray "Other" bucket) and adapts to the DSH theme.
 
+<p align="center">
+  <img src="docs/demo.svg" alt="demo: a Usage statistics entry appears in the Settings nav, then cards, heatmap, trend and donut light up one by one" width="720">
+</p>
+
 ## Preview
 
-![Panel overview: summary cards, activity heatmap and daily token trend](docs/images/panel-overview.png)
+<p align="center">
+  <img src="docs/images/panel-overview.png" alt="Panel overview: summary cards, activity heatmap and daily token trend" width="720">
+</p>
 
-![Model usage: donut, list and daily trend](docs/images/model-usage.png)
+<p align="center">
+  <img src="docs/images/model-usage.png" alt="Model usage: donut, list and daily trend" width="720">
+</p>
 
 ## Features
 

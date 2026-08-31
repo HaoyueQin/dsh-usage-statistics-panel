@@ -12,8 +12,8 @@
  * - storageDomain: @deepseek-ai/dsh-storage-domain (domain hub)
  * - webServer: @deepseek-ai/dsh-host-webserver (the WebServer)
  * - settings: @deepseek-ai/dsh-settings (settings namespace seam)
- * - slots: the client runtime SlotRegistry
- * - locale: the client runtime locale service
+ * - slots: the client slot registry (ui-slots)
+ * - locale: the client locale service
  * - connection: the client connection handle
  * Drift from upstream is contained to this file.
  *
@@ -152,9 +152,35 @@ export interface UsageSettingsService {
   }
 }
 
+/** One slots.register spec (mirror of the client ui-slots registration shape). */
+export interface UsageSlotEntrySpec {
+  name: string
+  id?: string
+  order?: number
+  priority?: number
+  label?: () => string
+  locale?: string
+  inject?: () => object
+}
+
+/** The client slot registry service (mirror of the client store/ui-slots). */
+export interface UsageSlotsService {
+  /** Wait for (or run against) the named slot's declaration. The callback
+   *  returns one disposer or an iterable of disposers (a generator yield
+   *  several register calls as one transaction). */
+  inject(
+    name: string,
+    callback: () => void | (() => void) | Iterable<() => void>,
+  ): void
+  register(spec: UsageSlotEntrySpec, component: unknown): () => void
+}
+
 /** The client-side locale service (mirror of @deepseek-ai/dsh-client-locale). */
 export interface UsageLocaleService {
-  register(namespace: string, ...entries: Array<[string, Record<string, string>]>): () => void
+  /** Single-locale form: one dictionary for one locale tag. */
+  register(namespace: string, locale: string, dict: Record<string, string>): () => void
+  /** All-locales form: complete dictionaries keyed by built-in locale id. */
+  register(namespace: string, dicts: Record<string, Record<string, string>>): () => void
   bind(namespace: string): (key: string) => string
   /** The active locale id ("zh" | "zh-TW" | "en"), for locale-aware formatting. */
   getLocale(): { active: string }
@@ -175,7 +201,7 @@ declare module 'cordis' {
     storageDomain: UsageStorageDomain
     webServer: UsageWebServer
     settings: UsageSettingsService
-    slots: unknown
+    slots: UsageSlotsService
     locale: UsageLocaleService
     connection: UsageConnection
   }

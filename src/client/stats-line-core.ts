@@ -9,9 +9,64 @@
  * Two plugin-side readouts: a two-decimal cache-hit rate and a five-item
  * token breakdown (total / input / cache hit / cache miss / output).
  */
-import type {
-  AssistantMessageNode, ConversationNode, ConversationSnapshot,
-} from '@deepseek-ai/dsh-client-runtime/client'
+/**
+ * Minimal structural skeletons of the official assembly types this module
+ * folds. The upstream types moved between kernels (0.1.1: ConversationSnapshot
+ * under ui-conversation; 0.1.2: ChatSnapshot under ui-chat, both served to
+ * this entry through its `useSession`/`useChat` seat), so this module and the
+ * tests take the field skeleton they fold rather than any package's type —
+ * the same drift containment context-types.ts applies to Context. The index
+ * signature keeps object-literal fixtures with extra fields assignable.
+ */
+
+/** One assistant node's timing facts; null marks an unrecorded part. */
+export interface UsageNodeTiming {
+  stepStartTime: number | null
+  firstTokenTime: number | null
+  completedTime: number
+}
+
+/** One assistant message node (official `kind: 'assistant'` arm). */
+export interface AssistantMessageNodeLike {
+  kind: 'assistant'
+  turn: number
+  time: number
+  timing?: UsageNodeTiming
+  /** Provider-reported usage (TokenUsage bucket), read via usageOutputTokens. */
+  usage?: unknown
+  [key: string]: unknown
+}
+
+/** One settled tool-result node (official `kind: 'tool-result'` arm). */
+export interface ToolResultNodeLike {
+  kind: 'tool-result'
+  time: number
+  callTime: number | null
+  [key: string]: unknown
+}
+
+/** The assembly's conversation nodes, as both kernels serve them. */
+export type ConversationNodeLike = AssistantMessageNodeLike | ToolResultNodeLike
+
+/** Minimal skeleton of the ≤0.1.1 ConversationSnapshot (the slice the
+ *  rc.2-kernel `useSession` seat selects). */
+export interface ConversationSnapshotLike {
+  nodes: readonly ConversationNodeLike[]
+  [key: string]: unknown
+}
+
+/** The projection seats this entry subscribes to (mirror of the official
+ *  SessionProjectionMap keys: sessionStats + tokenUsage). */
+export interface SessionProjectionMapLike {
+  sessionStats: WindowStats
+  tokenUsage: TokenUsageLike
+}
+
+/** Minimal structural mirror of the framework-injected projection hook
+ *  (`useProjection('sessionStats' | 'tokenUsage')` on either kernel). */
+export type UseProjection = <K extends keyof SessionProjectionMapLike & string>(
+  key: K,
+) => SessionProjectionMapLike[K] | undefined
 
 /** The token-usage projection shape (dsh-token-meter), kept structural so
  *  this module stays testable without the runtime projection store. */
@@ -174,7 +229,7 @@ export function formatTokensPerSecond(tps: number): string {
 }
 
 /** Read one assistant node's TTFT, decode wall time and output tokens (official). */
-export function assistantStepReading(node: AssistantMessageNode): StepReading {
+export function assistantStepReading(node: AssistantMessageNodeLike): StepReading {
   const timing = node.timing
   const ttftMs = timing !== undefined && timing.stepStartTime !== null && timing.firstTokenTime !== null
     ? Math.max(0, timing.firstTokenTime - timing.stepStartTime)
@@ -196,7 +251,7 @@ function usageOutputTokens(usage: unknown): number | null {
  * Fold assistant and tool-result nodes into window-scoped display totals —
  * the fallback for assemblies without the sessionStats projection (official).
  */
-export function deriveStats(nodes: ConversationSnapshot['nodes']): WindowStats {
+export function deriveStats(nodes: readonly ConversationNodeLike[]): WindowStats {
   const turns = new Set<number>()
   let steps = 0
   let llmMs = 0
@@ -229,5 +284,3 @@ export function deriveStats(nodes: ConversationSnapshot['nodes']): WindowStats {
   return { turns: turns.size, steps, llmMs, toolMs, ttftMs, ttftSteps, decodeMs, decodeTokens }
 }
 
-// Re-export for test-only structural use.
-export type { ConversationNode }

@@ -22,19 +22,13 @@
  */
 import { Fragment, memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { ConversationNode, ConversationSnapshot, UseProjection } from '@deepseek-ai/dsh-client-runtime/client'
 import type { PropsLocale, SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
-// Type-only: merges the sessionStats key into SessionProjectionMap for useProjection.
-import type {} from '@deepseek-ai/dsh-session-stats/client'
-// Type-only: merges the tokenUsage key into SessionProjectionMap for useProjection.
-import type {} from '@deepseek-ai/dsh-token-meter/client'
-// Type-only: pulls the composer.dock SlotMap merge (conversation contract) into this program.
-import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { LOCALE_NS } from './locales.ts'
 import { statsLineState } from './stats-line-state.ts'
 import {
   billedInputTokens, cacheHitPercent, cacheHitPercentPrecise, deriveStats,
   formatDuration, formatTokensCompact, formatTokensPerSecond, tokenBreakdown,
+  type ConversationNodeLike, type ConversationSnapshotLike, type UseProjection,
 } from './stats-line-core.ts'
 import css from './StatsLineEnhanced.module.css'
 
@@ -42,11 +36,11 @@ import css from './StatsLineEnhanced.module.css'
  * Structural type for the ≥0.1.2 `useChat` seat: the standard snapshot
  * selector over the ui-chat ChatSnapshot, whose `legacy.nodes` compatibility
  * projection carries the same ConversationNode[] the rc.2 ConversationSnapshot
- * nested at `chat.legacy.nodes`. Declared locally because this plugin's
- * rc.2-pinned devDependencies ship no 0.1.2 ui-chat contract — the seat is
- * consumed structurally at runtime and never value-imported.
+ * nested at `chat.legacy.nodes`. Declared locally because no single kernel's
+ * contract ships beside both generations — the seat is consumed structurally
+ * at runtime and never value-imported.
  */
-type ChatSnapshotSelectorHook = SnapshotSelectorHook<{ legacy?: { nodes?: readonly ConversationNode[] } }>
+type ChatSnapshotSelectorHook = SnapshotSelectorHook<{ legacy?: { nodes?: readonly ConversationNodeLike[] } }>
 
 /**
  * Full props: the standard session kit (hook-shaped selector + projection
@@ -59,7 +53,7 @@ type ChatSnapshotSelectorHook = SnapshotSelectorHook<{ legacy?: { nodes?: readon
  */
 export interface StatsLineEnhancedProps {
   /** ≤0.1.1 seat: the ConversationSnapshot selector (path `chat.legacy.nodes`). */
-  useSession?: SnapshotSelectorHook<ConversationSnapshot>
+  useSession?: SnapshotSelectorHook<ConversationSnapshotLike>
   /** ≥0.1.2 seat: the chat-view snapshot selector (path `legacy.nodes`). */
   useChat?: ChatSnapshotSelectorHook
   useProjection: UseProjection
@@ -73,12 +67,12 @@ export interface StatsLineEnhancedProps {
  * (neither snapshot type declares the other's key). Returns undefined when
  * neither shape is present — a defensive tail, never observed in practice.
  */
-function legacyNodesOf(snap: unknown): readonly ConversationNode[] | undefined {
+function legacyNodesOf(snap: unknown): readonly ConversationNodeLike[] | undefined {
   if (snap === null || typeof snap !== 'object') return undefined
   const direct = (snap as { legacy?: { nodes?: unknown } }).legacy?.nodes
-  if (Array.isArray(direct)) return direct as readonly ConversationNode[]
+  if (Array.isArray(direct)) return direct as readonly ConversationNodeLike[]
   const nested = (snap as { chat?: { legacy?: { nodes?: unknown } } }).chat?.legacy?.nodes
-  return Array.isArray(nested) ? (nested as readonly ConversationNode[]) : undefined
+  return Array.isArray(nested) ? (nested as readonly ConversationNodeLike[]) : undefined
 }
 
 export const StatsLineEnhanced = memo(function StatsLineEnhanced(

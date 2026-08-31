@@ -6,7 +6,7 @@
  * breakdown.
  */
 import { describe, expect, it } from 'vitest'
-import type { AssistantMessageNode } from '@deepseek-ai/dsh-client-runtime/client'
+import type { AssistantMessageNodeLike } from '../src/client/stats-line-core.ts'
 import {
   assistantStepReading, billedInputTokens, cacheHitPercent, cacheHitPercentPrecise,
   deriveStats, formatDuration, formatTokensCompact, formatTokensPerSecond, tokenBreakdown,
@@ -102,7 +102,7 @@ describe('official formatters (replicated)', () => {
 })
 
 describe('assistantStepReading / deriveStats (replicated window fold)', () => {
-  const assistant = (seq: number, turn: number, extra: Record<string, unknown> = {}): AssistantMessageNode => ({
+  const assistant = (seq: number, turn: number, extra: Record<string, unknown> = {}): AssistantMessageNodeLike => ({
     kind: 'assistant', seq, time: seq * 1_000, turn, step: seq, blocks: [{ kind: 'text', text: 'x' }], ...extra,
   })
 

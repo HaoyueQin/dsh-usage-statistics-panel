@@ -10,8 +10,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, render } from '@testing-library/react'
 import type {
-  AssistantMessageNode, ConversationSnapshot, SessionId, ToolResultNode,
-} from '@deepseek-ai/dsh-client-runtime/client'
+  AssistantMessageNodeLike, ConversationSnapshotLike, ToolResultNodeLike,
+} from '../src/client/stats-line-core.ts'
 import { StatsLineEnhanced, type StatsLineEnhancedProps } from '../src/client/StatsLineEnhanced.tsx'
 import { zh } from '../src/client/locales.ts'
 import { resetStatsLineStateForTests, statsLineState } from '../src/client/stats-line-state.ts'
@@ -43,31 +43,31 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-const SID = 's1' as SessionId
+const SID = 's1'
 
-const assistant = (seq: number, turn: number, usage?: unknown): AssistantMessageNode => ({
+const assistant = (seq: number, turn: number, usage?: unknown): AssistantMessageNodeLike => ({
   kind: 'assistant', seq, time: seq * 1_000, turn, step: seq, blocks: [{ kind: 'text', text: `t${seq}` }],
   ...(usage === undefined ? {} : { usage }),
 })
 
-const tool = (): ToolResultNode => ({
+const tool = (): ToolResultNodeLike => ({
   kind: 'tool-result', seq: 5, time: 5_000, callId: 'c', call: null, callTime: null, content: [],
   isError: false, callView: null, resultView: null, subCalls: [],
 })
 
 /** Minimal whole-snapshot stub: the component only reads s.chat.legacy.nodes. */
-function snapshotBase(nodes: readonly unknown[]): ConversationSnapshot {
+function snapshotBase(nodes: readonly unknown[]): ConversationSnapshotLike {
   return {
-    sessionId: SID, views: {} as ConversationSnapshot['views'],
-    chat: { legacy: { nodes } } as unknown as ConversationSnapshot['chat'],
+    sessionId: SID, views: {},
+    chat: { legacy: { nodes } },
     nodes: [], turnTimings: new Map(), turnEnds: new Map(), partial: null, runningCalls: [],
     pending: [], queue: [], running: false, composerPhase: 'active', removed: false, openState: 'open', openError: null,
     hasMore: false, loadingOlder: false, promptError: null, blank: false, subagent: null, lastAgentError: null,
-  } as ConversationSnapshot
+  } as ConversationSnapshotLike
 }
 
-function makeSource(init?: Partial<ConversationSnapshot>): {
-  source: { getSnapshot(): ConversationSnapshot; subscribe(fn: () => void): () => void }
+function makeSource(init?: Partial<ConversationSnapshotLike>): {
+  source: { getSnapshot(): ConversationSnapshotLike; subscribe(fn: () => void): () => void }
 } {
   // The component reads s.chat.legacy.nodes; the whole-snapshot node array is
   // mirrored into the chat slice (the official fixture does the same).
@@ -75,7 +75,7 @@ function makeSource(init?: Partial<ConversationSnapshot>): {
   const snap = {
     ...snapshotBase(nodes as Readonly<unknown[]>),
     ...init,
-    chat: { legacy: { nodes } } as unknown as ConversationSnapshot['chat'],
+    chat: { legacy: { nodes } },
   }
   return {
     source: {
@@ -87,15 +87,15 @@ function makeSource(init?: Partial<ConversationSnapshot>): {
 
 /** The projection seat: a key-addressed table of whole values. */
 function projections(values: Record<string, unknown>): StatsLineEnhancedProps['useProjection'] {
-  return (key: string) => values[key]
+  return ((key: string) => values[key]) as unknown as StatsLineEnhancedProps['useProjection']
 }
 
 function props(
-  source: { getSnapshot(): ConversationSnapshot; subscribe(fn: () => void): () => void },
+  source: { getSnapshot(): ConversationSnapshotLike; subscribe(fn: () => void): () => void },
   values: Record<string, unknown> = { tokenUsage: USAGE },
 ): StatsLineEnhancedProps {
   return {
-    useSession: ((selector: (s: ConversationSnapshot) => unknown) => selector(source.getSnapshot())) as StatsLineEnhancedProps['useSession'],
+    useSession: ((selector: (s: ConversationSnapshotLike) => unknown) => selector(source.getSnapshot())) as StatsLineEnhancedProps['useSession'],
     useProjection: projections(values),
     t,
   }

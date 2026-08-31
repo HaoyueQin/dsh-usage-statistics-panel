@@ -6,7 +6,7 @@
  * pure renderer. The host half owns the collector + store; this browser half
  * only reads.
  */
-import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
+import type { Context } from '../context-types.ts'
 // Type-only: the keyed slot's declaration. Cross-plugin collaboration goes
 // through cordis services; a value import fails the client bundle-purity gate.
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
@@ -53,7 +53,7 @@ export function UsageStatsSection(props: UsageStatsSectionProps): JSX.Element {
   return <UsageStatsPanel t={props.t} />
 }
 
-export function apply(ctx: ClientContext): void {
+export function apply(ctx: Context): void {
   // Register the three dictionaries into the shared locale registry; the
   // disposers run on fiber disposal so re-activation (HMR) re-registers.
   ctx.effect(() => {

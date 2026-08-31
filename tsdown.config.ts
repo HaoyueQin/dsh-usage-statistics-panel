@@ -126,7 +126,7 @@ function clientBundle(pluginId: string, entryFile: string): UserConfig {
       },
     },
     noExternal: (id: string) => (CLIENT_EXTERNALS.includes(id) ? undefined : true),
-    plugins: [purityGatePlugin(), makeCssPlugin(pluginId)],
+    plugins: [purityGatePlugin(), makeCssPlugin(pluginId), stableRegionCommentsPlugin()],
     outputOptions: {
       entryFileNames: entryFile,
       sourcemapPathTransform: browserSourcePath,
@@ -159,6 +159,29 @@ function purityGatePlugin(): NonNullable<UserConfig['plugins']> {
         `client bundle purity: "${source}" is not a platform module (CLIENT_EXTERNALS) and not an inline-safe wire layer — `
         + 'cross-plugin value imports are forbidden; collaborate through cordis services (type-only imports are erased and never reach this gate)',
       )
+    },
+  }
+}
+
+/**
+ * Rolldown stamps every module with a `//#region <module-id>` comment. The
+ * CSS virtual modules' ids embed the build-machine absolute path (the
+ * CSS_VIRTUAL_PREFIX form), so each stylesheet left one machine-specific
+ * comment line in the bundle even after the class-hash fix above — the npm
+ * and GitHub tarballs of one version differed by exactly those lines (all
+ * three diffs across the whole artifact were comment lines; the code itself
+ * was already byte-equal). Normalize the comment to a fixed machine-free
+ * form so the artifact is truly byte-identical across build machines.
+ */
+function stableRegionCommentsPlugin(): NonNullable<UserConfig['plugins']> {
+  return {
+    name: 'dsh-stable-region-comments',
+    renderChunk(code: string) {
+      // Bundle text escapes the NUL of the virtual prefix as the two
+      // characters `\0`. Regular modules already carry machine-independent
+      // ids, so only the virtual-CSS region lines need rewriting.
+      if (!code.includes('\\0dsh-css:')) return null
+      return code.replace(/^\/\/#region \\0dsh-css:.*$/gm, '//#region dsh-css')
     },
   }
 }

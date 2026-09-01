@@ -1,6 +1,6 @@
 {
   "name": "dsh-usage-statistics-panel",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "description": "DSH web plugin: a usage statistics panel with per-day token trend, GitHub-style activity heatmap, cache hit-rate curve and per-model breakdown, replicating the reasonix usage stats feature.",
   "type": "module",
   "keywords": [

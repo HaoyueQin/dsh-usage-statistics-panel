@@ -57,6 +57,8 @@ dsh plugin --profile <name> add dsh-usage-statistics-panel@latest
 
 插件挂载后，在 Web UI 的设置页左侧导航会出现"使用统计"页面。
 
+**兼容性**：已验证 DeepSeek Harness `0.1.1-rc.2` ~ `0.1.2-alpha.4`（peer 声明 `^0.1.1-rc.2 || ^0.1.2-alpha.1`），CI 对 `0.1.2-alpha.3` / `0.1.2-alpha.4` 双版本回归（`.github/workflows/test.yml`）；更高版本通常可用，属未验证范围。
+
 ## 数据来源
 
 面板的数据采集是**观测式**的：插件订阅会话事件流（`session/event`）中的 `assistant/message` 与 `assistant/chunk`，提取 provider 上报的 token 用量（输入 / 输出 / 缓存读 / 缓存写），在**单个会话内**按 `(turn, step)` 去重（同一调用只计一次、保留先到的样本——两个官方适配器对流式采样与最终上报的数值完全一致；并发会话各自独立计数、互不吞样本）。模型归因优先取消息自带的 `source`（每次调用各自标注），缺失时回退到会话的路由折叠（`request/context` 事件或会话的 `requestContext()`），宿主重启后也不会落入 "(unknown)" 桶。首次启用时还会回扫既有会话日志补齐历史。

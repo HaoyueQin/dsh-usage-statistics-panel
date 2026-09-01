@@ -56,6 +56,8 @@ After mounting, **hard-refresh the browser** (Cmd/Ctrl+Shift+R): client-half cha
 
 Once mounted, a "Usage statistics" page appears in the left navigation of the Settings shell.
 
+**Compatibility**: verified against DeepSeek Harness `0.1.1-rc.2` through `0.1.2-alpha.4` (peer declaration `^0.1.1-rc.2 || ^0.1.2-alpha.1`); CI regresses both `0.1.2-alpha.3` and `0.1.2-alpha.4` (`.github/workflows/test.yml`). Newer releases usually work but are unverified.
+
 ## Data source
 
 The collector is observational: it subscribes to the session event stream (`session/event`), reads provider-reported `TokenUsage` from `assistant/message` and `assistant/chunk` (input / output / cache-read / cache-write), and dedupes by `(turn, step)` WITHIN one session (each call counts once, keeping the first report — the shipped adapters report identical values on the streaming sample and the final message; concurrent sessions never swallow each other's samples). Model attribution prefers the message's own `source` (stamped per call) and falls back to the session's route fold (`request/context` events or the session's `requestContext()`), so a host restart never drops samples into the "(unknown)" bucket. On first enable it also backfills by replaying persisted session logs.

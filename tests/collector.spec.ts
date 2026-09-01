@@ -624,6 +624,64 @@ describe('backfill attribution and the seq-partitioned cursor', () => {
     expect(m1?.model).toBe('p/m1')
     expect(m2?.model).toBe('p/m2')
   })
+
+  it('skips a fork-inherited prefix when the host reports the cut', async () => {
+    // A forked child's stored log begins with the events it copied from its
+    // parent (here: call 1 at seq 0-1), and the parent session is backfilled
+    // independently — replaying the prefix would count that usage twice. An
+    // alpha.4+ host reports the exact cut; only the child-owned tail folds.
+    const store = partitionStore({})
+    const collector = new UsageCollector({ on: () => {} } as never, store as never)
+    await collector.backfill(
+      { list: async () => [{ id: 'F1' }], inspect: async () => ({ id: 'F1', events: fiveEvents, inheritedEventCount: 2 }) } as unknown as UsageSessionPersistence,
+      { list: () => [] } as never,
+    )
+    // Child-owned tail only: turn/end + the call-2 request marker + usage 20.
+    expect(store.recorded).toHaveLength(3)
+    expect(store.recorded.find((s) => s.inputTokens === 10)).toBeFalsy()
+    expect(store.recorded.find((s) => s.inputTokens === 20)).toBeTruthy()
+    expect(store.recorded.filter((s) => s.request)).toHaveLength(1)
+    expect(store.recorded.filter((s) => s.turn)).toHaveLength(1)
+  })
+
+  it('replays the whole log when the host does not report the cut (≤alpha.3 fallback)', async () => {
+    // Older hosts return no inheritedEventCount: the replay must stay exactly
+    // the previous full-log behavior, never silently shrink.
+    const store = partitionStore({})
+    const collector = new UsageCollector({ on: () => {} } as never, store as never)
+    await collector.backfill(
+      { list: async () => [{ id: 'F1' }], inspect: async () => ({ id: 'F1', events: fiveEvents }) } as unknown as UsageSessionPersistence,
+      { list: () => [] } as never,
+    )
+    expect(store.recorded).toHaveLength(5)
+  })
+
+  it('combines the inherited cut with a live boundary', async () => {
+    // Child-owned pre-attach window [2, 4) only: the parent owns [0, 2), the
+    // live pass owns [4, ∞). The three partitions tile the log exactly once.
+    const store = partitionStore({ F1: 4 })
+    const collector = new UsageCollector({ on: () => {} } as never, store as never)
+    await collector.backfill(
+      { list: async () => [{ id: 'F1' }], inspect: async () => ({ id: 'F1', events: fiveEvents, inheritedEventCount: 2 }) } as unknown as UsageSessionPersistence,
+      { list: () => [] } as never,
+    )
+    expect(store.recorded).toHaveLength(2)
+    expect(store.recorded.find((s) => s.turn)).toBeTruthy()
+    expect(store.recorded.find((s) => s.request)).toBeTruthy()
+    expect(store.recorded.find((s) => s.inputTokens === 20)).toBeFalsy()
+  })
+
+  it('treats a garbage reported cut as absence (full-log replay)', async () => {
+    // A non-positive or non-integer cut cannot be trusted to bound anything:
+    // degrade to the no-cut path (full replay) rather than guess.
+    const store = partitionStore({})
+    const collector = new UsageCollector({ on: () => {} } as never, store as never)
+    await collector.backfill(
+      { list: async () => [{ id: 'F1' }], inspect: async () => ({ id: 'F1', events: fiveEvents, inheritedEventCount: -3 }) } as unknown as UsageSessionPersistence,
+      { list: () => [] } as never,
+    )
+    expect(store.recorded).toHaveLength(5)
+  })
 })
 
 describe('live recording never escapes a rejection', () => {

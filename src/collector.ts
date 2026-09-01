@@ -17,11 +17,16 @@
  *   callback, so concurrent sessions never share dedupe state or attribution.
  * - backfill: on first boot (when the domain is empty) the collector
  *   enumerates every persisted session (`sessionPersistence.list()`) and
- *   replays its full event log (`inspect(id)`) through a FRESH per-session
+ *   replays its event log (`inspect(id)`) through a FRESH per-session
  *   fold, so historical usage is accounted from the day the plugin is
  *   installed. Sessions the live listener already touched replay only their
  *   pre-observation PREFIX (see markLiveSession) — recovering history the
- *   live path never saw without double counting what it did.
+ *   live path never saw without double counting what it did. A forked
+ *   child's stored log begins with the events it copied from its parent;
+ *   when the host reports that cut (`inheritedEventCount`, dsh
+ *   0.1.2-alpha.4+), the replay skips it — the parent's own backfill
+ *   already counted those events. Older hosts leave the field absent and
+ *   the replay stays full-log.
  *
  * Idempotence: within ONE session, the same (turn, step) may report usage
  * more than once (a streaming sample then the final assistant/message;
@@ -381,6 +386,10 @@ export class UsageCollector {
    *    whose post-boundary events the live path owns (a /reset watermark uses
    *    the same shape: everything below the wipe-time log length must be
    *    rebuilt from the log because the wipe destroyed it);
+   *  - whatever the boundary, a fork-inherited prefix reported by the host
+   *    (SessionInspection.inheritedEventCount, dsh 0.1.2-alpha.4+) is
+   *    skipped: the child copied those events from its parent, whose own
+   *    backfill already counted them;
    *  - a session already in backfilledSessions is NEVER replayed again: it
    *    lands there only after a clean replay of its full replayable range,
    *    so re-selecting it would double that range on every later boot;
@@ -443,7 +452,9 @@ export class UsageCollector {
           //   replay from scratch;
           // - negative sentinel (-1, observed with unknown boundary) →
           //   replay nothing rather than risk a duplicate;
-          // - valid boundary N → replay exactly [0, N).
+          // - valid boundary N → replay exactly [0, N);
+          // - a fork-inherited prefix [0, inheritedEventCount) is skipped
+          //   separately in the loop (the parent session owns those events).
           const fromScratch = boundary === undefined
           const replayNothing = !fromScratch && boundary < 0
           const skipLiveOwned = (ev: UsageSessionEvent): boolean => {
@@ -457,9 +468,24 @@ export class UsageCollector {
           let route = ''
           try {
             const inspection = await persistence.inspect(header.id, signal)
+            // Fork-inherited cut (dsh 0.1.2-alpha.4+): a forked child's stored
+            // log starts with its parent's copied events, and the parent is
+            // backfilled independently — replaying that prefix here would count
+            // its usage twice. Older hosts leave the field absent (or
+            // non-positive/garbage), and the replay stays full-log: this skip
+            // is the cut's only consumer, so absence degrades to the exact
+            // previous behavior. Inherited events are skipped WHOLESALE (route
+            // seeding included): per-call attribution rides message.source on
+            // every shipped adapter, and a resumed child re-announces the
+            // route at its first change, so nothing child-owned loses its
+            // model.
+            const reported = inspection.inheritedEventCount
+            const inheritedCut =
+              typeof reported === 'number' && Number.isSafeInteger(reported) && reported > 0 ? reported : 0
             for (const ev of inspection.events) {
               if (signal?.aborted) return
               if (skipLiveOwned(ev)) continue
+              if (inheritedCut > 0 && typeof ev.seq === 'number' && ev.seq < inheritedCut) continue
               if (ev.type === 'request/context') {
                 const data = ev.data as RequestContextData
                 if (data.provider && data.model) route = `${data.provider}/${data.model}`

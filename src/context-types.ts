@@ -82,10 +82,22 @@ export interface UsageTokens {
   reasoningTokens?: number
 }
 
+/** One persistence inspection (mirror of dsh-session-persistence's
+ *  SessionInspection). `inheritedEventCount` arrived with dsh 0.1.2-alpha.4
+ *  as the exact fork-inherited prefix length; older hosts leave it absent,
+ *  so consumers must treat it as optional and fall back to a full-log read. */
+export interface UsageSessionInspection {
+  meta: UsageSessionHeader
+  events: UsageSessionEvent[]
+  /** Number of leading events this forked session copied from its parent
+   *  (absent on hosts older than 0.1.2-alpha.4). */
+  inheritedEventCount?: number
+}
+
 /** The session persistence service (mirror of @deepseek-ai/dsh-session-persistence). */
 export interface UsageSessionPersistence {
   list(signal?: AbortSignal): Promise<UsageSessionHeader[]>
-  inspect(id: string, signal?: AbortSignal): Promise<{ meta: UsageSessionHeader; events: UsageSessionEvent[] }>
+  inspect(id: string, signal?: AbortSignal): Promise<UsageSessionInspection>
 }
 
 /** The route a session's log records for its model calls (mirror of

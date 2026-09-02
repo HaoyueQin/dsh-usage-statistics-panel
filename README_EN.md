@@ -56,7 +56,7 @@ After mounting, **hard-refresh the browser** (Cmd/Ctrl+Shift+R): client-half cha
 
 Once mounted, a "Usage statistics" page appears in the left navigation of the Settings shell.
 
-**Compatibility**: verified against DeepSeek Harness `0.1.1-rc.2` through `0.1.2-alpha.4` (peer declaration `^0.1.1-rc.2 || ^0.1.2-alpha.1`); CI regresses both `0.1.2-alpha.3` and `0.1.2-alpha.4` (`.github/workflows/test.yml`). Newer releases usually work but are unverified.
+**Compatibility**: verified against DeepSeek Harness `0.1.1-rc.2` through `0.1.2-alpha.5` (peer declaration `^0.1.1-rc.2 || ^0.1.2-alpha.1`); CI regresses both `0.1.2-alpha.4` and `0.1.2-alpha.5` (`.github/workflows/test.yml`). Newer releases usually work but are unverified.
 
 ## Data source
 

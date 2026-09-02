@@ -20,7 +20,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        dsh: ['0.1.2-alpha.4', '0.1.2-alpha.3']
+        dsh: ['0.1.2-alpha.5', '0.1.2-alpha.4']
     steps:
       - uses: actions/checkout@v4
 

@@ -36,21 +36,21 @@ const NODE_BUILTINS = new Set([
   ...builtinModules.map(id => `node:${id}`),
 ])
 
-/** Module specifiers the web shell shares into the frozen module table (the official PLATFORM_MODULES list, plus preloaded client externals). */
+/** Module specifiers the web shell shares into the frozen module table — an
+ *  exact mirror of the official PLATFORM_MODULES list (DSH 0.1.2-rc.1,
+ *  packages/client/web/src/platform.ts; that line's
+ *  PRELOADED_CLIENT_EXTERNALS is empty). Every @deepseek-ai value import must
+ *  stay inside this list, or the bundle leaks a module id the host table
+ *  cannot resolve. */
 const CLIENT_EXTERNALS = [
   'react',
   'react/jsx-runtime',
   'react-dom',
   'react-dom/client',
-  'cordis',
-  '@deepseek-ai/dsh-client-ui-slots',
-  '@deepseek-ai/dsh-client-web-react',
-  '@deepseek-ai/dsh-client-ui-primitives',
-  '@deepseek-ai/dsh-client-schema-form',
-  // The client store module id (DSH >= 0.1.2-rc.1): this plugin only
-  // TYPE-imports the store face today, so it never reaches the built bundle —
-  // it is listed so a future value import is kept external (never inlined).
+  '@deepseek-ai/cordis',
   '@deepseek-ai/dsh-client-store',
+  '@deepseek-ai/dsh-client-ui-slots',
+  '@deepseek-ai/dsh-client-ui-primitives',
 ]
 
 /**

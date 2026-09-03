@@ -23,10 +23,9 @@
  *   pre-observation PREFIX (see markLiveSession) — recovering history the
  *   live path never saw without double counting what it did. A forked
  *   child's stored log begins with the events it copied from its parent;
- *   when the host reports that cut (`inheritedEventCount`, dsh
- *   0.1.2-alpha.4+), the replay skips it — the parent's own backfill
- *   already counted those events. Older hosts leave the field absent and
- *   the replay stays full-log.
+ *   the host always reports that cut (`inheritedEventCount`, DSH
+ *   >= 0.1.2-rc.1, 0 for a non-forked session), and the replay skips it —
+ *   the parent's own backfill already counted those events.
  *
  * Idempotence: within ONE session, the same (turn, step) may report usage
  * more than once (a streaming sample then the final assistant/message;
@@ -387,9 +386,9 @@ export class UsageCollector {
    *    the same shape: everything below the wipe-time log length must be
    *    rebuilt from the log because the wipe destroyed it);
    *  - whatever the boundary, a fork-inherited prefix reported by the host
-   *    (SessionInspection.inheritedEventCount, dsh 0.1.2-alpha.4+) is
-   *    skipped: the child copied those events from its parent, whose own
-   *    backfill already counted them;
+   *    (SessionInspection.inheritedEventCount, DSH >= 0.1.2-rc.1) is skipped:
+   *    the child copied those events from its parent, whose own backfill
+   *    already counted them;
    *  - a session already in backfilledSessions is NEVER replayed again: it
    *    lands there only after a clean replay of its full replayable range,
    *    so re-selecting it would double that range on every later boot;
@@ -468,20 +467,16 @@ export class UsageCollector {
           let route = ''
           try {
             const inspection = await persistence.inspect(header.id, signal)
-            // Fork-inherited cut (dsh 0.1.2-alpha.4+): a forked child's stored
+            // Fork-inherited cut (DSH >= 0.1.2-rc.1): a forked child's stored
             // log starts with its parent's copied events, and the parent is
             // backfilled independently — replaying that prefix here would count
-            // its usage twice. Older hosts leave the field absent (or
-            // non-positive/garbage), and the replay stays full-log: this skip
-            // is the cut's only consumer, so absence degrades to the exact
-            // previous behavior. Inherited events are skipped WHOLESALE (route
-            // seeding included): per-call attribution rides message.source on
-            // every shipped adapter, and a resumed child re-announces the
-            // route at its first change, so nothing child-owned loses its
-            // model.
-            const reported = inspection.inheritedEventCount
-            const inheritedCut =
-              typeof reported === 'number' && Number.isSafeInteger(reported) && reported > 0 ? reported : 0
+            // its usage twice. The host always reports the exact cut (0 for a
+            // non-forked session), so the prefix below it is skipped. Inherited
+            // events are skipped WHOLESALE (route seeding included): per-call
+            // attribution rides message.source on every shipped adapter, and a
+            // resumed child re-announces the route at its first change, so
+            // nothing child-owned loses its model.
+            const inheritedCut = inspection.inheritedEventCount
             for (const ev of inspection.events) {
               if (signal?.aborted) return
               if (skipLiveOwned(ev)) continue

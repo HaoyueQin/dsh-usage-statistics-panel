@@ -57,7 +57,9 @@ dsh plugin --profile <name> add dsh-usage-statistics-panel@latest
 
 插件挂载后，在 Web UI 的设置页左侧导航会出现"使用统计"页面。
 
-**兼容性**：已验证 DeepSeek Harness `0.1.1-rc.2` ~ `0.1.2-alpha.5`（peer 声明 `^0.1.1-rc.2 || ^0.1.2-alpha.1`），CI 对 `0.1.2-alpha.4` / `0.1.2-alpha.5` 双版本回归（`.github/workflows/test.yml`）；更高版本通常可用，属未验证范围。
+**兼容性**：本插件支持 DeepSeek Harness `>= 0.1.2-rc.1`（peer 声明 `>=0.1.2-rc.1`），CI 对 `0.1.2-rc.1` 基线全量构建与测试回归（`.github/workflows/test.yml`）；更高版本通常可用，属未验证范围。
+
+> **旧版本用户**：使用 DeepSeek Harness `0.1.1-rc.2` 或 `0.1.2-alpha.*` 的用户，请安装本插件的旧版本（`0.1.9` 及之前）。本插件自后续版本起仅对 `>= 0.1.2-rc.1` 的 DeepSeek Harness 提供支持与验证。
 
 ## 数据来源
 

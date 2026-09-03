@@ -56,7 +56,9 @@ After mounting, **hard-refresh the browser** (Cmd/Ctrl+Shift+R): client-half cha
 
 Once mounted, a "Usage statistics" page appears in the left navigation of the Settings shell.
 
-**Compatibility**: verified against DeepSeek Harness `0.1.1-rc.2` through `0.1.2-alpha.5` (peer declaration `^0.1.1-rc.2 || ^0.1.2-alpha.1`); CI regresses both `0.1.2-alpha.4` and `0.1.2-alpha.5` (`.github/workflows/test.yml`). Newer releases usually work but are unverified.
+**Compatibility**: this plugin supports DeepSeek Harness `>= 0.1.2-rc.1` (peer declaration `>=0.1.2-rc.1`); CI runs the full build and test suite against the `0.1.2-rc.1` baseline (`.github/workflows/test.yml`). Newer releases usually work but are unverified.
+
+> **Older-host users**: if you run DeepSeek Harness `0.1.1-rc.2` or `0.1.2-alpha.*`, please install an older plugin version (`0.1.9` or earlier). This plugin is only supported and verified against DeepSeek Harness `>= 0.1.2-rc.1` from the next release onward.
 
 ## Data source
 

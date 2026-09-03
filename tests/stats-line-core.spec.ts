@@ -1,6 +1,6 @@
 /**
  * Tests for the stats-line core: pure folds and formatters replicated from the
- * official ui-conversation StatsLine (0.1.1-rc.2) — so the shadowing component
+ * official ui-chat StatsLine (0.1.2-rc.1) — so the shadowing component
  * can render the exact official line with both toggles off — plus the two
  * enhancement readouts: two-decimal cache-hit rate and the five-item token
  * breakdown.

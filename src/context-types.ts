@@ -83,15 +83,14 @@ export interface UsageTokens {
 }
 
 /** One persistence inspection (mirror of dsh-session-persistence's
- *  SessionInspection). `inheritedEventCount` arrived with dsh 0.1.2-alpha.4
- *  as the exact fork-inherited prefix length; older hosts leave it absent,
- *  so consumers must treat it as optional and fall back to a full-log read. */
+ *  SessionInspection, DSH >= 0.1.2-rc.1). `inheritedEventCount` is the exact
+ *  fork-inherited prefix length — 0 for a non-forked session — and is always
+ *  reported by this host line. */
 export interface UsageSessionInspection {
   meta: UsageSessionHeader
   events: UsageSessionEvent[]
-  /** Number of leading events this forked session copied from its parent
-   *  (absent on hosts older than 0.1.2-alpha.4). */
-  inheritedEventCount?: number
+  /** Number of leading events this forked session copied from its parent. */
+  inheritedEventCount: number
 }
 
 /** The session persistence service (mirror of @deepseek-ai/dsh-session-persistence). */

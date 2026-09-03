@@ -1,7 +1,7 @@
 /**
  * Pure folds and formatters for the conversation bottom-bar (stats line),
- * replicated from the official ui-conversation StatsLine (0.1.1-rc.2) —
- * StatsLine.tsx, turn-metrics.ts and message-chrome.ts. The official package
+ * replicated from the official ui-chat StatsLine (DSH 0.1.2-rc.1) —
+ * StatsLine.tsx, turn-metrics.ts and token-format.ts. The official package
  * is not a client-bundle external, so a shadowing plugin cannot import its
  * internals; these copies keep the "both toggles off" rendering byte-equal to
  * the official line (guarded by the render tests).
@@ -11,12 +11,11 @@
  */
 /**
  * Minimal structural skeletons of the official assembly types this module
- * folds. The upstream types moved between kernels (0.1.1: ConversationSnapshot
- * under ui-conversation; 0.1.2: ChatSnapshot under ui-chat, both served to
- * this entry through its `useSession`/`useChat` seat), so this module and the
- * tests take the field skeleton they fold rather than any package's type —
- * the same drift containment context-types.ts applies to Context. The index
- * signature keeps object-literal fixtures with extra fields assignable.
+ * folds (ui-chat ChatSnapshot served through this entry's `useChat` seat),
+ * so this module and the tests take the field skeleton they fold rather than
+ * any package's type — the same drift containment context-types.ts applies
+ * to Context. The index signature keeps object-literal fixtures with extra
+ * fields assignable.
  */
 
 /** One assistant node's timing facts; null marks an unrecorded part. */
@@ -45,15 +44,8 @@ export interface ToolResultNodeLike {
   [key: string]: unknown
 }
 
-/** The assembly's conversation nodes, as both kernels serve them. */
+/** One conversation node as the ChatSnapshot `legacy.nodes` projection serves it. */
 export type ConversationNodeLike = AssistantMessageNodeLike | ToolResultNodeLike
-
-/** Minimal skeleton of the ≤0.1.1 ConversationSnapshot (the slice the
- *  rc.2-kernel `useSession` seat selects). */
-export interface ConversationSnapshotLike {
-  nodes: readonly ConversationNodeLike[]
-  [key: string]: unknown
-}
 
 /** The projection seats this entry subscribes to (mirror of the official
  *  SessionProjectionMap keys: sessionStats + tokenUsage). */
@@ -63,7 +55,7 @@ export interface SessionProjectionMapLike {
 }
 
 /** Minimal structural mirror of the framework-injected projection hook
- *  (`useProjection('sessionStats' | 'tokenUsage')` on either kernel). */
+ *  (`useProjection('sessionStats' | 'tokenUsage')`). */
 export type UseProjection = <K extends keyof SessionProjectionMapLike & string>(
   key: K,
 ) => SessionProjectionMapLike[K] | undefined

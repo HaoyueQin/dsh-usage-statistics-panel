@@ -628,8 +628,8 @@ describe('backfill attribution and the seq-partitioned cursor', () => {
   it('skips a fork-inherited prefix when the host reports the cut', async () => {
     // A forked child's stored log begins with the events it copied from its
     // parent (here: call 1 at seq 0-1), and the parent session is backfilled
-    // independently — replaying the prefix would count that usage twice. An
-    // alpha.4+ host reports the exact cut; only the child-owned tail folds.
+    // independently — replaying the prefix would count that usage twice. The
+    // host reports the exact cut; only the child-owned tail folds.
     const store = partitionStore({})
     const collector = new UsageCollector({ on: () => {} } as never, store as never)
     await collector.backfill(
@@ -644,17 +644,6 @@ describe('backfill attribution and the seq-partitioned cursor', () => {
     expect(store.recorded.filter((s) => s.turn)).toHaveLength(1)
   })
 
-  it('replays the whole log when the host does not report the cut (≤alpha.3 fallback)', async () => {
-    // Older hosts return no inheritedEventCount: the replay must stay exactly
-    // the previous full-log behavior, never silently shrink.
-    const store = partitionStore({})
-    const collector = new UsageCollector({ on: () => {} } as never, store as never)
-    await collector.backfill(
-      { list: async () => [{ id: 'F1' }], inspect: async () => ({ id: 'F1', events: fiveEvents }) } as unknown as UsageSessionPersistence,
-      { list: () => [] } as never,
-    )
-    expect(store.recorded).toHaveLength(5)
-  })
 
   it('combines the inherited cut with a live boundary', async () => {
     // Child-owned pre-attach window [2, 4) only: the parent owns [0, 2), the
@@ -671,17 +660,6 @@ describe('backfill attribution and the seq-partitioned cursor', () => {
     expect(store.recorded.find((s) => s.inputTokens === 20)).toBeFalsy()
   })
 
-  it('treats a garbage reported cut as absence (full-log replay)', async () => {
-    // A non-positive or non-integer cut cannot be trusted to bound anything:
-    // degrade to the no-cut path (full replay) rather than guess.
-    const store = partitionStore({})
-    const collector = new UsageCollector({ on: () => {} } as never, store as never)
-    await collector.backfill(
-      { list: async () => [{ id: 'F1' }], inspect: async () => ({ id: 'F1', events: fiveEvents, inheritedEventCount: -3 }) } as unknown as UsageSessionPersistence,
-      { list: () => [] } as never,
-    )
-    expect(store.recorded).toHaveLength(5)
-  })
 })
 
 describe('live recording never escapes a rejection', () => {

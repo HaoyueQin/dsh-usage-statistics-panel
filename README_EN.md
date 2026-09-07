@@ -56,9 +56,9 @@ After mounting, **hard-refresh the browser** (Cmd/Ctrl+Shift+R): client-half cha
 
 Once mounted, a "Usage statistics" page appears in the left navigation of the Settings shell.
 
-**Compatibility**: this plugin supports DeepSeek Harness `>= 0.1.2-rc.1` (peer declaration `>=0.1.2-rc.1`); CI runs the full build and test suite against the `0.1.2-rc.1` baseline (`.github/workflows/test.yml`). Newer releases usually work but are unverified.
+**Compatibility**: this plugin supports DeepSeek Harness `>= 0.1.2-rc.1` (peer declaration unchanged) with a dual-path backfill: `list`+`inspect` on `0.1.2-rc.1`, `list`+`open`+paged `read`+`close` on `0.1.3-alpha.*`. CI regresses the `0.1.2-rc.1` baseline in full; the alpha path is covered by unit tests. Real-mount verification of the alpha panel is still pending, see `docs/release-notes-0.1.11.md`.
 
-> **Older-host users**: if you run DeepSeek Harness `0.1.1-rc.2` or `0.1.2-alpha.*`, please install an older plugin version (`0.1.9` or earlier). This plugin is only supported and verified against DeepSeek Harness `>= 0.1.2-rc.1` from `0.1.10` onward.
+> **Older-host users**: if you run DeepSeek Harness `0.1.1-rc.2` or `0.1.2-alpha.*`, please install an older plugin version (`0.1.9` or earlier). `0.1.10` supports only `>= 0.1.2-rc.1`; from `0.1.11` one build serves both `0.1.2-rc.1` and `0.1.3-alpha.*`.
 
 ## Data source
 

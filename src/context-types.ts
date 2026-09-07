@@ -93,10 +93,32 @@ export interface UsageSessionInspection {
   inheritedEventCount: number
 }
 
-/** The session persistence service (mirror of @deepseek-ai/dsh-session-persistence). */
+/** A stored-session snapshot (alpha handle seam: `list` returns these). */
+export interface UsageSessionSnapshot {
+  header: UsageSessionHeader
+  revision?: unknown
+  eventCount?: number
+  sizeBytes?: number
+}
+
+/** One open read channel (alpha handle seam). */
+export interface UsageSessionHandleReader {
+  id: string
+  header: UsageSessionHeader
+  inheritedEventCount: number
+  access: string
+  read(offset?: number, length?: number, options?: { signal?: AbortSignal }): Promise<{ events: readonly UsageSessionEvent[]; eventState?: unknown }>
+  close(): Promise<void>
+}
+
+/** The session persistence service: dual faces for rc.1 (`list`+`inspect`)
+ *  and alpha (`list`+`open`). `open` wins when both exist; `list` accepts
+ *  either the rc.1 bare signal or the alpha options object and returns
+ *  either header rows or snapshots (normalized by the collector). */
 export interface UsageSessionPersistence {
-  list(signal?: AbortSignal): Promise<UsageSessionHeader[]>
-  inspect(id: string, signal?: AbortSignal): Promise<UsageSessionInspection>
+  list(signalOrOptions?: AbortSignal | { signal?: AbortSignal }): Promise<Array<UsageSessionHeader | UsageSessionSnapshot>>
+  inspect?(id: string, signal?: AbortSignal): Promise<UsageSessionInspection>
+  open?(id: string, access: 'read' | 'write', options?: { signal?: AbortSignal }): Promise<UsageSessionHandleReader>
 }
 
 /** The route a session's log records for its model calls (mirror of

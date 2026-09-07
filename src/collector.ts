@@ -41,7 +41,7 @@
  */
 
 import type { Context } from './context-types.ts'
-import type { UsageSessionEvent, UsageSessionPersistence, UsageSessionStore } from './context-types.ts'
+import type { UsageSessionEvent, UsageSessionHeader, UsageSessionPersistence, UsageSessionSnapshot, UsageSessionStore } from './context-types.ts'
 import type { UsageStore } from './store.ts'
 import type { UsageSample } from './query.ts'
 import { dayKey } from './query.ts'
@@ -404,7 +404,20 @@ export class UsageCollector {
     this.status.running = true
     this.status.error = undefined
     try {
-      const headers = await persistence.list(signal)
+      // Dual-path list: alpha exposes open() and takes { signal }; rc.1
+      // takes a bare signal and returns header rows. Snapshots normalize
+      // to their inner header; malformed rows are dropped, never crash.
+      const useAlphaList = typeof persistence.open === 'function'
+      const rawList = useAlphaList
+        ? await persistence.list(signal === undefined ? undefined : { signal })
+        : await persistence.list(signal as never)
+      const headers = (rawList as Array<UsageSessionHeader | UsageSessionSnapshot>)
+        .map((item) => {
+          const snap = item as { header?: { id?: unknown } }
+          if (snap !== null && typeof snap === 'object' && 'header' in snap && snap.header !== null && typeof snap.header === 'object' && typeof snap.header.id === 'string') return snap.header as UsageSessionHeader
+          return item as UsageSessionHeader
+        })
+        .filter((h) => typeof h?.id === 'string' && h.id !== '')
       // The cursor keeps a reboot's backfill from re-folding sessions the
       // store already saw: the fold's replace semantics dedupe within one
       // pass only, so a full replay would double every counter.
@@ -466,18 +479,41 @@ export class UsageCollector {
           const fold = new UsageFold()
           let route = ''
           try {
-            const inspection = await persistence.inspect(header.id, signal)
-            // Fork-inherited cut (DSH >= 0.1.2-rc.1): a forked child's stored
-            // log starts with its parent's copied events, and the parent is
-            // backfilled independently — replaying that prefix here would count
-            // its usage twice. The host always reports the exact cut (0 for a
-            // non-forked session), so the prefix below it is skipped. Inherited
-            // events are skipped WHOLESALE (route seeding included): per-call
-            // attribution rides message.source on every shipped adapter, and a
-            // resumed child re-announces the route at its first change, so
-            // nothing child-owned loses its model.
-            const inheritedCut = inspection.inheritedEventCount
-            for (const ev of inspection.events) {
+            // Dual-path read: alpha open()+paged read()+close() wins when
+            // present; rc.1 inspect() is the fallback. Both yield the same
+            // (events, inheritedCut) pair for the shared fold below.
+            let sessionEvents: readonly UsageSessionEvent[]
+            let inheritedCut: number
+            if (typeof persistence.open === 'function') {
+              const handle = await persistence.open(header.id, 'read', signal === undefined ? undefined : { signal })
+              try {
+                const cut = handle.inheritedEventCount
+                inheritedCut = typeof cut === 'number' && Number.isSafeInteger(cut) && cut >= 0 ? cut : 0
+                const collected: UsageSessionEvent[] = []
+                let offset = 0
+                const PAGE = 500
+                for (;;) {
+                  if (signal?.aborted) return
+                  const slice = await handle.read(offset, PAGE, signal === undefined ? undefined : { signal })
+                  const page = ((slice && slice.events) ? slice.events : []) as readonly UsageSessionEvent[]
+                  if (page.length === 0) break
+                  for (const ev of page) collected.push(ev)
+                  offset += page.length
+                }
+                sessionEvents = collected
+              } finally {
+                await handle.close().catch(() => {})
+              }
+            } else if (typeof persistence.inspect === 'function') {
+              const inspection = await persistence.inspect(header.id, signal)
+              // Fork-inherited cut (DSH >= 0.1.2-rc.1): a forked child keeps
+              // parent-copied prefix; parent backfill owns it, skip here.
+              inheritedCut = inspection.inheritedEventCount ?? 0
+              sessionEvents = inspection.events
+            } else {
+              throw new Error('no readable persistence seam (need open or inspect)')
+            }
+            for (const ev of sessionEvents) {
               if (signal?.aborted) return
               if (skipLiveOwned(ev)) continue
               if (inheritedCut > 0 && typeof ev.seq === 'number' && ev.seq < inheritedCut) continue

@@ -1,10 +1,10 @@
 /**
- * Pure folds and formatters for the conversation bottom-bar (stats line),
- * replicated from the official ui-chat StatsLine (DSH 0.1.2-rc.1) —
- * StatsLine.tsx, turn-metrics.ts and token-format.ts. The official package
+ * Pure folds and formatters for the conversation bottom-bar (stats pills),
+ * replicated from the official ui-chat StatsPills (DSH 0.1.5-alpha.1) —
+ * StatsPills.tsx, turn-metrics.ts and token-format.ts. The official package
  * is not a client-bundle external, so a shadowing plugin cannot import its
- * internals; these copies keep the "both toggles off" rendering byte-equal to
- * the official line (guarded by the render tests).
+ * internals; these copies keep the "both toggles off" pills identical to
+ * the official ones (guarded by the render tests).
  *
  * Two plugin-side readouts: a two-decimal cache-hit rate and a five-item
  * token breakdown (total / input / cache hit / cache miss / output).

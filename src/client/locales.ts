@@ -51,13 +51,21 @@ export type UsageStatsKey =
   | 'tokenDetail'
   | 'tokenDetailDesc'
   | 'stats.counts'
-  | 'stats.llm'
-  | 'stats.toolCall'
-  | 'stats.ttftAverage'
   | 'stats.tokensPerSecond'
   | 'stats.cacheHit'
-  | 'stats.tokens'
-  | 'stats.tokensDetail'
+  | 'stats.cacheMiss'
+  | 'stats.dialog.title'
+  | 'stats.dialog.usageTitle'
+  | 'stats.dialog.llmTime'
+  | 'stats.dialog.toolTime'
+  | 'stats.dialog.ttft'
+  | 'stats.dialog.speed'
+  | 'message.turnUsage.count'
+  | 'message.turnUsage.cacheHit'
+  | 'message.turnUsage.input'
+  | 'message.turnUsage.cacheRead'
+  | 'message.turnUsage.cacheWrite'
+  | 'message.turnUsage.output'
 
 export const en: Record<UsageStatsKey, string> = {
   nav: 'Usage statistics',
@@ -101,13 +109,21 @@ export const en: Record<UsageStatsKey, string> = {
   tokenDetail: 'Conversation token breakdown',
   tokenDetailDesc: 'Show total, cache hit/miss and output tokens in the conversation bottom bar.',
   'stats.counts': '{turns} turns · {steps} steps',
-  'stats.llm': 'LLM {duration}',
-  'stats.toolCall': 'Tool call {duration}',
-  'stats.ttftAverage': 'TTFT avg {duration}',
   'stats.tokensPerSecond': '{throughput} tok/s',
   'stats.cacheHit': 'Cache hit {percent}%',
-  'stats.tokens': 'Input {input} tok · Output {output} tok',
-  'stats.tokensDetail': 'Total {total} tok · Input {input} tok · Cache hit {hit} tok · Cache miss {miss} tok · Output {output} tok',
+  'stats.cacheMiss': 'Cache miss',
+  'stats.dialog.title': 'Time & speed',
+  'stats.dialog.usageTitle': 'Token usage',
+  'stats.dialog.llmTime': 'LLM time',
+  'stats.dialog.toolTime': 'Tool time',
+  'stats.dialog.ttft': 'Mean TTFT',
+  'stats.dialog.speed': 'Decode speed',
+  'message.turnUsage.count': '{count} tok',
+  'message.turnUsage.cacheHit': 'Cache hit',
+  'message.turnUsage.input': 'Input',
+  'message.turnUsage.cacheRead': 'Cache read',
+  'message.turnUsage.cacheWrite': 'Cache write',
+  'message.turnUsage.output': 'Output',
 }
 
 export const zh: Record<UsageStatsKey, string> = {
@@ -152,13 +168,21 @@ export const zh: Record<UsageStatsKey, string> = {
   tokenDetail: '会话 Token 明细',
   tokenDetailDesc: '在会话底部信息栏显示总 Token、命中/未命中缓存与输出明细。',
   'stats.counts': '{turns} 轮 · {steps} 步',
-  'stats.llm': 'LLM {duration}',
-  'stats.toolCall': '工具调用 {duration}',
-  'stats.ttftAverage': '首 token 平均 {duration}',
   'stats.tokensPerSecond': '{throughput} tok/s',
   'stats.cacheHit': '缓存命中 {percent}%',
-  'stats.tokens': '输入 {input} tok · 输出 {output} tok',
-  'stats.tokensDetail': '总 {total} tok · 输入 {input} tok · 命中缓存 {hit} tok · 未命中缓存 {miss} tok · 输出 {output} tok',
+  'stats.cacheMiss': '未命中缓存',
+  'stats.dialog.title': '用时与速度',
+  'stats.dialog.usageTitle': 'Token 用量',
+  'stats.dialog.llmTime': 'LLM 用时',
+  'stats.dialog.toolTime': '工具用时',
+  'stats.dialog.ttft': '首 token 平均',
+  'stats.dialog.speed': '解码速度',
+  'message.turnUsage.count': '{count} tok',
+  'message.turnUsage.cacheHit': '缓存命中',
+  'message.turnUsage.input': '输入',
+  'message.turnUsage.cacheRead': '缓存读取',
+  'message.turnUsage.cacheWrite': '缓存写入',
+  'message.turnUsage.output': '输出',
 }
 
 export const zhTW: Record<UsageStatsKey, string> = {
@@ -203,11 +227,19 @@ export const zhTW: Record<UsageStatsKey, string> = {
   tokenDetail: '會話 Token 明細',
   tokenDetailDesc: '在會話底部資訊欄顯示總 Token、命中/未命中快取與輸出明細。',
   'stats.counts': '{turns} 輪 · {steps} 步',
-  'stats.llm': 'LLM {duration}',
-  'stats.toolCall': '工具呼叫 {duration}',
-  'stats.ttftAverage': '首 token 平均 {duration}',
   'stats.tokensPerSecond': '{throughput} tok/s',
   'stats.cacheHit': '快取命中 {percent}%',
-  'stats.tokens': '輸入 {input} tok · 輸出 {output} tok',
-  'stats.tokensDetail': '總 {total} tok · 輸入 {input} tok · 命中快取 {hit} tok · 未命中快取 {miss} tok · 輸出 {output} tok',
+  'stats.cacheMiss': '未命中快取',
+  'stats.dialog.title': '用時與速度',
+  'stats.dialog.usageTitle': 'Token 用量',
+  'stats.dialog.llmTime': 'LLM 用時',
+  'stats.dialog.toolTime': '工具用時',
+  'stats.dialog.ttft': '首 token 平均',
+  'stats.dialog.speed': '解碼速度',
+  'message.turnUsage.count': '{count} tok',
+  'message.turnUsage.cacheHit': '快取命中',
+  'message.turnUsage.input': '輸入',
+  'message.turnUsage.cacheRead': '快取讀取',
+  'message.turnUsage.cacheWrite': '快取寫入',
+  'message.turnUsage.output': '輸出',
 }

@@ -1,42 +1,45 @@
 /**
- * StatsLineEnhanced — the shadowing entry for `conversation.composer.dock`
- * (id 'stats', priority -1): with both toggles off it replicates the official
- * ui-chat StatsLine byte-for-byte (the replication is exercised by the render
- * tests); with the "precise cache hit rate" toggle on the cache-hit group
- * gains two decimals, and with the "session token breakdown" toggle on the
- * input/output pair becomes the five-item readout
- * (total / input / cache hit / cache miss / output).
+ * StatsLineEnhanced - the shadowing entry for `conversation.composer.dock`
+ * (id 'stats', priority -1): replicates the official ui-chat StatsPills
+ * (DSH 0.1.5-alpha.1) - a gauge pill (turn/step counts + output speed,
+ * click opens the time-and-speed dialog) and a database pill (total tokens
+ * + cache hit, click opens the token-usage dialog). The official package is
+ * not a client-bundle external, so its internals cannot be imported; the
+ * replicated pure folds live in stats-line-core (same derivation, covered by
+ * the core tests) and the dialog seat in stat-dialog.ts.
  *
- * The official package is not a client-bundle external, so its internals
- * cannot be imported; the replicated pure functions live in stats-line-core
- * (official ui-chat StatsLine, DSH 0.1.2-rc.1), and the copy ships in this
- * plugin's own locale namespace (stats.* keys mirror the official
- * conversation dictionary).
+ * Two plugin-side readouts ride the same pills: with precise cache hit rate
+ * on, the hit figure renders two decimals; with the session token breakdown
+ * on, the usage dialog gains the cache-miss row. Both toggles live in
+ * stats-line-state.ts (shared with the settings panel) and apply instantly.
  *
  * Kernel contract (DSH >= 0.1.2-rc.1): the slot's standard session selector
  * is injected as `useChat` over the ui-chat ChatSnapshot; the `legacy.nodes`
  * compatibility projection carries the ConversationNode[] that officially
- * backs StatsLine, and the same nodes feed deriveStats. The durable
- * sessionStats projection stays the primary source.
+ * backs the pills, and the durable sessionStats projection stays the primary
+ * source.
  */
-import { Fragment, memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
+import { memo, useEffect, useMemo, useState } from 'react'
+import { createPortal } from 'react-dom'
+import { IconDatabaseOutline16, IconGaugeOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale, SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
 import { LOCALE_NS } from './locales.ts'
 import { statsLineState } from './stats-line-state.ts'
+import { MEASURE_STYLE, useStatDialog, type StatDialogSeat } from './stat-dialog.ts'
 import {
   billedInputTokens, cacheHitPercent, cacheHitPercentPrecise, deriveStats,
   formatDuration, formatTokensCompact, formatTokensPerSecond, tokenBreakdown,
-  type ConversationNodeLike, type UseProjection,
+  type ConversationNodeLike, type UseProjection, type WindowStats,
 } from './stats-line-core.ts'
+import { formatTokens } from './format.ts'
 import css from './StatsLineEnhanced.module.css'
 
 /**
  * Structural type for the `useChat` seat: the standard snapshot selector over
  * the ui-chat ChatSnapshot, whose `legacy.nodes` compatibility projection
- * carries the ConversationNode[] the official StatsLine reads. Declared
- * locally because the seat is consumed structurally at runtime (injected by
- * the slot declaration) and never value-imported.
+ * carries the ConversationNode[] the official pills read. Declared locally
+ * because the seat is consumed structurally at runtime (injected by the slot
+ * declaration) and never value-imported.
  */
 type ChatSnapshotSelectorHook = SnapshotSelectorHook<{ legacy: { nodes?: readonly ConversationNodeLike[] } }>
 
@@ -52,17 +55,202 @@ export interface StatsLineEnhancedProps {
   t: PropsLocale<typeof LOCALE_NS>['t']
 }
 
+type T = StatsLineEnhancedProps['t']
+
+/** External open state one pill's dialog reads and writes (the row's exclusive slot). */
+type PillDialog = Pick<StatDialogSeat, 'open' | 'setOpen'>
+
+function TimePill({ stats, t, dialog }: {
+  stats: WindowStats
+  t: T
+  dialog: PillDialog
+}) {
+  const { open, setOpen, rootRef, panelRef, pos } = useStatDialog(dialog)
+  const counts = t('stats.counts', { turns: stats.turns, steps: stats.steps })
+  const tps = stats.decodeMs > 0
+    ? t('stats.tokensPerSecond', {
+      throughput: formatTokensPerSecond(stats.decodeTokens / (stats.decodeMs / 1_000)),
+    })
+    : null
+  const label = (
+    <span className={css.label}>
+      {counts}
+      {tps !== null && (
+        <>
+          <span className={css.sep} aria-hidden>·</span>
+          {tps}
+        </>
+      )}
+    </span>
+  )
+  // A window without one timed figure has no dialog rows to show, so the pill
+  // stays a plain reading instead of a button opening an empty dialog.
+  if (stats.llmMs <= 0 && stats.toolMs <= 0 && stats.ttftSteps <= 0 && stats.decodeMs <= 0) {
+    return (
+      <span className={css.anchor}>
+        <span className={css.pill}>
+          <IconGaugeOutline16 />
+          {label}
+        </span>
+      </span>
+    )
+  }
+  return (
+    <span ref={rootRef} className={css.anchor}>
+      <button
+        type="button"
+        className={css.pill}
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        aria-label={tps === null ? counts : counts + ' · ' + tps}
+        onClick={() => { setOpen(!open) }}
+      >
+        <IconGaugeOutline16 />
+        {label}
+      </button>
+      {open && createPortal(
+        <div
+          ref={panelRef}
+          className={css.dialogPanel}
+          role="dialog"
+          aria-label={t('stats.dialog.title')}
+          style={pos ?? MEASURE_STYLE}
+        >
+          <div className={css.dialogTitle}>
+            <span className={css.dialogTitleLabel}>
+              <IconGaugeOutline16 />
+              {t('stats.dialog.title')}
+            </span>
+          </div>
+          <div className={css.dialogTitleRule} aria-hidden />
+          <dl className={css.dialogDetails} data-session-stats-details>
+            {stats.llmMs > 0 && (
+              <>
+                <dt>{t('stats.dialog.llmTime')}</dt>
+                <dd>{formatDuration(stats.llmMs)}</dd>
+              </>
+            )}
+            {stats.toolMs > 0 && (
+              <>
+                <dt>{t('stats.dialog.toolTime')}</dt>
+                <dd>{formatDuration(stats.toolMs)}</dd>
+              </>
+            )}
+            {stats.ttftSteps > 0 && (
+              <>
+                <dt>{t('stats.dialog.ttft')}</dt>
+                <dd>{formatDuration(stats.ttftMs / stats.ttftSteps)}</dd>
+              </>
+            )}
+            {stats.decodeMs > 0 && (
+              <>
+                <dt>{t('stats.dialog.speed')}</dt>
+                <dd>{t('stats.tokensPerSecond', {
+                  throughput: formatTokensPerSecond(stats.decodeTokens / (stats.decodeMs / 1_000)),
+                })}</dd>
+              </>
+            )}
+          </dl>
+        </div>,
+        document.body,
+      )}
+    </span>
+  )
+}
+
+function UsagePill({ usage, t, dialog, cachePrecision, tokenDetail }: {
+  usage: Parameters<typeof billedInputTokens>[0]
+  t: T
+  dialog: PillDialog
+  cachePrecision: boolean
+  tokenDetail: boolean
+}) {
+  const { open, setOpen, rootRef, panelRef, pos } = useStatDialog(dialog)
+  // Same aggregate as the official pill total: every prompt-side billing bucket plus output.
+  const total = billedInputTokens(usage) + usage.outputTokens
+  const totalText = t('message.turnUsage.count', { count: formatTokensCompact(total) })
+  const cacheHit = cachePrecision ? cacheHitPercentPrecise(usage) : cacheHitPercent(usage)
+  const cacheHitText = cacheHit !== null ? t('stats.cacheHit', { percent: cacheHit }) : null
+  const exactCount = (value: number): string =>
+    t('message.turnUsage.count', { count: formatTokens(value) })
+  return (
+    <span ref={rootRef} className={css.anchor}>
+      <button
+        type="button"
+        className={css.pill}
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        aria-label={cacheHitText === null ? totalText : totalText + ' · ' + cacheHitText}
+        onClick={() => { setOpen(!open) }}
+      >
+        <IconDatabaseOutline16 />
+        <span className={css.label}>
+          {totalText}
+          {cacheHitText !== null && (
+            <>
+              <span className={css.sep} aria-hidden>·</span>
+              {cacheHitText}
+            </>
+          )}
+        </span>
+      </button>
+      {open && createPortal(
+        <div
+          ref={panelRef}
+          className={css.dialogPanel}
+          role="dialog"
+          aria-label={t('stats.dialog.usageTitle')}
+          style={pos ?? MEASURE_STYLE}
+        >
+          <div className={css.dialogTitle}>
+            <span className={css.dialogTitleLabel}>
+              <IconDatabaseOutline16 />
+              {t('stats.dialog.usageTitle')}
+            </span>
+            <span className={css.dialogTitleValue}>{exactCount(total)}</span>
+          </div>
+          <div className={css.dialogTitleRule} aria-hidden />
+          <dl className={css.dialogDetails} data-session-stats-usage>
+            {cacheHit !== null && (
+              <>
+                <dt>{t('message.turnUsage.cacheHit')}</dt>
+                <dd>{cacheHit + '%'}</dd>
+              </>
+            )}
+            <dt>{t('message.turnUsage.input')}</dt>
+            <dd>{exactCount(usage.uncachedInputTokens)}</dd>
+            <dt>{t('message.turnUsage.cacheRead')}</dt>
+            <dd>{exactCount(usage.cacheReadTokens)}</dd>
+            <dt>{t('message.turnUsage.cacheWrite')}</dt>
+            <dd>{exactCount(usage.cacheWriteTokens)}</dd>
+            {tokenDetail && (
+              <>
+                <dt>{t('stats.cacheMiss')}</dt>
+                <dd>{exactCount(tokenBreakdown(usage).cacheMiss)}</dd>
+              </>
+            )}
+            <dt>{t('message.turnUsage.output')}</dt>
+            <dd>{exactCount(usage.outputTokens)}</dd>
+          </dl>
+        </div>,
+        document.body,
+      )}
+    </span>
+  )
+}
+
 export const StatsLineEnhanced = memo(function StatsLineEnhanced(
   { useChat, useProjection, t }: StatsLineEnhancedProps,
 ) {
   const settledNodes = useChat(s => s.legacy.nodes)
   const usage = useProjection('tokenUsage')
+  // One exclusive slot for both dialogs: opening either pill closes the other.
+  const [openPill, setOpenPill] = useState<'time' | 'usage' | null>(null)
   // Every figure rides the durable sessionStats projection, so paging and
   // compaction cannot change any of them; an assembly without the unit falls
   // back to the window-scoped fold wholesale (same field names).
   const projected = useProjection('sessionStats')
   const stats = useMemo(() => projected ?? deriveStats(settledNodes ?? []), [projected, settledNodes])
-
   // Toggles live in the same client bundle as the settings panel; subscribe so
   // a flip in Settings updates the bottom bar immediately.
   const [cachePrecision, setCachePrecision] = useState(statsLineState.cachePrecision)
@@ -71,75 +259,37 @@ export const StatsLineEnhanced = memo(function StatsLineEnhanced(
     setCachePrecision(statsLineState.cachePrecision)
     setTokenDetail(statsLineState.tokenDetail)
   }), [])
-
-  // Pipe-separated groups; a group with no data drops out whole.
-  const groups: string[] = []
-  if (stats.steps > 0) {
-    groups.push(t('stats.counts', { turns: stats.turns, steps: stats.steps }))
-    const durations: string[] = []
-    if (stats.llmMs > 0) durations.push(t('stats.llm', { duration: formatDuration(stats.llmMs) }))
-    if (stats.toolMs > 0) durations.push(t('stats.toolCall', { duration: formatDuration(stats.toolMs) }))
-    if (durations.length > 0) groups.push(durations.join(' · '))
-    const speeds: string[] = []
-    if (stats.ttftSteps > 0) {
-      speeds.push(t('stats.ttftAverage', { duration: formatDuration(stats.ttftMs / stats.ttftSteps) }))
-    }
-    if (stats.decodeMs > 0) {
-      speeds.push(t('stats.tokensPerSecond', {
-        throughput: formatTokensPerSecond(stats.decodeTokens / (stats.decodeMs / 1_000)),
-      }))
-    }
-    if (speeds.length > 0) groups.push(speeds.join(' · '))
-  }
-  // Billing rides the durable projection, so these survive paging and
-  // compaction. Gated on actual token activity: a session whose steps all
-  // settled without billing shows its counts without a zero-token group.
-  if (usage !== undefined
-    && (billedInputTokens(usage) > 0 || usage.outputTokens > 0)) {
-    const cacheHit = cachePrecision ? cacheHitPercentPrecise(usage) : cacheHitPercent(usage)
-    if (cacheHit !== null) groups.push(t('stats.cacheHit', { percent: cacheHit }))
-    if (tokenDetail) {
-      const b = tokenBreakdown(usage)
-      groups.push(t('stats.tokensDetail', {
-        total: formatTokensCompact(b.total),
-        input: formatTokensCompact(b.input),
-        hit: formatTokensCompact(b.cacheHit),
-        miss: formatTokensCompact(b.cacheMiss),
-        output: formatTokensCompact(b.output),
-      }))
-    } else {
-      groups.push(t('stats.tokens', {
-        input: formatTokensCompact(billedInputTokens(usage)),
-        output: formatTokensCompact(usage.outputTokens),
-      }))
-    }
-  }
-  const line = groups.join(' | ')
-  // The row elides with ellipsis when overlong; a delayed hover tooltip carries
-  // the full line, enabled only while content is actually clipped.
-  const rootRef = useRef<HTMLDivElement | null>(null)
-  const [truncated, setTruncated] = useState(false)
-  useLayoutEffect(() => {
-    const el = rootRef.current
-    if (el === null) return
-    const measure = () => { setTruncated(el.scrollWidth > el.clientWidth) }
-    measure()
-    if (typeof ResizeObserver === 'undefined') return
-    const observer = new ResizeObserver(measure)
-    observer.observe(el)
-    return () => { observer.disconnect() }
-  }, [line])
-  if (groups.length === 0) return null
+  // Gated on actual token activity: a session whose steps all settled without
+  // billing (e.g. every request failed) shows its counts without a usage pill.
+  const hasTokens = usage !== undefined
+    && (billedInputTokens(usage) > 0 || usage.outputTokens > 0)
+  if (stats.steps === 0 && !hasTokens) return null
+  // data-composer-stats: InputBar tightens the composer bottom clearance only
+  // while this row renders (same contract as the official pills).
   return (
-    <Tooltip label={line} side="top" delayMs={500} disabled={!truncated}>
-      <div ref={rootRef} className={css.root}>
-        {groups.map((group, i) => (
-          <Fragment key={group}>
-            {i > 0 && <><span className={css.sep} aria-hidden>|</span>{' '}</>}
-            <span>{group}</span>
-          </Fragment>
-        ))}
-      </div>
-    </Tooltip>
+    <div className={css.root} data-composer-stats>
+      {stats.steps > 0 && (
+        <TimePill
+          stats={stats}
+          t={t}
+          dialog={{
+            open: openPill === 'time',
+            setOpen: (open) => { setOpenPill(open ? 'time' : null) },
+          }}
+        />
+      )}
+      {hasTokens && (
+        <UsagePill
+          usage={usage}
+          t={t}
+          dialog={{
+            open: openPill === 'usage',
+            setOpen: (open) => { setOpenPill(open ? 'usage' : null) },
+          }}
+          cachePrecision={cachePrecision}
+          tokenDetail={tokenDetail}
+        />
+      )}
+    </div>
   )
 })

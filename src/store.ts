@@ -127,9 +127,11 @@ export class UsageStore {
     // semantics and no turns at all): rows paired with a completely empty
     // cursor cannot be told apart from a half-written new-world store, and
     // both recover by dropping the rows and letting the backfill replay
-    // from scratch. Running inside ready() means every later record, mark,
-    // or cursor read — including the live listener's first writes — lands
-    // after the decision, so no ordering race exists.
+    // from scratch. The same path also heals a reset() torn by a crash
+    // mid-wipe: reset() writes its empty cursor first, so leftover rows
+    // always meet an empty cursor here. Running inside ready() means every
+    // later record, mark, or cursor read — including the live listener's
+    // first writes — lands after the decision, so no ordering race exists.
     const value = domain.global?.get() as { backfilledSessions?: string[] } | undefined
     const cursorEmpty = (value?.backfilledSessions?.length ?? 0) === 0
     if (cursorEmpty && this.table.keys().next().done === false) {
@@ -248,12 +250,17 @@ export class UsageStore {
     const write = this.markChain.then(async () => {
       await this.ready
       const table = this.requireTable()
-      for (const key of [...table.keys()]) await table.delete(key)
       const liveFirstSeq: Record<string, number> = {}
       if (boundaries) {
         for (const [id, seq] of boundaries) liveFirstSeq[id] = seq
       }
+      // Crash-safe order: the cursor lands BEFORE the row wipe. A crash in
+      // between then leaves rows behind an EMPTY cursor, which the
+      // open-time rebuild drops before any replay; the reverse order would
+      // leave an empty store behind an old "already seen" cursor, so the
+      // next boot's backfill would skip every session (silent loss).
       await this.domainHandle?.global?.set({ backfilledSessions: [], liveFirstSeq })
+      for (const key of [...table.keys()]) await table.delete(key)
     })
     this.markChain = write.then(
       () => undefined,

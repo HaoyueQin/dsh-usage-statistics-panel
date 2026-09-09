@@ -254,4 +254,49 @@ describe('UsageStore', () => {
     // the degradation clearly rather than hanging or losing ids quietly.
     await expect(store.markSeenSessions(['b'])).rejects.toThrow(/degraded/)
   })
+
+  it('reset() writes the cursor before deleting rows (crash-safe order)', async () => {
+    // A crash between the row wipe and the cursor write would leave empty
+    // rows behind an old "already seen" cursor, so the next boot's backfill
+    // would skip every session (silent loss). Cursor-first inverts the torn
+    // state to rows-behind-an-empty-cursor, which the open-time rebuild
+    // already drops before any replay (see the pre-cursor test above).
+    const order: string[] = []
+    const records = new Map<string, UsageDayRow>([
+      ['2026-08-01|default|m', { day: '2026-08-01', provider: 'default', model: 'm', inputTokens: 1, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, requests: 0, turns: 0, lastSeen: 0 }],
+    ])
+    const table: UsageKvTable<string, UsageDayRow> = {
+      get: (k) => records.get(k),
+      entries: () => records.entries() as IterableIterator<[string, UsageDayRow]>,
+      keys: () => records.keys() as IterableIterator<string>,
+      get size() { return records.size },
+      delete: async (k) => { order.push('delete:' + k); return records.delete(k) },
+      put: async (k, v) => { records.set(k, v) },
+      update: async (k, fn) => {
+        const cur = records.get(k)
+        if (cur === undefined) throw new Error('no record ' + k + ' to update')
+        const next = fn(cur)
+        records.set(k, next)
+        return next
+      },
+    }
+    let globalValue: { backfilledSessions: string[]; liveFirstSeq?: Record<string, number> } | undefined = { backfilledSessions: ['s1'] }
+    const domain: UsageDomain = {
+      table: () => table as UsageKvTable<string, unknown>,
+      global: {
+        get: () => globalValue,
+        set: async (value) => { order.push('set-cursor'); globalValue = value as typeof globalValue },
+      },
+    }
+    const store = new UsageStore({ open: async () => domain })
+    await store.readyPromise()
+    // The pre-cursor rebuild must not fire here: the cursor is non-empty.
+    expect(await store.count()).toBe(1)
+    await store.reset(new Map([['s9', 7]]))
+    expect(order[0]).toBe('set-cursor')
+    expect(order.filter((o) => o === 'set-cursor')).toHaveLength(1)
+    expect(await store.count()).toBe(0)
+    expect(await store.seenSessions()).toEqual(new Set())
+    expect((await store.liveSequences()).get('s9')).toBe(7)
+  })
 })

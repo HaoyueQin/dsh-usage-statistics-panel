@@ -150,6 +150,9 @@ export class UsageFold {
         request: true,
       }
     }
+    // `assistant/chunk` only exists on DSH <= 0.1.2 (streaming usage sample);
+    // 0.1.3+ logs attempts as `assistant/attempt` (no usage) and the final
+    // `assistant/message` stays authoritative. Kept as a dead branch for rc.1.
     if (ev.type === 'assistant/chunk') {
       const data = ev.data as AssistantChunkData
       const usage = data.chunk?.type === 'usage' ? data.chunk.usage : undefined
@@ -404,9 +407,10 @@ export class UsageCollector {
     this.status.running = true
     this.status.error = undefined
     try {
-      // Dual-path list: alpha exposes open() and takes { signal }; rc.1
-      // takes a bare signal and returns header rows. Snapshots normalize
-      // to their inner header; malformed rows are dropped, never crash.
+      // Dual-path list: alpha (0.1.3+, incl. 0.1.5-alpha.1) exposes open()
+      // and takes { signal }; rc.1 takes a bare signal and returns header
+      // rows. Snapshots normalize to their inner header; malformed rows
+      // are dropped, never crash.
       const useAlphaList = typeof persistence.open === 'function'
       const rawList = useAlphaList
         ? await persistence.list(signal === undefined ? undefined : { signal })
@@ -480,7 +484,8 @@ export class UsageCollector {
           let route = ''
           try {
             // Dual-path read: alpha open()+paged read()+close() wins when
-            // present; rc.1 inspect() is the fallback. Both yield the same
+            // present (the only seam on 0.1.3+, `inspect` removed upstream);
+            // rc.1 inspect() is the fallback. Both yield the same
             // (events, inheritedCut) pair for the shared fold below.
             let sessionEvents: readonly UsageSessionEvent[]
             let inheritedCut: number

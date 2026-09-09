@@ -112,9 +112,12 @@ export interface UsageSessionHandleReader {
 }
 
 /** The session persistence service: dual faces for rc.1 (`list`+`inspect`)
- *  and alpha (`list`+`open`). `open` wins when both exist; `list` accepts
- *  either the rc.1 bare signal or the alpha options object and returns
- *  either header rows or snapshots (normalized by the collector). */
+ *  and alpha (`list`+`open`, the only seam since 0.1.3-alpha, `inspect`
+ *  removed upstream in the V3 line). `open` wins when both exist; `list`
+ *  accepts either the rc.1 bare signal or the alpha options object and
+ *  returns either header rows or snapshots (normalized by the collector).
+ *  Verified against DSH 0.1.5-alpha.1: `open`/`read`/`close`/`list` and
+ *  `inheritedEventCount` are unchanged there. */
 export interface UsageSessionPersistence {
   list(signalOrOptions?: AbortSignal | { signal?: AbortSignal }): Promise<Array<UsageSessionHeader | UsageSessionSnapshot>>
   inspect?(id: string, signal?: AbortSignal): Promise<UsageSessionInspection>

@@ -37,7 +37,7 @@ const NODE_BUILTINS = new Set([
 ])
 
 /** Module specifiers the web shell shares into the frozen module table — an
- *  exact mirror of the official PLATFORM_MODULES list (DSH 0.1.2-rc.1,
+ *  exact mirror of the official PLATFORM_MODULES list (DSH 0.1.5-alpha.1,
  *  packages/client/web/src/platform.ts; that line's
  *  PRELOADED_CLIENT_EXTERNALS is empty). Every @deepseek-ai value import must
  *  stay inside this list, or the bundle leaks a module id the host table

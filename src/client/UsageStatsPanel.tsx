@@ -320,8 +320,8 @@ function EntryOption({ t }: { t: Translator }) {
 
 /**
  * The two bottom-bar enhancement preferences, below the sidebar entry:
- * "Precise cache hit rate" (two decimals in the conversation stats line) and
- * "Session token breakdown" (total / input / cache hit / cache miss / output).
+ * "Precise cache hit rate" (two decimals on the usage pill and dialog) and
+ * "Session token breakdown" (an extra cache-miss row in the usage dialog).
  */
 function StatsLineOptions({ t }: { t: Translator }) {
   const [cachePrecision, setCachePrecision] = useState(statsLineState.cachePrecision)

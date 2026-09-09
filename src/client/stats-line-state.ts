@@ -5,8 +5,8 @@
  * Two toggles share one blob so a single read covers both:
  * - `cachePrecision`: render the cache-hit rate with two decimals (e.g.
  *   "85.25%") instead of the default integer percentage;
- * - `tokenDetail`: replace the default "input/output" pair with a five-item
- *   breakdown — total, input, input (cache hit), input (cache miss) and output.
+ * - `tokenDetail`: add the input (cache miss) row to the usage dialog's
+ *   input / cache-read / cache-write / output breakdown.
  *
  * The panel row and the stats line live in two different slot trees but inside
  * the SAME client bundle instance, so a tiny module store keeps them in sync

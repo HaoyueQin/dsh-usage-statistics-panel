@@ -97,10 +97,10 @@ export function apply(ctx: Context): void {
     locale: LOCALE_NS,
   }, SidebarEntry))
 
-  // The bottom-bar takeover: shadow the official StatsLine entry (same id
+  // The bottom-bar takeover: shadow the official StatsPills entry (same id
   // 'stats', lower priority — the slot's lowest live entry renders) so the
-  // official line stays byte-equal while both toggles are off and gains the
-  // two readouts (two-decimal cache hit rate, five-item token breakdown) when
+  // pills match the official ones while both toggles are off and gain the
+  // two readouts (two-decimal cache hit rate, cache-miss dialog row) when
   // they are on. Disposal restores the official entry automatically.
   ctx.slots.inject('conversation.composer.dock', () => ctx.slots.register({
     name: 'conversation.composer.dock',

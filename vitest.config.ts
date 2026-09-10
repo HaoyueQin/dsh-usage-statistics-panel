@@ -5,6 +5,14 @@
  * Inlining routes them through Vite's transform, which stubs css imports
  * (the default `css: false`).
  *
+ * Inlining also forces Vite to resolve the inlined package's OWN bare
+ * imports: `dsh-client-ui-primitives@0.1.5-rc.1` ships a `lib/index.js` with
+ * runtime imports (anser, shiki, katex, micromark-*, mdast-*) while its
+ * package.json declares them under devDependencies. This package therefore
+ * lists those in its own devDependencies so the test graph resolves; the
+ * shipped bundle never resolves them (ui-primitives is a platform external),
+ * so this is a test-only concern.
+ *
  * Maintenance note: this list is the minimal set for the CURRENT tests. If a
  * future test value-imports another `@deepseek-ai/*` package whose built
  * lib/ brings a css side-effect import (e.g. dsh-client-ui-slots), add it

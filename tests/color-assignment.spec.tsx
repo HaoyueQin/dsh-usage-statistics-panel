@@ -87,14 +87,14 @@ describe('chart colour rank assignment', () => {
 
     // Wait for the aggregate to arrive and the chart segments to render.
     await waitFor(() => {
-      expect(container.querySelector('svg[aria-label="modelUsage"] [role="button"][aria-label]')).not.toBeNull()
+      expect(container.querySelector('svg[aria-label="modelUsage"] [role="img"][aria-label]')).not.toBeNull()
     })
 
     const chart = container.querySelector('svg[aria-label="modelUsage"]')!
     const segments = new Map<string, string>()
     // Every stack segment carries its own aria-label, which is what this
     // selector keys on.
-    for (const seg of Array.from(chart.querySelectorAll('[role="button"][aria-label]'))) {
+    for (const seg of Array.from(chart.querySelectorAll('[role="img"][aria-label]'))) {
       const label = seg.getAttribute('aria-label') ?? ''
       const model = label.split(':')[0] ?? ''
       segments.set(model, seg.getAttribute('fill') ?? '')
@@ -115,7 +115,7 @@ describe('chart colour rank assignment', () => {
     const { container } = render(<UsageStatsSection {...({ t } as UsageStatsSectionProps)} />)
 
     await waitFor(() => {
-      expect(container.querySelector('svg[aria-label="modelUsage"] [role="button"][aria-label]')).not.toBeNull()
+      expect(container.querySelector('svg[aria-label="modelUsage"] [role="img"][aria-label]')).not.toBeNull()
     })
 
     // The trend legend renders one inline-background swatch per model inside

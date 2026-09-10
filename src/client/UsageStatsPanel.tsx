@@ -143,7 +143,7 @@ export function UsageStatsPanel({ t }: { t: Translator }): JSX.Element {
   // token volume), matching reasonix: rank 1..10 take --dsw-chart-1..10 and the
   // aggregated tail is the gray --dsw-chart-other. First-seen order would
   // scramble the rank colours (the top model could lose its blue, and a
-  // top-5 model could fall into the gray bucket), so the rank is looked up in
+  // top-10 model could fall into the gray bucket), so the rank is looked up in
   // `stats.models`, never in the daily walk.
   const colorForModel = useCallback((model: string): string => {
     if (model === OTHER_MODEL) return OTHER_COLOR
@@ -828,8 +828,9 @@ function ModelUsage({ models, t, colorForModel, panelRef }: { models: GroupedMod
   if (models.length === 0) return null
   const other = models.find((m) => m.model === OTHER_MODEL)
 
-  // Stack order is the host's rank order: rank 1 sits at the base and the
-  // aggregated tail (the gray Other bucket) ends up on the lid.
+  // Stack order is the host's rank order, laid out top-to-bottom like the
+  // list beside it: rank 1 owns the TOP segment and the aggregated tail (the
+  // gray Other bucket) ends at the base.
   const segments = models.map((m) => ({
     key: m.model,
     tokens: m.tokens,
@@ -878,6 +879,7 @@ function ModelUsage({ models, t, colorForModel, panelRef }: { models: GroupedMod
             return (
               <li
                 key={m.model}
+                data-bar-row=""
                 className={clsx(css.modelRow, isOther && css.modelRowExpandable)}
                 onMouseEnter={() => highlight(m.model)}
                 onMouseLeave={() => highlight(null)}
@@ -921,7 +923,7 @@ function ModelUsage({ models, t, colorForModel, panelRef }: { models: GroupedMod
             <li className={clsx(css.modelOtherWrap, expandedOther && css.modelOtherOpen)}>
               <ul className={css.modelOtherList}>
                 {other.items.map((it) => (
-                  <li key={it.model} className={clsx(css.modelRow, css.modelRowSub)}>
+                  <li key={it.model} data-bar-row="" className={clsx(css.modelRow, css.modelRowSub)}>
                     <i className={css.legendSwatch} style={{ background: OTHER_COLOR }} />
                     <div className={css.modelId}>
                       <span className={css.modelName}>{modelNameOf(it.model)}</span>
@@ -1026,6 +1028,7 @@ function ProviderUsage({ providers, t, colorForProvider, panelRef }: { providers
                     role/tabIndex — a role=button li would nest two
                     interactive elements. */}
                 <li
+                  data-bar-row=""
                   className={clsx(css.modelRow, css.modelRowExpandable)}
                   onMouseEnter={() => highlight(p.provider)}
                   onMouseLeave={() => highlight(null)}
@@ -1068,6 +1071,7 @@ function ProviderUsage({ providers, t, colorForProvider, panelRef }: { providers
                             return (
                               <Fragment key={f.provider}>
                                 <li
+                                  data-bar-row=""
                                   className={clsx(css.modelRow, css.modelRowSub, css.modelRowExpandable)}
                                   onClick={() => flipFolded(f.provider)}
                                 >
@@ -1096,7 +1100,7 @@ function ProviderUsage({ providers, t, colorForProvider, panelRef }: { providers
                                   <li className={clsx(css.modelOtherWrap, openSub && css.modelOtherOpen)}>
                                     <ul className={css.modelOtherList}>
                                       {f.models.map((m) => (
-                                        <li key={m.model} className={clsx(css.modelRow, css.modelRowSub, css.modelRowDeep)}>
+                                        <li key={m.model} data-bar-row="" className={clsx(css.modelRow, css.modelRowSub, css.modelRowDeep)}>
                                           <i className={css.legendSwatch} style={{ background: OTHER_PROVIDER_COLOR }} />
                                           <div className={css.modelId}>
                                             <span className={css.modelName}>{modelNameOf(m.model)}</span>

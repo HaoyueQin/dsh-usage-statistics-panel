@@ -95,7 +95,7 @@ function providerSection(container: HTMLElement): HTMLElement {
 function segmentColors(section: HTMLElement): Map<string, string> {
   const chart = section.querySelector('svg[aria-label="providerUsage"]')!
   const out = new Map<string, string>()
-  for (const seg of Array.from(chart.querySelectorAll('[role="button"][aria-label]'))) {
+  for (const seg of Array.from(chart.querySelectorAll('[role="img"][aria-label]'))) {
     out.set(seg.getAttribute('aria-label')!.split(':')[0]!, seg.getAttribute('fill') ?? '')
   }
   return out
@@ -135,7 +135,7 @@ async function renderPanel() {
   stubFetch()
   const { container } = render(<UsageStatsSection {...({ t } as UsageStatsSectionProps)} />)
   await waitFor(() => {
-    expect(container.querySelector('svg[aria-label="providerUsage"] [role="button"][aria-label]')).not.toBeNull()
+    expect(container.querySelector('svg[aria-label="providerUsage"] [role="img"][aria-label]')).not.toBeNull()
   })
   return container
 }
@@ -180,7 +180,7 @@ describe('provider usage section', () => {
 
   it('shows every model behind the hovered provider in the tip', async () => {
     const container = await renderPanel()
-    const seg = providerSection(container).querySelector('[role="button"][aria-label^="pa:"]')!
+    const seg = providerSection(container).querySelector('[role="img"][aria-label^="pa:"]')!
     fireEvent.mouseEnter(seg)
 
     await waitFor(() => {
@@ -219,11 +219,11 @@ describe('provider usage section', () => {
 
     fireEvent.mouseEnter(firstRow)
     await waitFor(() => {
-      expect(section.querySelectorAll('[class*="barDim"]').length).toBeGreaterThan(0)
+      expect(section.querySelectorAll('[class*="stackDim"]').length).toBeGreaterThan(0)
     })
     // The hovered provider keeps full opacity; the rest dim.
-    expect(section.querySelector('[role="button"][aria-label^="pa:"][class*="barDim"]')).toBeNull()
-    expect(section.querySelector('[role="button"][aria-label^="pb:"][class*="barDim"]')).not.toBeNull()
+    expect(section.querySelector('[role="img"][aria-label^="pa:"][class*="stackDim"]')).toBeNull()
+    expect(section.querySelector('[role="img"][aria-label^="pb:"][class*="stackDim"]')).not.toBeNull()
   })
 
   it('opens the Other bucket into the providers it folded, not their models', async () => {

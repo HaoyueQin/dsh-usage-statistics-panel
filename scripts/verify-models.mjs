@@ -60,9 +60,9 @@ async function readSection(heading, shot) {
     const sec = [...document.querySelectorAll('section')]
       .find((s) => s.querySelector('h3')?.textContent?.includes(text))
     if (sec === undefined) return { ok: false, reason: 'section missing' }
-    const svg = sec.querySelector('svg[role="img"]')
+    const svg = sec.querySelector('svg[role="group"]')
     if (svg === null) return { ok: false, reason: 'no chart svg' }
-    const segs = [...svg.querySelectorAll('[role="button"]')]
+    const segs = [...svg.querySelectorAll('[role="img"]')]
     const heights = segs.map((el) => el.getBoundingClientRect().height)
     const round = (n) => Math.round(n * 10) / 10
     const rows = [...sec.querySelectorAll('ul[class*="modelList"] > li[class*="modelRow"]')]
@@ -99,7 +99,7 @@ async function checkExpandKeepsHeight(heading) {
   if (await section.count() === 0) return { ok: false, reason: 'section missing' }
   await section.scrollIntoViewIfNeeded()
   await page.waitForTimeout(1600)
-  const svg = section.locator('svg[role="img"]').first()
+  const svg = section.locator('svg[role="group"]').first()
   const read = async () => Number(await svg.getAttribute('height'))
   const base = await read()
   const toggles = section.locator('button[aria-expanded]')
@@ -127,7 +127,7 @@ function readTree(heading) {
     const sec = [...document.querySelectorAll('section')]
       .find((s) => s.querySelector('h3')?.textContent?.includes(text))
     if (sec === undefined) return null
-    const svg = sec.querySelector('svg[role="img"]')
+    const svg = sec.querySelector('svg[role="group"]')
     const topList = sec.querySelector('ul[class*="modelList"]')
     if (topList === null) return null
     // Direct children only: a nested detail list lives one level deeper.
@@ -297,38 +297,6 @@ async function checkProviderExpansion(shot) {
   return report
 }
 
-/** Refresh the README preview: the two ranked sections as the panel draws them,
- *  folded, so the shipped image keeps matching the shipped feature. The
- *  Settings panel is a fixed dialog that scrolls internally, so the shot is a
- *  VIEWPORT capture with viewport-relative clip coordinates. */
-async function shootReadmePreview(path) {
-  await collapseAll('模型用量')
-  await collapseAll('各供应商用量')
-  await page.setViewportSize({ width: 1100, height: 2000 })
-  await page.waitForTimeout(400)
-  const modelSection = page.locator('section', { hasText: '模型用量' }).first()
-  await modelSection.evaluate((el) => { el.scrollIntoView({ block: 'start' }) })
-  await page.waitForTimeout(500)
-  const modelBox = await modelSection.boundingBox()
-  const providerBox = await page.locator('section', { hasText: '各供应商用量' }).first().boundingBox()
-  const dialogBox = await page.locator('[role="dialog"]').first().boundingBox()
-  if (modelBox === null || providerBox === null) return { ok: false, reason: 'section box missing' }
-  const left = Math.min(modelBox.x, providerBox.x)
-  const top = Math.min(modelBox.y, providerBox.y)
-  const right = Math.max(modelBox.x + modelBox.width, providerBox.x + providerBox.width)
-  const bottom = Math.max(modelBox.y + modelBox.height, providerBox.y + providerBox.height)
-  // Never shoot past the dialog: outside it lies the dimmed page behind.
-  const clip = {
-    x: left,
-    y: top,
-    width: right - left,
-    height: (dialogBox === null ? bottom : Math.min(bottom, dialogBox.y + dialogBox.height)) - top,
-  }
-  const round = (n) => Math.round(n)
-  await page.screenshot({ path, clip })
-  return { ok: true, x: round(clip.x), y: round(clip.y), width: round(clip.width), height: round(clip.height) }
-}
-
 const results = {
   model: await readSection('模型用量', 'scripts/models-section.png'),
   provider: await readSection('各供应商用量', 'scripts/provider-section.png'),
@@ -337,7 +305,6 @@ const results = {
     provider: await checkExpandKeepsHeight('各供应商用量'),
   },
   providerExpansion: await checkProviderExpansion('scripts/provider-expanded-section.png'),
-  readmePreview: await shootReadmePreview('docs/images/model-usage.png'),
 }
 
 // Every model name must be bare (no "provider/" prefix) and every provider row

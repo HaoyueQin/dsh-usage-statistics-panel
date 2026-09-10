@@ -10,7 +10,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react'
-import { layoutBar, StackedBar, type BarSegment } from '../src/client/StackedBar.tsx'
+import { layoutBar, StackedBar, useCollapsedHeight, type BarSegment } from '../src/client/StackedBar.tsx'
 
 describe('layoutBar', () => {
   it('fills exactly the available column height', () => {
@@ -77,7 +77,7 @@ describe('StackedBar', () => {
 
   it('renders one focusable segment per stack entry, keyed by its label', () => {
     const { container } = renderBar()
-    const rects = container.querySelectorAll('svg[aria-label="testBar"] [role="button"]')
+    const rects = container.querySelectorAll('svg[aria-label="testBar"] [role="img"]')
     expect(rects.length).toBe(2)
     expect(rects[0]!.getAttribute('aria-label')).toBe('a: 60 (60%)')
     expect(rects[0]!.getAttribute('tabindex')).toBe('0')
@@ -97,7 +97,7 @@ describe('StackedBar', () => {
 
   it('stacks rank order top-to-bottom, so index 0 owns the top segment', () => {
     const { container } = renderBar()
-    const segs = [...container.querySelectorAll('svg[aria-label="testBar"] [role="button"]')]
+    const segs = [...container.querySelectorAll('svg[aria-label="testBar"] [role="img"]')]
     const top = (el: Element): number => Number(el.getAttribute('y'))
     expect(top(segs[0]!)).toBe(0)
     expect(top(segs[1]!)).toBeGreaterThan(0)
@@ -106,7 +106,7 @@ describe('StackedBar', () => {
   it('reports hover and focus through the shared channel', () => {
     const onHover = vi.fn()
     const { container } = renderBar({ onHover })
-    const seg = container.querySelector('[role="button"][aria-label="a: 60 (60%)"]')!
+    const seg = container.querySelector('[role="img"][aria-label="a: 60 (60%)"]')!
     fireEvent.mouseEnter(seg)
     expect(onHover).toHaveBeenCalledWith('a', seg)
     fireEvent.mouseLeave(seg)
@@ -118,8 +118,8 @@ describe('StackedBar', () => {
   it('dims every segment that is not the highlighted one', () => {
     const { container } = renderBar({ hovered: 'a' })
     // Class names are CSS-module hashes, so match on the local-name suffix.
-    expect(container.querySelector('[aria-label="b: 40 (40%)"][class*="barDim"]')).not.toBeNull()
-    expect(container.querySelector('[aria-label="a: 60 (60%)"][class*="barDim"]')).toBeNull()
+    expect(container.querySelector('[aria-label="b: 40 (40%)"][class*="stackDim"]')).not.toBeNull()
+    expect(container.querySelector('[aria-label="a: 60 (60%)"][class*="stackDim"]')).toBeNull()
   })
 
   it('grows only once the column enters the viewport', async () => {
@@ -134,7 +134,7 @@ describe('StackedBar', () => {
 
     const { container } = renderBar()
     // Nothing is drawn before the observer reports an intersection.
-    expect(container.querySelectorAll('[role="button"]').length).toBe(0)
+    expect(container.querySelectorAll('[role="img"]').length).toBe(0)
 
     await act(async () => {
       fire?.([{ isIntersecting: true }])
@@ -142,7 +142,91 @@ describe('StackedBar', () => {
     })
 
     await waitFor(() => {
-      expect(container.querySelectorAll('[role="button"]').length).toBe(2)
+      expect(container.querySelectorAll('[role="img"]').length).toBe(2)
     }, { timeout: 3000 })
+  })
+})
+
+/**
+ * The section stays mounted while a range has no models, so the list element
+ * appears LATER than the hook's first effect run — and then disappears again
+ * when a range with data returns. Reading the height must follow the element
+ * through both, or the column keeps a stale (or fallback) height.
+ */
+function HeightProbe({ rows }: { rows: number }): JSX.Element {
+  const [ref, height] = useCollapsedHeight()
+  return (
+    <>
+      <span data-testid="height">{height}</span>
+      {rows > 0 && (
+        <ul ref={ref}>
+          {Array.from({ length: rows }, (_, i) => <li key={i} data-bar-row="" className="modelRow" />)}
+        </ul>
+      )}
+    </>
+  )
+}
+
+describe('useCollapsedHeight', () => {
+  const ROW_H = 40
+  const observers: Array<() => void> = []
+  class RecordingResizeObserver {
+    constructor(cb: () => void) { observers.push(cb) }
+    observe(): void {}
+    unobserve(): void {}
+    disconnect(): void {}
+  }
+
+  afterEach(() => {
+    observers.length = 0
+    cleanup()
+    vi.unstubAllGlobals()
+    vi.restoreAllMocks()
+  })
+
+  function stubLayout(rowHeight: number): void {
+    vi.stubGlobal('ResizeObserver', RecordingResizeObserver)
+    vi.spyOn(Element.prototype, 'getBoundingClientRect').mockReturnValue({
+      height: rowHeight, width: 200, top: 0, left: 0, right: 200, bottom: rowHeight, x: 0, y: 0,
+      toJSON: () => ({}),
+    } as DOMRect)
+  }
+
+  it('measures rows that only appear after the first render', () => {
+    stubLayout(ROW_H)
+    const { getByTestId, rerender } = render(<HeightProbe rows={0} />)
+    expect(getByTestId('height').textContent).toBe('0')
+
+    rerender(<HeightProbe rows={3} />)
+
+    expect(Number(getByTestId('height').textContent)).toBe(3 * ROW_H)
+  })
+
+  it('re-measures a list that was replaced by a differently sized one', () => {
+    stubLayout(ROW_H)
+    const { getByTestId, rerender } = render(<HeightProbe rows={2} />)
+    expect(Number(getByTestId('height').textContent)).toBe(2 * ROW_H)
+
+    // A range with no usage empties the section, then a range with data comes
+    // back with a different row count.
+    rerender(<HeightProbe rows={0} />)
+    rerender(<HeightProbe rows={5} />)
+
+    expect(Number(getByTestId('height').textContent)).toBe(5 * ROW_H)
+  })
+
+  it('follows a resize the observer reports', () => {
+    // The positive control for the "expanding never changes the height" cases
+    // at the section level: those assert an UNCHANGED number, which a frozen
+    // measurement would also satisfy. Here the number must move.
+    stubLayout(ROW_H)
+    const { getByTestId } = render(<HeightProbe rows={2} />)
+    expect(Number(getByTestId('height').textContent)).toBe(2 * ROW_H)
+
+    // A taller row (a wrapped name, a longer provider label) resizes the list.
+    stubLayout(60)
+    act(() => { for (const cb of observers) cb() })
+
+    expect(Number(getByTestId('height').textContent)).toBe(2 * 60)
   })
 })

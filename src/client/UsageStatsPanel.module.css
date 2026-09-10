@@ -390,7 +390,10 @@
   flex: 0 0 auto;
 }
 
-.bar {
+/* The stacked column's own class: NOT `.bar`, which the trend chart's rects
+   already own — one local name maps to one hashed class, so sharing it would
+   merge both rule sets and let an edit to either chart hit the other. */
+.stack {
   display: block;
 }
 
@@ -403,7 +406,7 @@
   filter: brightness(1.08);
 }
 
-.barDim {
+.stackDim {
   opacity: 0.35;
 }
 

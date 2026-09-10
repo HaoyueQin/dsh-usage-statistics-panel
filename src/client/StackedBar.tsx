@@ -21,7 +21,7 @@
  * measures the COLLAPSED list and passes it in, so expanding the Other bucket
  * never stretches the chart.
  */
-import { useEffect, useId, useLayoutEffect, useRef, useState, type FocusEvent, type MouseEvent, type RefObject } from 'react'
+import { useEffect, useId, useLayoutEffect, useRef, useState, type FocusEvent, type MouseEvent, type RefCallback } from 'react'
 import clsx from 'clsx'
 import css from './UsageStatsPanel.module.css'
 
@@ -63,20 +63,29 @@ export function layoutBar(tokens: readonly number[], totalH: number, minH: numbe
  * height would let that animation stretch the column (the expand state flips
  * a render before the animation reaches either end). Summing the top-level
  * rows keeps the column pinned to its collapsed size at every frame.
- * @returns the ref to put on the list element, and the collapsed height in px.
+ *
+ * The ref is a CALLBACK, not a RefObject: a section stays mounted while the
+ * selected range has no models, so its list element appears AFTER this hook's
+ * first effect run — and disappears again when a range with data returns. A
+ * RefObject read through an empty dependency list would keep observing the
+ * element that is gone and never measure the one now on screen: the column
+ * then sticks to a stale height, or to the fallback if it mounted empty.
+ * @returns the callback ref to put on the list element, and the collapsed height in px.
  */
-export function useCollapsedHeight(): [RefObject<HTMLUListElement>, number] {
-  const ref = useRef<HTMLUListElement>(null)
+export function useCollapsedHeight(): [RefCallback<HTMLUListElement>, number] {
+  const [el, setEl] = useState<HTMLUListElement | null>(null)
   const [height, setHeight] = useState(0)
 
   useLayoutEffect(() => {
-    const el = ref.current
     if (el === null) return
     const update = (): void => {
       let h = 0
       for (const row of Array.from(el.children)) {
-        // The Other wrapper is not a row: it contributes nothing.
-        if (!row.className.includes('modelRow')) continue
+        // Only marked rows count: a detail wrapper carries no marker, so the
+        // accordion inside it can never stretch the column. A data attribute,
+        // not a class-name substring — a renamed or similarly named class
+        // would otherwise change the column height silently.
+        if (!row.hasAttribute('data-bar-row')) continue
         h += row.getBoundingClientRect().height
       }
       const style = getComputedStyle(el)
@@ -87,9 +96,9 @@ export function useCollapsedHeight(): [RefObject<HTMLUListElement>, number] {
     const ro = new ResizeObserver(update)
     ro.observe(el)
     return () => ro.disconnect()
-  }, [])
+  }, [el])
 
-  return [ref, height]
+  return [setEl, height]
 }
 
 /** One stack segment of a bar. */
@@ -181,12 +190,16 @@ export function StackedBar({ segments, ariaLabel, hovered, onHover, height, widt
   })
 
   // Segments share one interaction surface: the column and the list beside it
-  // drive the same highlight, and every segment is keyboard reachable.
+  // drive the same highlight, and every segment is keyboard reachable. A
+  // segment carries role="img" (a named piece of the chart) rather than
+  // role="button": focusing one has no activation behaviour to promise, and
+  // the SVG around it is a named group — role="img" there would hide every
+  // segment from the accessibility tree, aria-labels included.
   const segProps = (seg: BarSegment) => ({
-    className: clsx(css.barSeg, hovered !== null && hovered !== seg.key && css.barDim),
+    className: clsx(css.barSeg, hovered !== null && hovered !== seg.key && css.stackDim),
     fill: seg.color,
     tabIndex: 0,
-    role: 'button' as const,
+    role: 'img' as const,
     'aria-label': seg.label,
     onMouseEnter: (e: MouseEvent<SVGElement>) => onHover(seg.key, e.currentTarget),
     onMouseLeave: () => onHover(null),
@@ -196,7 +209,7 @@ export function StackedBar({ segments, ariaLabel, hovered, onHover, height, widt
 
   return (
     <div className={css.barWrap} ref={wrapRef}>
-      <svg className={css.bar} width={W} height={H} viewBox={`0 0 ${W} ${H}`} role="img" aria-label={ariaLabel}>
+      <svg className={css.stack} width={W} height={H} viewBox={`0 0 ${W} ${H}`} role="group" aria-label={ariaLabel}>
         <defs>
           <clipPath id={clipId}>
             <rect x={0} y={0} width={W} height={H} rx={RADIUS} />

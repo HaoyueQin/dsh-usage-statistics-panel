@@ -297,6 +297,38 @@ async function checkProviderExpansion(shot) {
   return report
 }
 
+/** Refresh the README preview: the two ranked sections as the panel draws them,
+ *  folded, so the shipped image keeps matching the shipped feature. The
+ *  Settings panel is a fixed dialog that scrolls internally, so the shot is a
+ *  VIEWPORT capture with viewport-relative clip coordinates. */
+async function shootReadmePreview(path) {
+  await collapseAll('模型用量')
+  await collapseAll('各供应商用量')
+  await page.setViewportSize({ width: 1100, height: 2000 })
+  await page.waitForTimeout(400)
+  const modelSection = page.locator('section', { hasText: '模型用量' }).first()
+  await modelSection.evaluate((el) => { el.scrollIntoView({ block: 'start' }) })
+  await page.waitForTimeout(500)
+  const modelBox = await modelSection.boundingBox()
+  const providerBox = await page.locator('section', { hasText: '各供应商用量' }).first().boundingBox()
+  const dialogBox = await page.locator('[role="dialog"]').first().boundingBox()
+  if (modelBox === null || providerBox === null) return { ok: false, reason: 'section box missing' }
+  const left = Math.min(modelBox.x, providerBox.x)
+  const top = Math.min(modelBox.y, providerBox.y)
+  const right = Math.max(modelBox.x + modelBox.width, providerBox.x + providerBox.width)
+  const bottom = Math.max(modelBox.y + modelBox.height, providerBox.y + providerBox.height)
+  // Never shoot past the dialog: outside it lies the dimmed page behind.
+  const clip = {
+    x: left,
+    y: top,
+    width: right - left,
+    height: (dialogBox === null ? bottom : Math.min(bottom, dialogBox.y + dialogBox.height)) - top,
+  }
+  const round = (n) => Math.round(n)
+  await page.screenshot({ path, clip })
+  return { ok: true, x: round(clip.x), y: round(clip.y), width: round(clip.width), height: round(clip.height) }
+}
+
 const results = {
   model: await readSection('模型用量', 'scripts/models-section.png'),
   provider: await readSection('各供应商用量', 'scripts/provider-section.png'),
@@ -305,6 +337,7 @@ const results = {
     provider: await checkExpandKeepsHeight('各供应商用量'),
   },
   providerExpansion: await checkProviderExpansion('scripts/provider-expanded-section.png'),
+  readmePreview: await shootReadmePreview('docs/images/model-usage.png'),
 }
 
 // Every model name must be bare (no "provider/" prefix) and every provider row

@@ -33,7 +33,7 @@ DSH web 插件的用量统计面板：按天 Token 趋势、GitHub 风格活跃�
 </p>
 
 <p align="center">
-  <img src="docs/images/model-usage.png" alt="模型用量：堆叠柱状图、明细列表与趋势图" width="720">
+  <img src="docs/images/model-usage.png" alt="模型用量与各供应商用量：堆叠柱状图与明细列表" width="720">
 </p>
 
 ## 功能

@@ -33,7 +33,7 @@ All charts are hand-drawn SVG with no chart library; the palette uses GitHub Pri
 </p>
 
 <p align="center">
-  <img src="docs/images/model-usage.png" alt="Model usage: stacked bar, detail list and daily trend" width="720">
+  <img src="docs/images/model-usage.png" alt="Model usage and provider usage: stacked bars with detail lists" width="720">
 </p>
 
 ## Features

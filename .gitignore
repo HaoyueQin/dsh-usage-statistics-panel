@@ -14,3 +14,8 @@ verify-redesign-*.png
 .verify-backup/
 .mnemon/
 scripts/*-section.png
+# Release notes are local drafting files: they are not shipped in the npm
+# package (see the `files` field) and every release's notes are generated into
+# the GitHub Release by .github/workflows/release.yml, so the repository does
+# not carry them. docs/design.md stays tracked — it ships with the package.
+docs/release-notes-*.md

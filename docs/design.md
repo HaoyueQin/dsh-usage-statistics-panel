@@ -68,8 +68,9 @@ Token 桶语义：`inputTokens` 是 uncached input（即缓存 miss 侧），`ca
 
 - **热力图**：固定 40 周窗口，容器过窄时优先裁剪最早列；5 级色阶由 brand accent 经 color-mix 派生
 - **趋势图**：堆叠柱状图按全范围用量排名着色（模型颜色逐日稳定），叠加 Catmull-Rom 命中率曲线；最窄时裁剪最早天数，超过 180 天显示提示
-- **模型图**：donut 固定 240×240 viewBox（悬停加粗不溢出），前 5 名分色，其余折叠为灰色 "Other"（可展开明细，键盘可访问）；分段可聚焦（tabIndex + aria-label + focus 显示 tooltip）——分段数量有界（≤6），而热力图 ~180 个格子不适合逐格进 tab 序，故后两者保持鼠标悬停（SVG 整体带 role="img" 标注）
-- **Primer 色板**：`--dsw-chart-1..5` + `--dsw-chart-other`，light/dark 两套（CSS `@media (prefers-color-scheme)`），色值经 color-mix 向底色柔化
+- **模型图 / 供应商图**：两者同一解剖——左侧堆叠柱（`StackedBar`）+ 右侧明细列表。模型取前 10 名分色、供应商取前 5 名分色，其余折叠为灰色 "Other"。柱高由列表的**折叠态**行高之和决定（只数行，展开容器不计），因此展开任一行都不改变柱高。柱子首次进入视口时自基部升起（IntersectionObserver + rAF，`prefers-reduced-motion` 或无 IntersectionObserver 时直接落到终态）；每段可聚焦（tabIndex + aria-label + focus/hover 出 tooltip）——分段数量有界（≤11），而热力图 ~180 个格子不适合逐格进 tab 序，故后两者保持鼠标悬停（SVG 整体带 role="img" 标注）
+- **展开层级**：模型区只有 "Other" 行可展开（列出被折叠的模型）；供应商区两级——排名行展开该供应商的模型，"Other" 展开被折叠的供应商（每行带该供应商的模型数），这些行再展开各自的模型。展开容器是行的**兄弟节点**且不带行类名，故测量始终只数行
+- **色板**：`--dsw-chart-1..10` + `--dsw-chart-other`（模型）、`--dsw-provider-1..5` + `--dsw-provider-other`（供应商独立色板，供应商不穿模型色），light/dark 两套（CSS `@media (prefers-color-scheme)`），色值经 color-mix 向底色柔化
 
 ### 样式
 
@@ -91,4 +92,4 @@ Token 桶语义：`inputTokens` 是 uncached input（即缓存 miss 侧），`ca
 - 回扫跳过启动时的**活跃会话**：这些会话在插件启动前的历史 usage 不计（避免与实时流重复折叠）；其后的增量由实时监听覆盖并写入游标，重启后同样不会重放
 - 旧会话日志若无 provider usage（或日志被压缩清理），无法回溯
 - `usage_history` 域版本 1；若需迁移，bump domain version 并写迁移
-- 热力图/趋势图的 tooltip 仅鼠标触发（格子数量不适合逐格进 tab 序）；donut 分段支持键盘
+- 热力图/趋势图的 tooltip 仅鼠标触发（格子数量不适合逐格进 tab 序）；柱状图分段支持键盘

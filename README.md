@@ -18,12 +18,12 @@
 [![Commit activity](https://img.shields.io/github/commit-activity/t/HaoyueQin/dsh-usage-statistics-panel)](https://github.com/HaoyueQin/dsh-usage-statistics-panel/graphs/commit-activity)
 [![Last commit](https://img.shields.io/github/last-commit/HaoyueQin/dsh-usage-statistics-panel)](https://github.com/HaoyueQin/dsh-usage-statistics-panel/commits)
 
-DSH web 插件的用量统计面板：按天 Token 趋势、GitHub 风格活跃热力图、缓存命中率曲线、按模型用量拆分（环形图 + 列表），在设置页新增一个"使用统计"页面。
+DSH web 插件的用量统计面板：按天 Token 趋势、GitHub 风格活跃热力图、缓存命中率曲线、按模型与按供应商两种用量拆分（堆叠柱状图 + 明细列表），在设置页新增一个"使用统计"页面。
 
-所有图表均为手绘 SVG，不依赖图表库；配色使用 GitHub Primer 的 data-viz 双套色板（前 5 名模型各取一个等级色，其余归入灰色 "Other" 桶），并随 DSH 主题自适应。
+所有图表均为手绘 SVG，不依赖图表库；配色使用 GitHub Primer 的 data-viz 双套色板（模型前 10 名、供应商前 5 名各取一个等级色，其余归入灰色 "Other" 桶），并随 DSH 主题自适应。
 
 <p align="center">
-  <img src="docs/demo-zh.svg" alt="demo：安装后设置页出现「使用统计」入口，进入面板后卡片、热力图、趋势与环形图依次点亮" width="720">
+  <img src="docs/demo-zh.svg" alt="demo：安装后设置页出现「使用统计」入口，进入面板后卡片、热力图、趋势与柱状图依次点亮" width="720">
 </p>
 
 ## 预览
@@ -33,7 +33,7 @@ DSH web 插件的用量统计面板：按天 Token 趋势、GitHub 风格活跃�
 </p>
 
 <p align="center">
-  <img src="docs/images/model-usage.png" alt="模型用量：环形图、列表与趋势图" width="720">
+  <img src="docs/images/model-usage.png" alt="模型用量：堆叠柱状图、明细列表与趋势图" width="720">
 </p>
 
 ## 功能
@@ -42,7 +42,8 @@ DSH web 插件的用量统计面板：按天 Token 趋势、GitHub 风格活跃�
 - **汇总卡片**：Token 用量、会话数量（完成的 turn）、请求数量、活跃天数、平均缓存命中率、最常用模型
 - **26 周活跃热力图**：每日 token 用量的 GitHub 风格色阶，悬停查看当天明细
 - **按天 Token 趋势**：堆叠柱状图叠加平滑的缓存命中率曲线（Catmull-Rom 样条），悬停查看各模型拆分
-- **模型用量**：环形图 + 列表，前 5 名模型分色，其余折叠为可展开的 "Other" 明细
+- **模型用量**：堆叠柱状图 + 明细列表，前 10 名模型分色，其余折叠为可展开的 "Other" 明细；柱状图滚入视野时自基部升起
+- **供应商用量**：同一结构上移一层——前 5 名供应商分色（独立色板），其余归入灰色 "Other"；悬停任一侧联动另一侧，柱状图悬停显示该供应商的全部模型用量；每行可展开该供应商的模型明细，"Other" 展开被折叠的供应商、其下再展开各自的模型（展开不影响柱状图高度）
 - **底部信息栏增强**：设置页可开启"精确缓存命中率"（会话底部信息栏的缓存命中率以两位小数显示，如 85.25%）与"会话 Token 明细"（底部信息栏显示总 Token、输入、输入（命中缓存）、输入（未命中缓存）与输出 Token，替代默认的"输入/输出"两项）；开关位于"使用统计"面板底部，与"侧边栏快捷入口"同款样式，切换即时生效
 - **历史回扫**：首次启用时枚举并回放既有会话日志；对挂载后才首次观测到的活跃会话，其挂载前的历史会在下一次启动时按事件序号边界回放补全，从安装日起尽量还原历史用量
 - **本地持久化**：数据写入 `$DSH_HOME/storages/usage_history.json`（storage-domain），纯本地、无外部依赖

@@ -18,12 +18,12 @@ English | [中文](README.md)
 [![Commit activity](https://img.shields.io/github/commit-activity/t/HaoyueQin/dsh-usage-statistics-panel)](https://github.com/HaoyueQin/dsh-usage-statistics-panel/graphs/commit-activity)
 [![Last commit](https://img.shields.io/github/last-commit/HaoyueQin/dsh-usage-statistics-panel)](https://github.com/HaoyueQin/dsh-usage-statistics-panel/commits)
 
-A usage statistics panel plugin for the DSH web UI: per-day token trend, a GitHub-style activity heatmap, a cache hit-rate curve, and a per-model breakdown (donut + list), added as a "Usage statistics" page in Settings.
+A usage statistics panel plugin for the DSH web UI: per-day token trend, a GitHub-style activity heatmap, a cache hit-rate curve, and two breakdowns — by model and by provider (stacked bar + detail list each), added as a "Usage statistics" page in Settings.
 
-All charts are hand-drawn SVG with no chart library; the palette uses GitHub Primer's data-viz two-set tokens (the top five models each get a distinct rank colour, everything else collapses into a gray "Other" bucket) and adapts to the DSH theme.
+All charts are hand-drawn SVG with no chart library; the palette uses GitHub Primer's data-viz two-set tokens (the top ten models and the top five providers each get a distinct rank colour, everything else collapses into a gray "Other" bucket) and adapts to the DSH theme.
 
 <p align="center">
-  <img src="docs/demo.svg" alt="demo: a Usage statistics entry appears in the Settings nav, then cards, heatmap, trend and donut light up one by one" width="720">
+  <img src="docs/demo.svg" alt="demo: a Usage statistics entry appears in the Settings nav, then cards, heatmap, trend and the stacked bars light up one by one" width="720">
 </p>
 
 ## Preview
@@ -33,7 +33,7 @@ All charts are hand-drawn SVG with no chart library; the palette uses GitHub Pri
 </p>
 
 <p align="center">
-  <img src="docs/images/model-usage.png" alt="Model usage: donut, list and daily trend" width="720">
+  <img src="docs/images/model-usage.png" alt="Model usage: stacked bar, detail list and daily trend" width="720">
 </p>
 
 ## Features
@@ -42,7 +42,8 @@ All charts are hand-drawn SVG with no chart library; the palette uses GitHub Pri
 - **Summary cards**: token usage, sessions (completed turns), requests, active days, average cache hit-rate, top model
 - **26-week activity heatmap**: GitHub-style day cells, hover for the day's detail
 - **Daily token trend**: stacked bars with a smooth cache hit-rate curve (Catmull-Rom), hover for the per-model breakdown
-- **Model usage**: donut + list; the top five models keep distinct colours, the tail collapses into an expandable "Other" row
+- **Model usage**: stacked bar + detail list; the top ten models keep distinct colours, the tail collapses into an expandable "Other" row, and the bar rises from its base as it scrolls into view
+- **Provider usage**: the same anatomy one dimension up — the top five providers keep distinct colours from their own palette, the tail collapses into a gray "Other" bucket, hovering either side lights the other, and the bar's hover tip lists every model that provider served. Each row expands (the Other bucket opens the providers it folded, and each of those opens its own models); expanding never moves the bar
 - **History backfill**: on first enable, the plugin enumerates and replays existing session logs; for a live session the collector attached to mid-flight, its pre-attachment history is recovered on the next boot by replaying the log prefix below the recorded seq boundary, so historical usage is accounted from day one as faithfully as the logs allow
 - **Local persistence**: data lands in `$DSH_HOME/storages/usage_history.json` (storage-domain), fully local, no external services
 

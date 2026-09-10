@@ -372,7 +372,7 @@
   border-radius: 2px;
 }
 
-/* ── per-model donut + list ────────────────────────────────────────────── */
+/* ── per-model / per-provider bar + list ───────────────────────────────── */
 
 .models {
   display: flex;
@@ -382,32 +382,29 @@
   min-width: 0;
 }
 
-.donutWrap {
+/* The column's height comes from the COLLAPSED list beside it (measured by
+   useCollapsedHeight), never from the list's live height — expanding Other
+   must not stretch the chart. */
+.barWrap {
   position: relative;
   flex: 0 0 auto;
 }
 
-.donutTrack {
-  stroke: var(--dsw-alias-bg-mask-1);
+.bar {
+  display: block;
 }
 
-.donutSeg {
-  transition: stroke-width 0.12s ease;
+.barSeg {
+  transition: filter 0.12s ease, opacity 0.12s ease;
 }
 
-.donutDim {
+.barSeg:hover,
+.barSeg:focus-visible {
+  filter: brightness(1.08);
+}
+
+.barDim {
   opacity: 0.35;
-}
-
-.donutCenter {
-  fill: var(--dsw-alias-label-primary);
-  font-size: 18px;
-  font-weight: 600;
-}
-
-.donutLabel {
-  fill: var(--dsw-alias-label-tertiary);
-  font-size: 11px;
 }
 
 .modelList {
@@ -420,6 +417,17 @@
   border-radius: 10px;
   background: var(--dsw-alias-bg-layer-1);
   overflow: hidden;
+}
+
+/* Position column: the row's rank inside its section. The Other bucket holds
+   no single rank, so it renders an empty (but equally wide) cell. */
+.modelRank {
+  flex: 0 0 auto;
+  min-width: 14px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
 }
 
 .modelRow {
@@ -456,11 +464,18 @@
   vertical-align: middle;
 }
 
-/* Expanded "Other" detail rows: indented, slightly recessed. */
+/* Expanded detail rows: indented, slightly recessed. */
 .modelRowSub {
   padding-left: 28px;
   background: color-mix(in srgb, var(--dsw-alias-bg-layer-2) 55%, transparent);
   font-size: 13px;
+}
+
+/* Second-level indent: a model row inside a provider that is itself folded
+   into the Other bucket. Wider than .modelRowSub so the nesting stays
+   readable. Declared after it — same specificity, so this one wins. */
+.modelRowDeep {
+  padding-left: 48px;
 }
 
 /* "Other" details expand with an accordion: the wrapper is a grid whose
@@ -680,7 +695,9 @@
    saturation the way a translucent white overlay would, keeping the hues
    colourful instead of muddy. The heatmap ramp is DeepSeek's brand blue
    (#4D6BFE) stepping from a pale tint to the full blue; the hit-rate curve
-   rides the same brand hue. */
+   rides the same brand hue.
+   Ranks 6-10 extend the reasonix five to ten (this plugin's addition): each
+   is picked to keep the ten hues apart on both themes. */
 .panel {
   --dsw-heat-0: #ebedf0;
   --dsw-heat-1: #dbe3ff;
@@ -694,7 +711,20 @@
   --dsw-chart-3: color-mix(in srgb, #c46212 70%, white);
   --dsw-chart-4: color-mix(in srgb, #975bf1 70%, white);
   --dsw-chart-5: color-mix(in srgb, #d34591 70%, white);
+  --dsw-chart-6: color-mix(in srgb, #0d8a8a 70%, white);
+  --dsw-chart-7: color-mix(in srgb, #b3341f 70%, white);
+  --dsw-chart-8: color-mix(in srgb, #7a9018 70%, white);
+  --dsw-chart-9: color-mix(in srgb, #4b3fd0 70%, white);
+  --dsw-chart-10: color-mix(in srgb, #d4a017 70%, white);
   --dsw-chart-other: color-mix(in srgb, #576270 70%, white);
+  /* Provider series: a separate five-hue set for the provider section, so a
+     provider never wears a model's colour. */
+  --dsw-provider-1: color-mix(in srgb, #1f7a8c 70%, white);
+  --dsw-provider-2: color-mix(in srgb, #6a8e3a 70%, white);
+  --dsw-provider-3: color-mix(in srgb, #a15c2f 70%, white);
+  --dsw-provider-4: color-mix(in srgb, #7b5ea7 70%, white);
+  --dsw-provider-5: color-mix(in srgb, #b03a5b 70%, white);
+  --dsw-provider-other: color-mix(in srgb, #576270 70%, white);
 }
 
 /* Dark variant: the same reasonix hues under a thicker white veil
@@ -714,6 +744,17 @@
     --dsw-chart-3: color-mix(in srgb, #c46212 65%, white);
     --dsw-chart-4: color-mix(in srgb, #975bf1 65%, white);
     --dsw-chart-5: color-mix(in srgb, #d34591 65%, white);
+    --dsw-chart-6: color-mix(in srgb, #0d8a8a 65%, white);
+    --dsw-chart-7: color-mix(in srgb, #b3341f 65%, white);
+    --dsw-chart-8: color-mix(in srgb, #7a9018 65%, white);
+    --dsw-chart-9: color-mix(in srgb, #4b3fd0 65%, white);
+    --dsw-chart-10: color-mix(in srgb, #d4a017 65%, white);
     --dsw-chart-other: color-mix(in srgb, #576270 65%, white);
+    --dsw-provider-1: color-mix(in srgb, #1f7a8c 65%, white);
+    --dsw-provider-2: color-mix(in srgb, #6a8e3a 65%, white);
+    --dsw-provider-3: color-mix(in srgb, #a15c2f 65%, white);
+    --dsw-provider-4: color-mix(in srgb, #7b5ea7 65%, white);
+    --dsw-provider-5: color-mix(in srgb, #b03a5b 65%, white);
+    --dsw-provider-other: color-mix(in srgb, #576270 65%, white);
   }
 }

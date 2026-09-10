@@ -1,11 +1,14 @@
 /**
  * UsageStatsPanel renders the "usage statistics" settings section. It reads
  * the aggregate from the host (via the fenced /usage/api route) and draws
- * three charts by hand in SVG — a GitHub-style activity heatmap, a stacked
- * per-day token trend with a cache hit-rate curve, and a per-model donut +
- * list. No chart library; model colours come from a fixed two-set palette
- * (--dsw-chart-1..5 + the gray --dsw-chart-other, the reasonix usage-stats
- * palette with a lifted dark variant, defined in this plugin's module css).
+ * every chart by hand in SVG — a GitHub-style activity heatmap, a stacked
+ * per-day token trend with a cache hit-rate curve, and two ranked sections
+ * (models and providers) that each pair a stacked column with a detail list.
+ * No chart library; colours come from a fixed two-series palette
+ * (--dsw-chart-1..10 + the gray --dsw-chart-other for models,
+ * --dsw-provider-1..5 + the gray --dsw-provider-other for providers, the
+ * reasonix usage-stats palette with a lifted dark variant, defined in this
+ * plugin's module css).
  *
  * The panel follows the DSH client conventions: component styles are a CSS
  * Module (hashed class map imported as `css`), interactive atoms use the
@@ -13,13 +16,14 @@
  * semantic tokens. The functionality replicates the reasonix usage stats
  * feature; the implementation is DSH-native.
  */
-import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type RefObject } from 'react'
+import { Fragment, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type RefObject } from 'react'
 import clsx from 'clsx'
 import { Activity, CalendarDays, ChevronDown, ChevronRight, Coins, Cpu, MessageSquare, MessagesSquare } from 'lucide-react'
 import { Button, Input } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { DailyTokenUsage, ModelTokenUsage, UsageStatsRange, UsageStatsRequest } from '../wire.ts'
+import type { DailyTokenUsage, ModelTokenUsage, ProviderTokenUsage, UsageStatsRange, UsageStatsRequest } from '../wire.ts'
 import { fetchRange, UsageApiError } from './api.ts'
 import { ChartTip } from './ChartTip.tsx'
+import { StackedBar, useCollapsedHeight } from './StackedBar.tsx'
 import { formatTokens, formatCompact, formatPercent, cacheRate, cacheRateText, daysBetween, localDay, indexOfDay, shortDay, providerOf, modelNameOf, smoothPath, niceTicks } from './format.ts'
 import type { UsageStatsKey } from './locales.ts'
 import type { UsageStatsTranslator } from './index.tsx'
@@ -40,16 +44,39 @@ const HEAT_WEEKS = 26
 /** The trend chart caps its visible window at 180 days (mirrors reasonix). */
 const TREND_MAX_DAYS = 180
 
-/** The top-5 models keep a distinct rank colour; everything beyond collapses
+/** The top-10 models keep a distinct rank colour; everything beyond collapses
  *  into the gray "Other" step. */
-const TOP_MODELS = 5
+const TOP_MODELS = 10
 const OTHER_MODEL = '\u0000other' // sentinel; cannot collide with a real model ref
 const OTHER_COLOR = 'var(--dsw-chart-other)'
+
+/** The top-5 providers keep a distinct rank colour from the provider series;
+ *  everything beyond collapses into the gray "Other" step, mirroring the
+ *  model chart's shape at the provider dimension. */
+const TOP_PROVIDERS = 5
+const OTHER_PROVIDER = '\u0000pother' // sentinel; cannot collide with a real provider name
+const OTHER_PROVIDER_COLOR = 'var(--dsw-provider-other)'
+
+/** Shared empty key set: one stable identity for a collapsed expand state. */
+const NO_KEYS: ReadonlySet<string> = new Set()
 
 /** Grouped daily rows: the top models stay individual, the tail collapses
  *  into the OTHER_MODEL bucket with the breakdown kept for tooltips. */
 type GroupedDaily = DailyTokenUsage & { otherByModel: Record<string, number> }
 type GroupedModel = ModelTokenUsage & { items?: ModelTokenUsage[] }
+/** A provider folded into the aggregated Other bucket, carrying the models it
+ *  served so its own row can open that breakdown. */
+type FoldedProvider = ProviderTokenUsage & { models: ModelTokenUsage[] }
+/** One provider row: its own volume plus every model it served, so the hover
+ *  tip and the expandable detail list show the breakdown behind the number.
+ *  The Other row additionally carries the providers it folded, so opening it
+ *  lists PROVIDERS — their models sit one level further down, behind each of
+ *  those rows, not flattened into this one. */
+type GroupedProvider = ProviderTokenUsage & {
+  models: ModelTokenUsage[]
+  /** Folded providers behind the Other bucket; absent on a ranked row. */
+  folded?: FoldedProvider[]
+}
 
 export function UsageStatsPanel({ t }: { t: Translator }): JSX.Element {
   const [range, setRange] = useState<string>('30')
@@ -113,7 +140,7 @@ export function UsageStatsPanel({ t }: { t: Translator }): JSX.Element {
   }, [load])
 
   // A model's colour is its TOKEN rank (the host returns `models` sorted by
-  // token volume), matching reasonix: rank 1..5 take --dsw-chart-1..5 and the
+  // token volume), matching reasonix: rank 1..10 take --dsw-chart-1..10 and the
   // aggregated tail is the gray --dsw-chart-other. First-seen order would
   // scramble the rank colours (the top model could lose its blue, and a
   // top-5 model could fall into the gray bucket), so the rank is looked up in
@@ -125,8 +152,8 @@ export function UsageStatsPanel({ t }: { t: Translator }): JSX.Element {
     return `var(--dsw-chart-${rank})`
   }, [stats])
 
-  // Top-5 grouping: models beyond the top five by token volume collapse into
-  // the OTHER_MODEL bucket for the donut and the daily stacks; the per-day
+  // Top-10 grouping: models beyond the top ten by token volume collapse into
+  // the OTHER_MODEL bucket for the bar and the daily stacks; the per-day
   // breakdown stays available for the tooltip.
   const groupedStats = useMemo<{ models: GroupedModel[]; daily: GroupedDaily[] } | null>(() => {
     if (!stats) return null
@@ -157,6 +184,51 @@ export function UsageStatsPanel({ t }: { t: Translator }): JSX.Element {
       return { ...d, byModel, otherByModel }
     })
     return { models, daily }
+  }, [stats])
+
+  // Provider colours are the provider's own rank — a palette separate from the
+  // model series, so a provider never wears a model's hue.
+  const providerRank = useMemo(
+    () => (stats?.providers ?? []).filter((p) => p.tokens > 0).slice(0, TOP_PROVIDERS).map((p) => p.provider),
+    [stats],
+  )
+  const colorForProvider = useCallback((provider: string): string => {
+    if (provider === OTHER_PROVIDER) return OTHER_PROVIDER_COLOR
+    const slot = providerRank.indexOf(provider)
+    return `var(--dsw-provider-${Math.min(slot < 0 ? 0 : slot, TOP_PROVIDERS - 1) + 1})`
+  }, [providerRank])
+
+  // Top-5 providers by token volume with the tail aggregated into one gray
+  // bucket. Providers carrying no tokens in the range are dropped: a
+  // request-only provider (calls that produced nothing) has no usage to rank.
+  const groupedProviders = useMemo<GroupedProvider[] | null>(() => {
+    if (!stats) return null
+    const modelsOf = new Map<string, ModelTokenUsage[]>()
+    for (const m of stats.models) {
+      const list = modelsOf.get(m.provider)
+      if (list === undefined) modelsOf.set(m.provider, [m])
+      else list.push(m)
+    }
+    const ranked = stats.providers.filter((p) => p.tokens > 0)
+    const top = ranked.slice(0, TOP_PROVIDERS)
+    // The tail keeps its own rows (each with the models it served) instead of
+    // being flattened into one model list: the Other bucket stands for
+    // PROVIDERS, and expanding it must answer "which providers, and how much
+    // each" before "which models".
+    const folded: FoldedProvider[] = ranked
+      .slice(TOP_PROVIDERS)
+      .map((p) => ({ ...p, models: modelsOf.get(p.provider) ?? [] }))
+    const out: GroupedProvider[] = top.map((p) => ({ ...p, models: modelsOf.get(p.provider) ?? [] }))
+    if (folded.length > 0) {
+      out.push({
+        provider: OTHER_PROVIDER,
+        tokens: folded.reduce((sum, p) => sum + p.tokens, 0),
+        percent: folded.reduce((sum, p) => sum + p.percent, 0),
+        models: folded.flatMap((p) => p.models),
+        folded,
+      })
+    }
+    return out
   }, [stats])
 
   const trendDaily = groupedStats?.daily ?? []
@@ -232,6 +304,7 @@ export function UsageStatsPanel({ t }: { t: Translator }): JSX.Element {
           <Heatmap daily={heatDaily} from={heatWindow.from} to={heatWindow.to} t={t} panelRef={panelRef} />
           <DailyTrend models={trendModels} daily={trendDaily} t={t} colorForModel={colorForModel} panelRef={panelRef} />
           <ModelUsage models={trendModels} t={t} colorForModel={colorForModel} panelRef={panelRef} />
+          <ProviderUsage providers={groupedProviders ?? []} t={t} colorForProvider={colorForProvider} panelRef={panelRef} />
           {stats.to && (
             <div className={css.foot}>
               {t('asOf')} {stats.to}
@@ -742,104 +815,72 @@ function DailyTrend({ models, daily, t, colorForModel, panelRef }: { models: Gro
   )
 }
 
-// ── Section 6: per-model donut + list ─────────────────────────────────────
+// ── Section 6: per-model bar + list ──────────────────────────────────────
 
 function ModelUsage({ models, t, colorForModel, panelRef }: { models: GroupedModel[]; t: Translator; colorForModel: (m: string) => string; panelRef: RefObject<HTMLDivElement | null> }) {
   const [tip, setTip] = useState<{ model: string; tokens: number; percent: number; anchor: Element; items?: ModelTokenUsage[] } | null>(null)
   const [hover, setHover] = useState<string | null>(null)
   const [expandedOther, setExpandedOther] = useState(false)
-  const donutRef = useRef<HTMLDivElement>(null)
+  // The column is sized to the rows alone, so expanding Other never stretches
+  // the chart.
+  const [listRef, barH] = useCollapsedHeight()
 
   if (models.length === 0) return null
   const other = models.find((m) => m.model === OTHER_MODEL)
 
-  // The ring leaves a margin inside the fixed 200px viewBox at rest, so the
-  // hover-grow of the stroke never overflows into a clipped square. Sized
-  // down from the reasonix 240px: the DSH settings pane is narrower, and the
-  // per-model list beside it needs the width more than the ring does.
-  const OUTER = 95
-  const SW = 30
-  const R = OUTER - SW / 2
-  const CX = 100
-  const CIRC = 2 * Math.PI * R
-  const total = Math.max(1, models.reduce((sum, m) => sum + m.tokens, 0))
-  let offset = 0
+  // Stack order is the host's rank order: rank 1 sits at the base and the
+  // aggregated tail (the gray Other bucket) ends up on the lid.
+  const segments = models.map((m) => ({
+    key: m.model,
+    tokens: m.tokens,
+    color: colorForModel(m.model),
+    label: `${m.model === OTHER_MODEL ? t('other') : m.model}: ${formatTokens(m.tokens)} (${formatPercent(m.percent)})`,
+  }))
+
+  // A bar segment and its list row drive the same highlight; only the
+  // segment carries an anchor, so only it raises the tooltip.
+  const highlight = (key: string | null, anchor?: Element): void => {
+    setHover(key)
+    const m = key === null ? undefined : models.find((x) => x.model === key)
+    setTip(m !== undefined && anchor !== undefined
+      ? { model: m.model, tokens: m.tokens, percent: m.percent, anchor, items: m.items }
+      : null)
+  }
 
   return (
     <section className={css.section}>
       <h3 className={css.sectionTitle}>{t('modelUsage')}</h3>
       <div className={css.models}>
-        <div className={css.donutWrap} ref={donutRef}>
-          <svg className={css.donut} width={CX * 2} height={CX * 2} viewBox={`0 0 ${CX * 2} ${CX * 2}`} role="img" aria-label={t('modelUsage')}>
-            <circle className={css.donutTrack} cx={CX} cy={CX} r={R} fill="none" strokeWidth={SW} />
-            {models.map((m) => {
-              const frac = m.tokens / total
-              const dash = frac * CIRC
-              const active = hover === m.model || tip?.model === m.model
-              // Keyboard parity for the donut: the segment count is bounded
-              // (top models + Other), so focusable segments stay a reasonable
-              // tab path — unlike the heatmap's ~180 cells.
-              const tipLabel = `${m.model === OTHER_MODEL ? t('other') : m.model}: ${formatTokens(m.tokens)} (${formatPercent(m.percent)})`
-              const el = (
-                <circle
-                  key={m.model}
-                  className={clsx(css.donutSeg, hover !== null && !active && css.donutDim)}
-                  cx={CX}
-                  cy={CX}
-                  r={R}
-                  fill="none"
-                  stroke={colorForModel(m.model)}
-                  strokeDasharray={`${dash} ${CIRC - dash}`}
-                  strokeDashoffset={-offset}
-                  transform={`rotate(-90 ${CX} ${CX})`}
-                  style={{ strokeWidth: active ? SW + 5 : SW, transition: 'stroke-width 0.12s ease' }}
-                  tabIndex={0}
-                  role="button"
-                  aria-label={tipLabel}
-                  onMouseEnter={(e) => {
-                    setHover(m.model)
-                    // The tip anchors to the hovered segment's viewport rect,
-                    // so it stays inside the panel even at the ring's edges.
-                    setTip({ model: m.model, tokens: m.tokens, percent: m.percent, anchor: e.currentTarget, items: m.items })
-                  }}
-                  onMouseLeave={() => { setHover(null); setTip(null) }}
-                  onFocus={(e) => {
-                    setHover(m.model)
-                    setTip({ model: m.model, tokens: m.tokens, percent: m.percent, anchor: e.currentTarget, items: m.items })
-                  }}
-                  onBlur={() => { setHover(null); setTip(null) }}
-                />
-              )
-              offset += dash
-              return el
-            })}
-            <text className={css.donutCenter} x={CX} y={CX + 8} textAnchor="middle">{formatCompact(total)}</text>
-            <text className={css.donutLabel} x={CX} y={CX + 26} textAnchor="middle">{t('tokens')}</text>
-          </svg>
-          {tip && (
-            <ChartTip anchor={tip.anchor} panelRef={panelRef}>
-              <div className={css.tipTitle}>{tip.model === OTHER_MODEL ? t('other') : tip.model}</div>
-              <div>{t('total')}: {formatTokens(tip.tokens)}</div>
-              <div>{t('percent')}: {formatPercent(tip.percent)}</div>
-              {tip.items && tip.items.length > 0 && (
-                <div className={css.tipBreakdown}>
-                  {tip.items.map((it) => (
-                    <div key={it.model} className={clsx(css.tipRow, css.tipRowOther)}><i className={css.legendSwatch} style={{ background: OTHER_COLOR }} />{it.model}: {formatTokens(it.tokens)}</div>
-                  ))}
-                </div>
-              )}
-            </ChartTip>
-          )}
-        </div>
-        <ul className={css.modelList}>
-          {models.map((m) => {
+        <StackedBar
+          segments={segments}
+          ariaLabel={t('modelUsage')}
+          height={barH}
+          hovered={hover}
+          onHover={highlight}
+        />
+        {tip && (
+          <ChartTip anchor={tip.anchor} panelRef={panelRef}>
+            <div className={css.tipTitle}>{tip.model === OTHER_MODEL ? t('other') : tip.model}</div>
+            <div>{t('total')}: {formatTokens(tip.tokens)}</div>
+            <div>{t('percent')}: {formatPercent(tip.percent)}</div>
+            {tip.items && tip.items.length > 0 && (
+              <div className={css.tipBreakdown}>
+                {tip.items.map((it) => (
+                  <div key={it.model} className={clsx(css.tipRow, css.tipRowOther)}><i className={css.legendSwatch} style={{ background: OTHER_COLOR }} />{it.model}: {formatTokens(it.tokens)}</div>
+                ))}
+              </div>
+            )}
+          </ChartTip>
+        )}
+        <ul className={css.modelList} ref={listRef}>
+          {models.map((m, rank) => {
             const isOther = m.model === OTHER_MODEL
             return (
               <li
                 key={m.model}
                 className={clsx(css.modelRow, isOther && css.modelRowExpandable)}
-                onMouseEnter={() => setHover(m.model)}
-                onMouseLeave={() => setHover(null)}
+                onMouseEnter={() => highlight(m.model)}
+                onMouseLeave={() => highlight(null)}
                 {...(isOther
                   ? {
                       // Mouse convenience only: the keyboard path is the real
@@ -850,6 +891,7 @@ function ModelUsage({ models, t, colorForModel, panelRef }: { models: GroupedMod
                     }
                   : {})}
               >
+                <span className={css.modelRank} aria-hidden="true">{isOther ? '' : rank + 1}</span>
                 <i className={css.legendSwatch} style={{ background: colorForModel(m.model) }} />
                 <div className={css.modelId}>
                   <span className={css.modelName}>
@@ -900,7 +942,214 @@ function ModelUsage({ models, t, colorForModel, panelRef }: { models: GroupedMod
   )
 }
 
+// ── Section 7: per-provider bar + list ───────────────────────────────────
+//
+// The same anatomy as the model section one dimension up: a stacked column
+// on the left, the ranked list on the right, and one shared highlight so
+// hovering either side lights the other. Every row opens a detail list of its
+// own — a ranked provider opens the models it served, the Other bucket opens
+// the providers it folded, and each of those opens ITS models (two levels).
+// The hover tip carries the same breakdown for the bar's segments.
+
+function ProviderUsage({ providers, t, colorForProvider, panelRef }: { providers: GroupedProvider[]; t: Translator; colorForProvider: (p: string) => string; panelRef: RefObject<HTMLDivElement | null> }) {
+  const [tip, setTip] = useState<{ provider: string; tokens: number; percent: number; anchor: Element; models: ModelTokenUsage[] } | null>(null)
+  const [hover, setHover] = useState<string | null>(null)
+  // Two independent expand sets: `openRanked` holds ranked providers — and the
+  // Other bucket — opening their own detail list, `openFolded` holds providers
+  // folded inside Other opening theirs. Sets, not one key each, because several
+  // rows may stand open at once and the two levels nest.
+  const [openRanked, setOpenRanked] = useState<ReadonlySet<string>>(NO_KEYS)
+  const [openFolded, setOpenFolded] = useState<ReadonlySet<string>>(NO_KEYS)
+  // The column is sized to the ROWS alone (a detail wrapper carries no row
+  // class), so expanding a row at either level never stretches the chart.
+  const [listRef, barH] = useCollapsedHeight()
+
+  if (providers.length === 0) return null
+
+  const flipRanked = (key: string): void => { setOpenRanked((prev) => toggleIn(prev, key)) }
+  const flipFolded = (key: string): void => { setOpenFolded((prev) => toggleIn(prev, key)) }
+
+  const segments = providers.map((p) => ({
+    key: p.provider,
+    tokens: p.tokens,
+    color: colorForProvider(p.provider),
+    label: `${p.provider === OTHER_PROVIDER ? t('other') : p.provider}: ${formatTokens(p.tokens)} (${formatPercent(p.percent)})`,
+  }))
+
+  const highlight = (key: string | null, anchor?: Element): void => {
+    setHover(key)
+    const p = key === null ? undefined : providers.find((x) => x.provider === key)
+    setTip(p !== undefined && anchor !== undefined
+      ? { provider: p.provider, tokens: p.tokens, percent: p.percent, anchor, models: p.models }
+      : null)
+  }
+
+  return (
+    <section className={css.section}>
+      <h3 className={css.sectionTitle}>{t('providerUsage')}</h3>
+      <div className={css.models}>
+        <StackedBar
+          segments={segments}
+          ariaLabel={t('providerUsage')}
+          height={barH}
+          hovered={hover}
+          onHover={highlight}
+        />
+        {tip && (
+          <ChartTip anchor={tip.anchor} panelRef={panelRef}>
+            <div className={css.tipTitle}>{tip.provider === OTHER_PROVIDER ? t('other') : tip.provider}</div>
+            <div>{t('total')}: {formatTokens(tip.tokens)}</div>
+            <div>{t('percent')}: {formatPercent(tip.percent)}</div>
+            {tip.models.length > 0 && (
+              <div className={css.tipBreakdown}>
+                {tip.models.map((m) => (
+                  <div key={m.model} className={clsx(css.tipRow, css.tipRowOther)}>
+                    <i className={css.legendSwatch} style={{ background: OTHER_PROVIDER_COLOR }} />
+                    {modelNameOf(m.model)}: {formatTokens(m.tokens)}
+                  </div>
+                ))}
+              </div>
+            )}
+          </ChartTip>
+        )}
+        <ul className={css.modelList} ref={listRef}>
+          {providers.map((p, rank) => {
+            const isOther = p.provider === OTHER_PROVIDER
+            const folded = p.folded ?? []
+            const open = openRanked.has(p.provider)
+            const hasDetail = isOther ? folded.length > 0 : p.models.length > 0
+            return (
+              <Fragment key={p.provider}>
+                {/* The ranked row (and the Other bucket): mouse convenience
+                    only. The keyboard path is the real toggle button inside
+                    (aria-expanded + Enter/Space), so the row carries no
+                    role/tabIndex — a role=button li would nest two
+                    interactive elements. */}
+                <li
+                  className={clsx(css.modelRow, css.modelRowExpandable)}
+                  onMouseEnter={() => highlight(p.provider)}
+                  onMouseLeave={() => highlight(null)}
+                  onClick={() => flipRanked(p.provider)}
+                >
+                  <span className={css.modelRank} aria-hidden="true">{isOther ? '' : rank + 1}</span>
+                  <i className={css.legendSwatch} style={{ background: colorForProvider(p.provider) }} />
+                  <div className={css.modelId}>
+                    <span className={css.modelName}>
+                      <button
+                        type="button"
+                        className={css.modelToggle}
+                        onClick={(e) => { e.stopPropagation(); flipRanked(p.provider) }}
+                        aria-expanded={open}
+                        aria-label={isOther ? t('other') : p.provider}
+                      >
+                        {open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+                      </button>
+                      {isOther ? t('other') : p.provider}
+                    </span>
+                    {!isOther && <span className={css.modelProvider}>{t('providerModels', { n: p.models.length })}</span>}
+                  </div>
+                  <div className={css.modelValues}>
+                    <span className={css.modelTokens}>{formatTokens(p.tokens)}</span>
+                    <span className={css.modelPct}>{formatPercent(p.percent)}</span>
+                  </div>
+                </li>
+                {/* The detail list is a SIBLING of the row and never carries a
+                    row class, so the collapsed-height measure beside the bar
+                    keeps counting rows only — opening it cannot stretch the
+                    column. It stays mounted (the accordion animates a grid
+                    track) and is simply skipped when the row has nothing to
+                    show. */}
+                {hasDetail && (
+                  <li className={clsx(css.modelOtherWrap, open && css.modelOtherOpen)}>
+                    <ul className={css.modelOtherList}>
+                      {isOther
+                        ? folded.map((f) => {
+                            const openSub = openFolded.has(f.provider)
+                            return (
+                              <Fragment key={f.provider}>
+                                <li
+                                  className={clsx(css.modelRow, css.modelRowSub, css.modelRowExpandable)}
+                                  onClick={() => flipFolded(f.provider)}
+                                >
+                                  <i className={css.legendSwatch} style={{ background: OTHER_PROVIDER_COLOR }} />
+                                  <div className={css.modelId}>
+                                    <span className={css.modelName}>
+                                      <button
+                                        type="button"
+                                        className={css.modelToggle}
+                                        onClick={(e) => { e.stopPropagation(); flipFolded(f.provider) }}
+                                        aria-expanded={openSub}
+                                        aria-label={f.provider}
+                                      >
+                                        {openSub ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+                                      </button>
+                                      {f.provider}
+                                    </span>
+                                    <span className={css.modelProvider}>{t('providerModels', { n: f.models.length })}</span>
+                                  </div>
+                                  <div className={css.modelValues}>
+                                    <span className={css.modelTokens}>{formatTokens(f.tokens)}</span>
+                                    <span className={css.modelPct}>{formatPercent(f.percent)}</span>
+                                  </div>
+                                </li>
+                                {f.models.length > 0 && (
+                                  <li className={clsx(css.modelOtherWrap, openSub && css.modelOtherOpen)}>
+                                    <ul className={css.modelOtherList}>
+                                      {f.models.map((m) => (
+                                        <li key={m.model} className={clsx(css.modelRow, css.modelRowSub, css.modelRowDeep)}>
+                                          <i className={css.legendSwatch} style={{ background: OTHER_PROVIDER_COLOR }} />
+                                          <div className={css.modelId}>
+                                            <span className={css.modelName}>{modelNameOf(m.model)}</span>
+                                          </div>
+                                          <div className={css.modelValues}>
+                                            <span className={css.modelTokens}>{formatTokens(m.tokens)}</span>
+                                            <span className={css.modelPct}>{formatPercent(m.percent)}</span>
+                                          </div>
+                                        </li>
+                                      ))}
+                                    </ul>
+                                  </li>
+                                )}
+                              </Fragment>
+                            )
+                          })
+                        // A ranked provider opens the models it served, each
+                        // wearing that provider's own hue so the row group reads
+                        // as one block.
+                        : p.models.map((m) => (
+                            <li key={m.model} className={clsx(css.modelRow, css.modelRowSub)}>
+                              <i className={css.legendSwatch} style={{ background: colorForProvider(p.provider) }} />
+                              <div className={css.modelId}>
+                                <span className={css.modelName}>{modelNameOf(m.model)}</span>
+                              </div>
+                              <div className={css.modelValues}>
+                                <span className={css.modelTokens}>{formatTokens(m.tokens)}</span>
+                                <span className={css.modelPct}>{formatPercent(m.percent)}</span>
+                              </div>
+                            </li>
+                          ))}
+                    </ul>
+                  </li>
+                )}
+              </Fragment>
+            )
+          })}
+        </ul>
+      </div>
+    </section>
+  )
+}
+
 // ── helpers ───────────────────────────────────────────────────────────────
+
+/** Toggle one key in an immutable string set (a fresh Set every call, so React
+ *  sees a state change and unrelated keys keep their state). */
+function toggleIn(set: ReadonlySet<string>, key: string): ReadonlySet<string> {
+  const next = new Set(set)
+  if (next.has(key)) next.delete(key)
+  else next.add(key)
+  return next
+}
 
 function aggregateByModel(daily: Array<{ byModel: Record<string, number> }>): Record<string, number> {
   const out: Record<string, number> = {}

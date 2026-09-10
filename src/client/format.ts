@@ -14,12 +14,12 @@ export { providerOf, modelNameOf, daysInRange as daysBetween } from '../shared.t
 
 /** Exact token counts with thousands separators — no 万/亿/k/M units, the
  *  user reads the precise number (long values shrink to fit via FitText).
- *  Compact units stay on the axis labels and the donut centre only. */
+ *  Compact units stay on the axis labels and card sub-values only. */
 export function formatTokens(n: number): string {
   return n.toLocaleString('en-US')
 }
 
-/** English-style compact (B/M/k) for axis labels and the donut centre. */
+/** English-style compact (B/M/k) for axis labels and card sub-values. */
 export function formatCompact(n: number): string {
   if (n >= 1e9) return (n / 1e9).toFixed(1) + 'B'
   if (n >= 1e6) return (n / 1e6).toFixed(1) + 'M'

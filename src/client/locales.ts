@@ -39,6 +39,8 @@ export type UsageStatsKey =
   | 'dailyTrend'
   | 'trendLimited'
   | 'modelUsage'
+  | 'providerUsage'
+  | 'providerModels'
   | 'other'
   | 'total'
   | 'percent'
@@ -97,6 +99,8 @@ export const en: Record<UsageStatsKey, string> = {
   dailyTrend: 'Daily token trend',
   trendLimited: 'Showing the latest {n} days',
   modelUsage: 'Model usage',
+  providerUsage: 'Provider usage',
+  providerModels: '{n} models',
   other: 'Other',
   total: 'Total',
   percent: 'Share',
@@ -156,6 +160,8 @@ export const zh: Record<UsageStatsKey, string> = {
   dailyTrend: '按天 Token 趋势',
   trendLimited: '仅显示最近 {n} 天',
   modelUsage: '模型用量',
+  providerUsage: '各供应商用量',
+  providerModels: '{n} 个模型',
   other: '其他',
   total: '总用量',
   percent: '占比',
@@ -215,6 +221,8 @@ export const zhTW: Record<UsageStatsKey, string> = {
   dailyTrend: '每日 Token 趨勢',
   trendLimited: '僅顯示最近 {n} 天',
   modelUsage: '模型用量',
+  providerUsage: '各供應商用量',
+  providerModels: '{n} 個模型',
   other: '其他',
   total: '總用量',
   percent: '佔比',

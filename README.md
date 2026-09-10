@@ -36,6 +36,10 @@ DSH web 插件的用量统计面板：按天 Token 趋势、GitHub 风格活跃�
   <img src="docs/images/model-usage.png" alt="模型用量与各供应商用量：堆叠柱状图与明细列表" width="720">
 </p>
 
+<p align="center">
+  <img src="docs/images/provider-usage.png" alt="各供应商用量与面板设置项：柱状图、明细列表与三个开关" width="720">
+</p>
+
 ## 功能
 
 - **时间范围**：最近 7 / 14 / 30 / 90 天，或自定义起止日期
@@ -58,7 +62,7 @@ dsh plugin --profile <name> add dsh-usage-statistics-panel@latest
 
 插件挂载后，在 Web UI 的设置页左侧导航会出现"使用统计"页面。
 
-**兼容性**：本插件支持 DeepSeek Harness `>= 0.1.2-rc.1`（peer 声明不变），历史回扫双路径：`0.1.2-rc.1` 走 `list`+`inspect`，`0.1.3-alpha.*` 及以后版本走 `list`+`open`+分页 `read`+`close`（`inspect` 在新版宿主已移除）。开发依赖与核验目标对齐宿主 `0.1.5-rc.1`，V3 日志兼容由单测覆盖；真机验证情况见 `docs/release-notes-0.1.12.md`。
+**兼容性**：本插件支持 DeepSeek Harness `>= 0.1.2-rc.1`（peer 声明不变），历史回扫双路径：`0.1.2-rc.1` 走 `list`+`inspect`，`0.1.3-alpha.*` 及以后版本走 `list`+`open`+分页 `read`+`close`（`inspect` 在新版宿主已移除）。开发依赖与核验目标对齐宿主 `0.1.5-rc.1`，V3 日志兼容由单测覆盖；真机验证情况见 `docs/release-notes-0.1.13.md`。
 
 > **旧版本用户**：使用 DeepSeek Harness `0.1.1-rc.2` 或 `0.1.2-alpha.*` 的用户，请安装本插件的旧版本（`0.1.9` 及之前）。`0.1.10` 仅支持 `>= 0.1.2-rc.1`；自 `0.1.11` 起同一版本双路径支持 `0.1.2-rc.1` 与 `0.1.3-alpha.*`。
 

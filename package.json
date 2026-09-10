@@ -63,6 +63,7 @@
     "cordis.patch.yml",
     "docs/design.md",
     "docs/images",
+    "docs/*.svg",
     "README.md",
     "README_EN.md",
     "LICENSE"

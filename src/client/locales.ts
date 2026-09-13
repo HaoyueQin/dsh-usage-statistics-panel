@@ -52,6 +52,8 @@ export type UsageStatsKey =
   | 'cachePrecisionDesc'
   | 'tokenDetail'
   | 'tokenDetailDesc'
+  | 'streamThroughput'
+  | 'streamThroughputDesc'
   | 'stats.counts'
   | 'stats.tokensPerSecond'
   | 'stats.cacheHit'
@@ -112,6 +114,8 @@ export const en: Record<UsageStatsKey, string> = {
   cachePrecisionDesc: 'Show the cache hit rate with two decimals in the conversation bottom bar.',
   tokenDetail: 'Conversation token breakdown',
   tokenDetailDesc: 'Show total, cache hit/miss and output tokens in the conversation bottom bar.',
+  streamThroughput: 'Streaming throughput',
+  streamThroughputDesc: 'Show an estimated decode speed in the conversation bottom bar while a response streams, then the exact session figure once it settles.',
   'stats.counts': '{turns} turns · {steps} steps',
   'stats.tokensPerSecond': '{throughput} tok/s',
   'stats.cacheHit': 'Cache hit {percent}%',
@@ -173,6 +177,8 @@ export const zh: Record<UsageStatsKey, string> = {
   cachePrecisionDesc: '在会话底部信息栏以两位小数显示缓存命中率。',
   tokenDetail: '会话 Token 明细',
   tokenDetailDesc: '在会话底部信息栏显示总 Token、命中/未命中缓存与输出明细。',
+  streamThroughput: '流式吞吐速度',
+  streamThroughputDesc: '输出过程中在会话底部信息栏显示估算的解码速度，输出结束后回到会话累计的精确值。',
   'stats.counts': '{turns} 轮 · {steps} 步',
   'stats.tokensPerSecond': '{throughput} tok/s',
   'stats.cacheHit': '缓存命中 {percent}%',
@@ -234,6 +240,8 @@ export const zhTW: Record<UsageStatsKey, string> = {
   cachePrecisionDesc: '在會話底部資訊欄以兩位小數顯示快取命中率。',
   tokenDetail: '會話 Token 明細',
   tokenDetailDesc: '在會話底部資訊欄顯示總 Token、命中/未命中快取與輸出明細。',
+  streamThroughput: '串流吞吐速度',
+  streamThroughputDesc: '輸出過程中在會話底部資訊欄顯示估算的解碼速度，輸出結束後回到會話累計的精確值。',
   'stats.counts': '{turns} 輪 · {steps} 步',
   'stats.tokensPerSecond': '{throughput} tok/s',
   'stats.cacheHit': '快取命中 {percent}%',

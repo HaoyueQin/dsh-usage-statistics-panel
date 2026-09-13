@@ -70,6 +70,16 @@ button.pill[aria-expanded='true'] {
   margin: 0 6px;
 }
 
+/* Reserved slot for the speed figure: the official pill's figure only changes
+   when a step settles, but the live reading refreshes on every beat. A width
+   that tracked the digits would reflow the centred row on each of them and drag
+   the counts pill beside it along; 10ch covers "1200 tok/s", the widest shape
+   formatTokensPerSecond can produce. */
+.speed {
+  display: inline-block;
+  min-width: 10ch;
+}
+
 /* Portal dialog surface: fixed in the viewport, left/top supplied inline from
    the anchored-position clamp (12px viewport margin, layers above overlays). */
 .dialogPanel {

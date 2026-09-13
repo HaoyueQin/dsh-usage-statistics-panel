@@ -1,8 +1,9 @@
 /**
- * Tests for the bottom-bar enhancement preference store: two boolean toggles
- * (cache-hit-rate precision, detailed token breakdown) persisted as one JSON
- * blob in localStorage, with module-store subscription so the settings panel
- * and the stats line stay in sync inside the same client bundle.
+ * Tests for the bottom-bar enhancement preference store: three boolean toggles
+ * (cache-hit-rate precision, detailed token breakdown, streaming throughput)
+ * persisted as one JSON blob in localStorage, with module-store subscription so
+ * the settings panel and the stats line stay in sync inside the same client
+ * bundle.
  */
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -20,20 +21,37 @@ afterEach(() => {
 })
 
 describe('statsLineState', () => {
-  it('defaults both toggles to off and persists each flip as JSON', () => {
+  it('defaults every toggle to off and persists each flip as JSON', () => {
     expect(statsLineState.cachePrecision).toBe(false)
     expect(statsLineState.tokenDetail).toBe(false)
+    expect(statsLineState.streamThroughput).toBe(false)
 
     statsLineState.setCachePrecision(true)
-    expect(window.localStorage.getItem(STORAGE_KEY)).toBe('{"cachePrecision":true,"tokenDetail":false}')
+    expect(window.localStorage.getItem(STORAGE_KEY))
+      .toBe('{"cachePrecision":true,"tokenDetail":false,"streamThroughput":false}')
 
     statsLineState.setTokenDetail(true)
-    expect(window.localStorage.getItem(STORAGE_KEY)).toBe('{"cachePrecision":true,"tokenDetail":true}')
+    expect(window.localStorage.getItem(STORAGE_KEY))
+      .toBe('{"cachePrecision":true,"tokenDetail":true,"streamThroughput":false}')
+
+    statsLineState.setStreamThroughput(true)
+    expect(window.localStorage.getItem(STORAGE_KEY))
+      .toBe('{"cachePrecision":true,"tokenDetail":true,"streamThroughput":true}')
 
     statsLineState.setCachePrecision(false)
     expect(statsLineState.cachePrecision).toBe(false)
     expect(statsLineState.tokenDetail).toBe(true)
-    expect(window.localStorage.getItem(STORAGE_KEY)).toBe('{"cachePrecision":false,"tokenDetail":true}')
+    expect(statsLineState.streamThroughput).toBe(true)
+    expect(window.localStorage.getItem(STORAGE_KEY))
+      .toBe('{"cachePrecision":false,"tokenDetail":true,"streamThroughput":true}')
+  })
+
+  it('treats a blob written before the third toggle existed as off, not as corrupt', () => {
+    window.localStorage.setItem(STORAGE_KEY, '{"cachePrecision":true,"tokenDetail":true}')
+    resetStatsLineStateForTests()
+    expect(statsLineState.cachePrecision).toBe(true)
+    expect(statsLineState.tokenDetail).toBe(true)
+    expect(statsLineState.streamThroughput).toBe(false)
   })
 
   it('re-reads a persisted JSON value on load and ignores corrupt storage', () => {

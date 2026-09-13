@@ -2,11 +2,14 @@
  * Client preferences for the conversation bottom-bar (stats line) enhancements,
  * persisted in localStorage as one JSON blob.
  *
- * Two toggles share one blob so a single read covers both:
+ * Three toggles share one blob so a single read covers all of them:
  * - `cachePrecision`: render the cache-hit rate with two decimals (e.g.
  *   "85.25%") instead of the default integer percentage;
  * - `tokenDetail`: add the input (cache miss) row to the usage dialog's
- *   input / cache-read / cache-write / output breakdown.
+ *   input / cache-read / cache-write / output breakdown;
+ * - `streamThroughput`: while a step streams, replace the pill's speed figure
+ *   with the live estimate and fall back to the official session figure the
+ *   moment it settles.
  *
  * The panel row and the stats line live in two different slot trees but inside
  * the SAME client bundle instance, so a tiny module store keeps them in sync
@@ -20,9 +23,10 @@ const STORAGE_KEY = 'dsh-usage-statistics-panel:stats-line'
 export interface StatsLinePrefs {
   cachePrecision: boolean
   tokenDetail: boolean
+  streamThroughput: boolean
 }
 
-const DEFAULTS: StatsLinePrefs = { cachePrecision: false, tokenDetail: false }
+const DEFAULTS: StatsLinePrefs = { cachePrecision: false, tokenDetail: false, streamThroughput: false }
 
 function readStored(): StatsLinePrefs {
   try {
@@ -32,6 +36,7 @@ function readStored(): StatsLinePrefs {
     return {
       cachePrecision: parsed.cachePrecision === true,
       tokenDetail: parsed.tokenDetail === true,
+      streamThroughput: parsed.streamThroughput === true,
     }
   } catch {
     return { ...DEFAULTS }
@@ -61,6 +66,9 @@ export const statsLineState = {
   get tokenDetail(): boolean {
     return prefs.tokenDetail
   },
+  get streamThroughput(): boolean {
+    return prefs.streamThroughput
+  },
   setCachePrecision(next: boolean): void {
     if (next === prefs.cachePrecision) return
     prefs = { ...prefs, cachePrecision: next }
@@ -70,6 +78,12 @@ export const statsLineState = {
   setTokenDetail(next: boolean): void {
     if (next === prefs.tokenDetail) return
     prefs = { ...prefs, tokenDetail: next }
+    persist(prefs)
+    notify()
+  },
+  setStreamThroughput(next: boolean): void {
+    if (next === prefs.streamThroughput) return
+    prefs = { ...prefs, streamThroughput: next }
     persist(prefs)
     notify()
   },
@@ -84,11 +98,17 @@ export const statsLineState = {
 // and separate browser tabs do too. storage events fire on OTHER instances'
 // writes, so this listener re-reads and notifies; same-instance writes never
 // fire it (no double notify).
+function samePrefs(left: StatsLinePrefs, right: StatsLinePrefs): boolean {
+  return left.cachePrecision === right.cachePrecision
+    && left.tokenDetail === right.tokenDetail
+    && left.streamThroughput === right.streamThroughput
+}
+
 if (typeof window !== 'undefined') {
   window.addEventListener('storage', (event) => {
     if (event.key !== STORAGE_KEY) return
     const next = readStored()
-    if (next.cachePrecision === prefs.cachePrecision && next.tokenDetail === prefs.tokenDetail) return
+    if (samePrefs(next, prefs)) return
     prefs = next
     notify()
   })

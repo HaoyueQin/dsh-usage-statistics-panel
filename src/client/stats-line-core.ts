@@ -6,8 +6,9 @@
  * internals; these copies keep the "both toggles off" pills identical to
  * the official ones (guarded by the render tests).
  *
- * Two plugin-side readouts: a two-decimal cache-hit rate and a five-item
- * token breakdown (total / input / cache hit / cache miss / output).
+ * Three plugin-side readouts: a two-decimal cache-hit rate, a five-item
+ * token breakdown (total / input / cache hit / cache miss / output), and the
+ * live decode-throughput estimate for the step that is still streaming.
  */
 /**
  * Minimal structural skeletons of the official assembly types this module
@@ -274,5 +275,120 @@ export function deriveStats(nodes: readonly ConversationNodeLike[]): WindowStats
     }
   }
   return { turns: turns.size, steps, llmMs, toolMs, ttftMs, ttftSteps, decodeMs, decodeTokens }
+}
+
+// ── streaming throughput (plugin readout) ─────────────────────────────────
+
+/**
+ * One assistant output block as the conversation projection serves it. Only
+ * the three text-bearing kinds are priced; images and merge-extended blocks
+ * carry no readable character count.
+ */
+export interface AssistantBlockLike {
+  kind: string
+  /** `text` and `reasoning` blocks. */
+  text?: string
+  /** `tool-call` blocks: serialized arguments are model output too. */
+  argsRaw?: string
+}
+
+/** In-progress assistant output (the ChatSnapshot `legacy.partial` value). */
+export interface PartialAssistantLike {
+  turn: number
+  step: number
+  blocks: readonly AssistantBlockLike[]
+}
+
+/**
+ * DeepSeek's published text density (api-docs.deepseek.com, "Token 用量计算"):
+ * one Chinese character ≈ 0.6 token, one English character ≈ 0.3 token. Priced
+ * per code point with every non-ASCII character taking the denser rate — the
+ * conservative side, and the reason this file does not reuse the harness's own
+ * four-characters-per-token heuristic, which its README documents as
+ * underpricing CJK text.
+ */
+const CJK_TOKENS_PER_CHAR = 0.6
+const ASCII_TOKENS_PER_CHAR = 0.3
+
+/**
+ * Shortest observable decode window before a live rate is published, in ms
+ * (the same floor MiMo-Code's sidebar tps uses). Below it the first chunk's
+ * burst would read as hundreds of tok/s. The caller also publishes its FIRST
+ * reading at exactly this mark rather than at the next steady cadence, so the
+ * floor is the whole startup delay instead of being rounded up to a full
+ * refresh period.
+ */
+export const MIN_STREAM_WINDOW_MS = 500
+
+/**
+ * Band the measured correction stays inside, so one unrepresentative sample
+ * (an aborted step, a step that streamed tool JSON only) cannot scale the
+ * estimate away from the published density.
+ */
+const MIN_MEASURED_SCALE = 0.5
+const MAX_MEASURED_SCALE = 2
+
+/** Prior tokens for one string under the published density. */
+function priorTokens(text: string): number {
+  let tokens = 0
+  for (const character of text) {
+    tokens += character.codePointAt(0)! <= 0x7f ? ASCII_TOKENS_PER_CHAR : CJK_TOKENS_PER_CHAR
+  }
+  return tokens
+}
+
+/**
+ * Prior output-token estimate for one step's blocks. Provider `outputTokens`
+ * counts every completion token, so reasoning text and tool-call arguments are
+ * priced alongside the visible answer — pricing only the answer would make a
+ * tool-heavy step read far below its own settled figure.
+ */
+export function estimateOutputTokens(blocks: readonly AssistantBlockLike[]): number {
+  let tokens = 0
+  for (const block of blocks) {
+    if (block.kind === 'text' || block.kind === 'reasoning') tokens += priorTokens(block.text ?? '')
+    else if (block.kind === 'tool-call') tokens += priorTokens(block.argsRaw ?? '')
+  }
+  return tokens
+}
+
+/**
+ * Correction factor from the session's own settled steps: provider-reported
+ * output tokens divided by what the published density predicted for the same
+ * blocks. The density answers "what does this text cost before anything is
+ * known"; this factor carries whatever the live tokenizer does differently, so
+ * the estimate converges on the model actually in use. Null while no settled
+ * step carries both blocks and usage (the caller falls back to the raw prior).
+ */
+export function measuredTokenScale(nodes: readonly ConversationNodeLike[]): number | null {
+  let prior = 0
+  let actual = 0
+  for (const node of nodes) {
+    if (node.kind !== 'assistant') continue
+    const blocks = node.blocks as readonly AssistantBlockLike[] | undefined
+    const tokens = usageOutputTokens(node.usage)
+    if (blocks === undefined || tokens === null || tokens <= 0) continue
+    const estimate = estimateOutputTokens(blocks)
+    if (estimate <= 0) continue
+    prior += estimate
+    actual += tokens
+  }
+  if (prior <= 0) return null
+  return Math.min(MAX_MEASURED_SCALE, Math.max(MIN_MEASURED_SCALE, actual / prior))
+}
+
+/**
+ * Live decode throughput for the step currently streaming: estimated tokens
+ * over the observed window, the same quotient the settled figures use. The
+ * window starts at the first visible output, so first-token latency stays out
+ * of the denominator exactly as the official `decodeMs` keeps it out.
+ * @param tokens - calibrated output-token estimate for the in-flight blocks.
+ * @param elapsedMs - observed decode window in ms.
+ * @returns null before the floor elapses or with no tokens yet, leaving the
+ *   caller to show the official figure rather than a first-chunk burst.
+ */
+export function streamingTokensPerSecond(tokens: number, elapsedMs: number): number | null {
+  if (tokens <= 0 || elapsedMs < MIN_STREAM_WINDOW_MS) return null
+  return tokens / (elapsedMs / 1_000)
 }
 

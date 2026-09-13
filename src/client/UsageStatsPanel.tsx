@@ -392,16 +392,20 @@ function EntryOption({ t }: { t: Translator }) {
 }
 
 /**
- * The two bottom-bar enhancement preferences, below the sidebar entry:
- * "Precise cache hit rate" (two decimals on the usage pill and dialog) and
- * "Session token breakdown" (an extra cache-miss row in the usage dialog).
+ * The three bottom-bar enhancement preferences, below the sidebar entry:
+ * "Precise cache hit rate" (two decimals on the usage pill and dialog),
+ * "Session token breakdown" (an extra cache-miss row in the usage dialog) and
+ * "Streaming throughput" (a live decode-speed estimate while a step streams,
+ * replaced by the exact session figure the moment it settles).
  */
 function StatsLineOptions({ t }: { t: Translator }) {
   const [cachePrecision, setCachePrecision] = useState(statsLineState.cachePrecision)
   const [tokenDetail, setTokenDetail] = useState(statsLineState.tokenDetail)
+  const [streamThroughput, setStreamThroughput] = useState(statsLineState.streamThroughput)
   useEffect(() => statsLineState.subscribe(() => {
     setCachePrecision(statsLineState.cachePrecision)
     setTokenDetail(statsLineState.tokenDetail)
+    setStreamThroughput(statsLineState.streamThroughput)
   }), [])
   return (
     <>
@@ -418,6 +422,13 @@ function StatsLineOptions({ t }: { t: Translator }) {
         checked={tokenDetail}
         ariaLabel={t('tokenDetail')}
         onChange={(next) => { statsLineState.setTokenDetail(next) }}
+      />
+      <SettingToggle
+        title={t('streamThroughput')}
+        desc={t('streamThroughputDesc')}
+        checked={streamThroughput}
+        ariaLabel={t('streamThroughput')}
+        onChange={(next) => { statsLineState.setStreamThroughput(next) }}
       />
     </>
   )

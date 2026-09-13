@@ -9,7 +9,8 @@ import { describe, expect, it } from 'vitest'
 import type { AssistantMessageNodeLike } from '../src/client/stats-line-core.ts'
 import {
   assistantStepReading, billedInputTokens, cacheHitPercent, cacheHitPercentPrecise,
-  deriveStats, formatDuration, formatTokensCompact, formatTokensPerSecond, tokenBreakdown,
+  deriveStats, estimateOutputTokens, formatDuration, formatTokensCompact, formatTokensPerSecond,
+  measuredTokenScale, streamingTokensPerSecond, tokenBreakdown,
   type StepReading, type TokenUsageLike, type WindowStats,
 } from '../src/client/stats-line-core.ts'
 
@@ -162,5 +163,80 @@ describe('assistantStepReading / deriveStats (replicated window fold)', () => {
     // The usage-less step contributes no decode share, keeping the ratio honest.
     expect(stats.decodeMs).toBe(3_000)
     expect(stats.decodeTokens).toBe(40)
+  })
+})
+
+describe('streaming throughput (plugin readout)', () => {
+  const ascii = (n: number): string => 'a'.repeat(n)
+  const hanzi = (n: number): string => '中'.repeat(n)
+  /** A settled assistant node with explicit blocks and optional usage. */
+  const step = (
+    seq: number,
+    blocks: readonly unknown[],
+    outputTokens?: number,
+  ): AssistantMessageNodeLike => ({
+    kind: 'assistant', seq, time: seq * 1_000, turn: 1, step: seq, blocks,
+    ...(outputTokens === undefined ? {} : { usage: { outputTokens } }),
+  })
+
+  it('prices text and reasoning at the published density, tool arguments with them', () => {
+    // DeepSeek's published density: 0.3 token per ASCII char, 0.6 per CJK char.
+    expect(estimateOutputTokens([{ kind: 'text', text: ascii(10) }])).toBeCloseTo(3)
+    expect(estimateOutputTokens([{ kind: 'text', text: hanzi(10) }])).toBeCloseTo(6)
+    expect(estimateOutputTokens([{ kind: 'reasoning', text: hanzi(5) }])).toBeCloseTo(3)
+    expect(estimateOutputTokens([{ kind: 'tool-call', argsRaw: ascii(20) }])).toBeCloseTo(6)
+    // Reasoning and the visible answer both bill, so a stream carrying both adds up.
+    expect(estimateOutputTokens([
+      { kind: 'text', text: hanzi(10) },
+      { kind: 'reasoning', text: hanzi(10) },
+    ])).toBeCloseTo(12)
+  })
+
+  it('prices blocks that carry no readable text as zero', () => {
+    expect(estimateOutputTokens([])).toBe(0)
+    expect(estimateOutputTokens([{ kind: 'image' }, { kind: 'other' }])).toBe(0)
+    expect(estimateOutputTokens([{ kind: 'tool-call' }])).toBe(0)
+  })
+
+  it('measures the correction from a settled step carrying both blocks and usage', () => {
+    // 100 hanzi price as 60 prior tokens; the provider reported 90 → ×1.5.
+    expect(measuredTokenScale([step(1, [{ kind: 'text', text: hanzi(100) }], 90)])).toBeCloseTo(1.5)
+  })
+
+  it('returns null without a usable settled sample', () => {
+    expect(measuredTokenScale([])).toBeNull()
+    // Blocks without usage, usage without blocks, and a zero-token sample are
+    // all excluded rather than dragging the factor to its floor.
+    expect(measuredTokenScale([step(1, [{ kind: 'text', text: hanzi(10) }])])).toBeNull()
+    expect(measuredTokenScale([step(1, [], 50)])).toBeNull()
+    expect(measuredTokenScale([step(1, [{ kind: 'text', text: hanzi(10) }], 0)])).toBeNull()
+    // Tool results and user turns are not assistant output.
+    expect(measuredTokenScale([
+      { kind: 'tool-result', seq: 3, time: 3_000, callId: 'c', call: null, callTime: null, content: [], isError: false, callView: null, resultView: null, subCalls: [] },
+    ])).toBeNull()
+  })
+
+  it('keeps one unrepresentative sample inside the correction band', () => {
+    expect(measuredTokenScale([step(1, [{ kind: 'text', text: hanzi(100) }], 6_000)])).toBe(2)
+    expect(measuredTokenScale([step(1, [{ kind: 'text', text: hanzi(100) }], 3)])).toBe(0.5)
+  })
+
+  it('pools every settled sample instead of trusting the last one', () => {
+    // 180 reported tokens over 120 prior ones → 1.5, not either sample's own ratio.
+    expect(measuredTokenScale([
+      step(1, [{ kind: 'text', text: hanzi(100) }], 120),
+      step(2, [{ kind: 'text', text: hanzi(100) }], 60),
+    ])).toBeCloseTo(1.5)
+  })
+
+  it('withholds a live rate until the window is long enough to mean something', () => {
+    expect(streamingTokensPerSecond(200, 499)).toBeNull()
+    expect(streamingTokensPerSecond(200, 500)).toBeCloseTo(400)
+    expect(streamingTokensPerSecond(200, 2_000)).toBeCloseTo(100)
+  })
+
+  it('returns null instead of a rate over zero tokens', () => {
+    expect(streamingTokensPerSecond(0, 5_000)).toBeNull()
+    expect(streamingTokensPerSecond(-1, 5_000)).toBeNull()
   })
 })

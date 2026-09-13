@@ -2,6 +2,8 @@ name: Sync to Gitee
 
 # GitHub 为主仓，Gitee 只读镜像：push 代码自动镜像，发布/编辑 Release 自动同步。
 # 同步内容：tag、标题、说明正文、预发布标记、附件（与 GitHub 同名同大小的文件跳过不重传）。
+# tag 走 --force：发布后 tag 若被重建到新提交，无 --force 会被 Gitee 以 "already exists"
+# 拒绝并让整个 job 失败（v0.2.0 就这样红过一次）。镜像只读，覆盖是预期行为。
 # 需要在 GitHub 仓库 Settings > Secrets and variables > Actions 中添加：
 #   GITEE_PRIVATE_TOKEN = Gitee 私人令牌（需 projects 权限）
 
@@ -24,7 +26,7 @@ jobs:
         run: |
           git remote add gitee "https://oauth2:${GITEE_PRIVATE_TOKEN}@gitee.com/${{ github.repository }}.git"
           git push gitee --all
-          git push gitee --tags
+          git push gitee --tags --force
         env:
           GITEE_PRIVATE_TOKEN: ${{ secrets.GITEE_PRIVATE_TOKEN }}
 
@@ -39,7 +41,7 @@ jobs:
         run: |
           git remote add gitee "https://oauth2:${GITEE_PRIVATE_TOKEN}@gitee.com/${{ github.repository }}.git"
           git push gitee --all
-          git push gitee --tags
+          git push gitee --tags --force
         env:
           GITEE_PRIVATE_TOKEN: ${{ secrets.GITEE_PRIVATE_TOKEN }}
       - name: Sync release to Gitee (create or update)

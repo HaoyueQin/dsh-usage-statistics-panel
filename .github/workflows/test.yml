@@ -1,5 +1,5 @@
 # Single-host regression: devDependencies pin every @deepseek-ai/* package to
-# the DSH 0.1.2-rc.1 line, and the peer range promises DSH >= 0.1.2-rc.1, so
+# the DSH 0.1.5-rc.2 line, and the peer range promises DSH >= 0.1.2-rc.1, so
 # every push/PR runs the full build+test suite against exactly that baseline.
 name: test
 

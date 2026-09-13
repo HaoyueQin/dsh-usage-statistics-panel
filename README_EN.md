@@ -61,7 +61,7 @@ After mounting, **hard-refresh the browser** (Cmd/Ctrl+Shift+R): client-half cha
 
 Once mounted, a "Usage statistics" page appears in the left navigation of the Settings shell.
 
-**Compatibility**: this plugin supports DeepSeek Harness `>= 0.1.2-rc.1` (peer declaration unchanged) with a dual-path backfill: `list`+`inspect` on `0.1.2-rc.1`, `list`+`open`+paged `read`+`close` on `0.1.3-alpha.*` and later (`inspect` was removed upstream). Dev dependencies and the verification target track host `0.1.5-rc.1`, and V3 log compatibility is covered by unit tests.
+**Compatibility**: this plugin supports DeepSeek Harness `>= 0.1.2-rc.1` (peer declaration unchanged) with a dual-path backfill: `list`+`inspect` on `0.1.2-rc.1`, `list`+`open`+paged `read`+`close` on `0.1.3-alpha.*` and later (`inspect` was removed upstream). Dev dependencies and the verification target track host `0.1.5-rc.2`, and V3 log compatibility is covered by unit tests.
 
 > **Older-host users**: if you run DeepSeek Harness `0.1.1-rc.2` or `0.1.2-alpha.*`, please install an older plugin version (`0.1.9` or earlier). `0.1.10` supports only `>= 0.1.2-rc.1`; from `0.1.11` one build serves both `0.1.2-rc.1` and `0.1.3-alpha.*`.
 

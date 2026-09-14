@@ -461,6 +461,47 @@ describe('StatsLineEnhanced streaming throughput', () => {
     }
     expect(pill.textContent).toContain('60 tok/s')
   })
+
+  it('does not charge a mid-stream attach to the window it opens on', () => {
+    // The reported defect. Switching to a session that is already streaming
+    // mounts the row with the step's whole output in hand: the stream ran while
+    // this row did not exist, so the first frame it ever sees carries the whole
+    // backlog and the clock it can measure with is milliseconds old. The window
+    // that opens on such a frame must treat what it already holds as its
+    // baseline, not as growth of its own.
+    const seat = liveSeat([assistant(1, 1)], partialWith(30_000))
+    statsLineState.setStreamThroughput(true)
+    render(<StatsLineEnhanced useChat={seat.useChat} useProjection={projections(pills)} t={t} />)
+    const pill = screen.getByRole('button', { name: OFFICIAL })
+    // The attach frame carries no watched growth yet: the official session
+    // figure stays on screen and no thousands-per-second reading appears.
+    expect(pill.textContent).toContain('20 tok/s')
+
+    // The window first spans the observation floor two seconds later, with the
+    // stream having added one character since the switch: the reading is that
+    // 0.6 token over 2 s (0.3 tok/s), not 18 001 tokens over the same 2 s.
+    act(() => { vi.advanceTimersByTime(2_000) })
+    act(() => { seat.set(partialWith(30_001)) })
+    expect(pill.textContent).toContain('0.3 tok/s')
+    expect(pill.textContent).not.toContain('9000 tok/s')
+  })
+
+  it('measures the first reading after a switch from that point on', () => {
+    // The attach frame's count is the step's history, so it is the window's
+    // baseline. Without that, the frame the row mounts on hands its whole count
+    // to a window whose clock has only just started: switching to a session that
+    // is already streaming read 18 018 tokens over the first second of watching
+    // — 18 036 tok/s on screen — instead of the stream's own rate.
+    const seat = liveSeat([assistant(1, 1)], partialWith(30_000))
+    statsLineState.setStreamThroughput(true)
+    render(<StatsLineEnhanced useChat={seat.useChat} useProjection={projections(pills)} t={t} />)
+    const pill = screen.getByRole('button', { name: OFFICIAL })
+    act(() => { vi.advanceTimersByTime(1_000) })
+    act(() => { seat.set(partialWith(30_060)) })
+    // Only the 36 tokens observed inside the window count: 36 / 1 s.
+    expect(pill.textContent).toContain('36 tok/s')
+    expect(pill.textContent).not.toContain('18036 tok/s')
+  })
 });
 
 /**

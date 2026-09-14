@@ -378,27 +378,39 @@ describe('StatsLineEnhanced streaming throughput', () => {
     expect(pill.textContent).toContain('90 tok/s')
   })
 
-  it('keeps one window when the estimate dips mid-step', () => {
+  it('re-anchors on a mid-step collapse instead of reporting a rate for a gap', () => {
     // Block boundaries replace accumulated text wholesale (a reasoning block
     // closes, a retry empties the stream), so the estimate legitimately shrinks
-    // inside one step. Re-anchoring the window on every dip would collapse the
-    // denominator — the reading would never clear the floor during reasoning and
-    // would spike the moment the answer started.
+    // inside one step. A dip means the counts before it describe text that is no
+    // longer there: the window re-anchors, so the collapse itself never reads as
+    // a rate and the growth after it is measured from where the estimate landed.
     const { seat, pill } = mount(partialWith(0))
     act(() => { vi.advanceTimersByTime(500) })
     act(() => { seat.set(partialWith(charsBy(500))) })
     expect(pill.textContent).toContain('60 tok/s')
 
-    // 30 → 3 estimated tokens: the window keeps running, so t=1.5s reads
-    // 3/1.5 = 2, not a re-anchored 3/1 = 3.
+    // 30 → 3 estimated tokens at t=1.5s: the window restarts, and with no span
+    // yet the official figure is what stays on screen.
     act(() => { vi.advanceTimersByTime(1_000) })
     act(() => { seat.set(partialWith(5)) })
-    expect(pill.textContent).toContain('2 tok/s')
+    expect(pill.textContent).toContain('20 tok/s')
+    expect(pill.textContent).not.toContain('60 tok/s')
 
-    // Recovery continues the same window: 150/2.5 = 60, not a spike to 150/1.
+    // Growth resumes from the re-anchored count: 100 hanzi by t=2.0s is 60
+    // tokens over the 0.5 s window (the dip's frame and the delta that resumes
+    // the stream landed 50 ms apart, so the window opens on the latter), and the
+    // rate settles as the window grows past the 2 s cap.
+    act(() => { vi.advanceTimersByTime(500) })
+    act(() => { seat.set(partialWith(charsBy(1_000))) })
+    expect(pill.textContent).toContain('114 tok/s')
+    act(() => { vi.advanceTimersByTime(500) })
+    act(() => { seat.set(partialWith(charsBy(1_500))) })
+    expect(pill.textContent).toContain('87 tok/s')
     act(() => { vi.advanceTimersByTime(1_000) })
     act(() => { seat.set(partialWith(charsBy(2_500))) })
-    expect(pill.textContent).toContain('60 tok/s')
+    // The window has slid past the re-anchor, so the reading is the stream's
+    // rate again (60 tok/s), not a value anchored on the collapsed count.
+    expect(pill.textContent).toMatch(/(6\d|7[0-5]) tok\/s/)
   })
 
   it('restarts the window when the stream moves to the next step', () => {
@@ -414,6 +426,39 @@ describe('StatsLineEnhanced streaming throughput', () => {
     // 1s into that window: 100 hanzi = 60 tokens over 1s, the same rate again.
     act(() => { vi.advanceTimersByTime(1_000) })
     act(() => { seat.set(partialWith(charsBy(1_000), 1, 2)) })
+    expect(pill.textContent).toContain('60 tok/s')
+  })
+
+  it('does not publish a rate for text the UI only received in one late frame', () => {
+    // The reported defect. Frames are published on animation frames, so a tab
+    // that was backgrounded (or a busy main thread) hands the row a whole
+    // backlog at once while the stream kept running — 2 500 hanzi here is the
+    // ~19 s of output a 20 s suspension accumulates at 100 hanzi/s. The old
+    // figure divided that backlog by a window that had just opened — thousands
+    // of tok/s — and then decayed for the rest of the step as the denominator
+    // grew. The threshold sits at 3 000 tok/s, above the fastest model in
+    // service, so what the reading must skip is the suspension, not fast output.
+    const { seat, pill } = mount(partialWith(0))
+    act(() => { vi.advanceTimersByTime(20_000) })
+    act(() => { seat.set(partialWith(2_500)) })
+    expect(pill.textContent).toContain('20 tok/s')
+    expect(pill.textContent).not.toContain('2500 tok/s')
+
+    // And it stays out: the reading is the stream's own rate from here on, not
+    // the backlog decaying as the denominator grows.
+    act(() => { vi.advanceTimersByTime(250) })
+    act(() => { seat.set(partialWith(2_511)) })
+    expect(pill.textContent).not.toContain('2500 tok/s')
+
+    // The stream then continues at the steady 100 hanzi/s, delivered the way a
+    // live one is: a frame every 250 ms. The backlog stays out of the figure, and
+    // the window — bounded above — slides past its tail, so the reading settles
+    // on the stream's real rate (60 tok/s) instead of decaying across the whole
+    // step the way the cumulative quotient did.
+    for (let step = 1; step <= 9; step += 1) {
+      act(() => { vi.advanceTimersByTime(250) })
+      act(() => { seat.set(partialWith(2_486 + charsBy(step * 250))) })
+    }
     expect(pill.textContent).toContain('60 tok/s')
   })
 });

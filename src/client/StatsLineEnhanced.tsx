@@ -16,7 +16,11 @@
  * The third toggle, streaming throughput, replaces the gauge pill's speed
  * figure with a live estimate while a step is still streaming and drops back to
  * the official session figure the moment it settles. That subscription lives in
- * its own child component so stream deltas never re-render the pills.
+ * its own child component so stream deltas never re-render the pills. The live
+ * figure itself is measured by a bounded sliding window over observed token
+ * growth (stats-line-core's StreamingRateSampler): the earlier cumulative
+ * quotient charged a whole step's text to a window that had just opened, so a
+ * frame published late read as thousands of tok/s and then decayed.
  *
  * Kernel contract (DSH >= 0.1.2-rc.1): the slot's standard session selector
  * is injected as `useChat` over the ui-chat ChatSnapshot; the `legacy.nodes`
@@ -34,7 +38,7 @@ import { MEASURE_STYLE, useStatDialog, type StatDialogSeat } from './stat-dialog
 import {
   billedInputTokens, cacheHitPercent, cacheHitPercentPrecise, deriveStats,
   estimateOutputTokens, formatDuration, formatTokensCompact, formatTokensPerSecond,
-  measuredTokenScale, streamingTokensPerSecond, tokenBreakdown,
+  measuredTokenScale, StreamingRateSampler, tokenBreakdown,
   type ConversationNodeLike, type PartialAssistantLike, type UseProjection, type WindowStats,
 } from './stats-line-core.ts'
 import { formatTokens } from './format.ts'
@@ -125,37 +129,28 @@ function LiveSpeed({ useChat, scale, fallback, t }: {
     () => (partial == null ? 0 : estimateOutputTokens(partial.blocks) * scale),
     [partial, scale],
   )
-  // The decode window opens when this step's output first becomes observable and
-  // closes when the step leaves the partial slot — nothing else re-anchors it.
+  // Every reading goes through the sampler, which measures the token growth it
+  // observed inside a bounded window rather than the step's cumulative estimate
+  // over an ever-growing span. That pair of definitions is what produced the
+  // reported figure: text the UI only published late — a frame carrying a
+  // batched backlog, which is what a backgrounded tab returns with, since
+  // requestAnimationFrame suspends while the stream keeps running — was charged
+  // to a window that had just opened, reading as thousands of tok/s and then
+  // decaying for the rest of the step as the denominator grew.
   //
-  // In particular it must NOT restart when the estimate dips. The accumulator
-  // replaces a block wholesale at block boundaries (`block-start` empties the
-  // index, `block-end` swaps in the settled block) and a retry empties the
-  // stream, so a shrinking estimate mid-step is ordinary. Re-anchoring on each
-  // dip collapses the denominator: the reading then never clears the minimum
-  // window during the reasoning phase and spikes the moment the answer starts.
-  const probe = useRef<{ key: string; startedAt: number } | null>(null)
-  useEffect(() => {
-    if (key === null) {
-      probe.current = null
-      return
-    }
-    if (probe.current?.key === key) return
-    probe.current = { key, startedAt: Date.now() }
-  }, [key])
-  // The quotient is evaluated at render time with the clock read at that very
-  // instant, so numerator and denominator always describe the same moment. That
-  // is what lets every delta update the figure honestly: evaluating it against a
-  // stored "last refreshed at" timestamp instead would pair a fresh numerator
-  // with a stale denominator, and the figure would climb between refreshes then
-  // snap back — a sawtooth that reads as jitter.
-  //
-  // So the deltas drive the reading, which is what makes it a streaming figure
-  // at all; the beat below only covers a step that has gone quiet mid-answer,
-  // where the denominator keeps growing while no frame arrives.
-  const reading = probe.current === null || probe.current.key !== key
-    ? null
-    : streamingTokensPerSecond(tokens, Date.now() - probe.current.startedAt)
+  // A step change owns a fresh window, so the last frames of one step are never
+  // charged to the next. That reset is a render-time consequence of the key
+  // rather than an effect: switching steps renders with the new key, and the
+  // sampler that answers it is the new one, with no frame in between reporting
+  // a rate stitched from two steps.
+  const sampler = useRef<{ key: string | null; rate: StreamingRateSampler } | null>(null)
+  const rate = sampler.current?.key === key ? sampler.current.rate : new StreamingRateSampler()
+  sampler.current = { key, rate }
+  // The sampler is fed at render time, so the window is built from the frames
+  // themselves and every delta can move it; the beat below only covers a step
+  // that has gone quiet mid-answer, where no frame arrives to extend the window.
+  rate.observe(tokens, Date.now())
+  const reading = rate.ratePerSecond()
   // Keyed on "a step is streaming", not on the step identity: switching steps
   // must not tear the beat down and defer the next one by a full period.
   const streaming = key !== null

@@ -9,6 +9,9 @@
  * Three plugin-side readouts: a two-decimal cache-hit rate, a five-item
  * token breakdown (total / input / cache hit / cache miss / output), and the
  * live decode-throughput estimate for the step that is still streaming.
+ *
+ * The live figure is a rate over observations, not a cumulative quotient:
+ * StreamingRateSampler at the bottom of this file carries the reasoning.
  */
 /**
  * Minimal structural skeletons of the official assembly types this module
@@ -313,12 +316,44 @@ const ASCII_TOKENS_PER_CHAR = 0.3
 /**
  * Shortest observable decode window before a live rate is published, in ms
  * (the same floor MiMo-Code's sidebar tps uses). Below it the first chunk's
- * burst would read as hundreds of tok/s. The caller also publishes its FIRST
- * reading at exactly this mark rather than at the next steady cadence, so the
- * floor is the whole startup delay instead of being rounded up to a full
- * refresh period.
+ * burst would read as hundreds of tok/s; the sampler also publishes its FIRST
+ * reading at exactly this mark rather than at the next steady cadence.
  */
 export const MIN_STREAM_WINDOW_MS = 500
+
+/**
+ * Longest window a live rate may span, in ms. This is the bound the previous
+ * cumulative quotient lacked: any artifact inside the window — a frame the UI
+ * published late, a retry, a block boundary — leaves the figure within one
+ * window instead of distorting the reading for the rest of the step.
+ */
+const MAX_STREAM_WINDOW_MS = 2_000
+
+/**
+ * Sampling floor, in ms. Faster frames than this cannot move a windowed rate
+ * (their tokens barely shift it, their timestamp only shortens the span), so
+ * dropping them keeps the buffer small without changing the published figure.
+ */
+const MIN_SAMPLE_GAP_MS = 50
+
+/**
+ * Hard cap on windowed observations, well above what a 2 s window holds at any
+ * real frame rate (≈ 125 at 60 fps, ≈ 40 at the host's 50 ms stream cadence).
+ */
+const MAX_WINDOW_SAMPLES = 512
+
+/**
+ * Highest decode rate the sampling can resolve, in tokens per ms: 3_000 tok/s.
+ * That sits well above the fastest model in service (a few hundred tok/s, with
+ * the hardware-exotic end near 1_000), so a real stream is never mistaken for an
+ * artifact. A window whose slope exceeds it did not stream that fast — the
+ * figure only looks explosive because the UI published the token count late (a
+ * background tab's animation frames are suspended while the stream keeps
+ * running, so the first frame after a return carries the whole backlog). Such a
+ * window is re-anchored instead of published: the display skips the burst and
+ * resumes from the tokens that actually arrive while it is watching.
+ */
+const MAX_SAMPLED_TOKENS_PER_MS = 3
 
 /**
  * Band the measured correction stays inside, so one unrepresentative sample
@@ -327,6 +362,115 @@ export const MIN_STREAM_WINDOW_MS = 500
  */
 const MIN_MEASURED_SCALE = 0.5
 const MAX_MEASURED_SCALE = 2
+
+/**
+ * Bounded sliding-window decode-rate estimator for the step currently
+ * streaming.
+ *
+ * Two rules keep the figure honest, and both follow from the same mistake the
+ * cumulative quotient made — pairing a numerator that covers the whole step
+ * with a denominator that starts when the UI first looked:
+ *
+ * 1. The numerator is the token growth OBSERVED inside the window, never the
+ *    step's cumulative estimate. Text produced before the window opened (or
+ *    during a frame the UI never published) therefore cannot be charged to it.
+ * 2. The window is bounded above as well as below. A rate is a statement about
+ *    a span; over an unbounded span it degrades into the step's lifetime
+ *    average and any early artifact fades for minutes instead of seconds.
+ *
+ * The window opens at the first observation carrying tokens, so idle time
+ * before the first delta stays out of the denominator exactly as the official
+ * `decodeMs` keeps first-token latency out of the settled figure.
+ *
+ * Callers feed it the running estimate and the clock at render time — the
+ * quotient and its terms describe one instant (no stale-denominator sawtooth)
+ * — and reset it when the step changes, since a window belongs to one step.
+ */
+export class StreamingRateSampler {
+  /** (time, tokens) observations still inside the window, oldest first. */
+  private samples: { at: number; tokens: number }[] = []
+
+  /**
+   * Observe one reading of the step's running token estimate.
+   * @param tokens - the calibrated output-token estimate right now.
+   * @param now - the wall clock at the same instant, in ms.
+   */
+  observe(tokens: number, now: number): void {
+    // The step's opening observations carry no output yet. One zero anchor is
+    // enough to keep the window's far end current — which is what lets a step
+    // that goes quiet mid-answer decay instead of freezing on its last reading
+    // — and further ones carry nothing.
+    if (this.samples.length === 0) {
+      this.samples.push({ at: now, tokens })
+      return
+    }
+    const last = this.samples.at(-1)!
+    // A retry or a block replaced wholesale drops the running estimate: the old
+    // counts describe text that is gone, so the window is re-anchored on the new
+    // one rather than measuring growth the stream never produced.
+    if (tokens < last.tokens) {
+      this.samples = [{ at: now, tokens }]
+      return
+    }
+    // Frames faster than the sampling floor cannot move a windowed rate (their
+    // tokens barely shift it, their timestamp only shortens the span).
+    if (now - last.at < MIN_SAMPLE_GAP_MS && tokens === last.tokens) return
+    this.samples.push({ at: now, tokens })
+    // The window is bounded above, so a long step keeps a rate rather than
+    // degrading into its own lifetime average. Its span is the observed output
+    // timeline: a leading zero anchor measures the step's wait for its first
+    // token, not decode, so it leaves the window once that wait reaches the
+    // window's width, and everything older than a width goes with it.
+    const head = this.samples[0]!
+    if (head.tokens <= 0 && this.samples.length > 1 && now - head.at >= MAX_STREAM_WINDOW_MS) {
+      this.samples.shift()
+    }
+    while (this.samples.length > 1 && now - this.samples[0]!.at > MAX_STREAM_WINDOW_MS) {
+      this.samples.shift()
+    }
+    // Safety net for a pathological stream of tiny deltas: the window is time
+    // bounded above, so this trims a full buffer back to its recent few seconds.
+    if (this.samples.length >= MAX_WINDOW_SAMPLES) {
+      this.samples.splice(0, this.samples.length - MAX_WINDOW_SAMPLES / 2)
+    }
+  }
+
+  /**
+   * The live rate over the current window.
+   * @returns the tokens-per-second rate, or null while the window carries no
+   *   usable span (shorter than {@link MIN_STREAM_WINDOW_MS}) or no growth the
+   *   sampler could plausibly have watched (a backlog the UI published in one
+   *   late frame exceeds {@link MAX_SAMPLED_TOKENS_PER_MS}).
+   */
+  ratePerSecond(): number | null {
+    const first = this.samples[0]
+    const last = this.samples.at(-1)
+    if (first === undefined || last === undefined) return null
+    // The window counts the output produced inside it, measured from its own
+    // first observation: the running estimate starts at zero, so the count that
+    // observation carries is output produced since the stream opened — whether
+    // the sampler was already watching (a zero anchor at the step's start, whose
+    // first delta has to be counted) or first saw the step mid-stream (a
+    // re-anchored window, whose opening count was produced outside it and
+    // cancels out as the baseline).
+    const baseline = first.tokens
+    const elapsedMs = last.at - first.at
+    if (elapsedMs < MIN_STREAM_WINDOW_MS) return null
+    const grown = last.tokens - baseline
+    if (grown <= 0) return null
+    // A window whose slope exceeds what any provider streams was not watched
+    // growing: the figure only looks explosive because the UI published the
+    // token count late (a backgrounded tab suspends animation frames while the
+    // stream keeps running, so the first frame after a return carries the whole
+    // backlog). Re-anchor instead of publishing thousands of tok/s and decaying
+    // for the rest of the step as the window grows.
+    if (grown > elapsedMs * MAX_SAMPLED_TOKENS_PER_MS) {
+      this.samples = last.tokens > 0 ? [{ at: last.at, tokens: last.tokens }] : []
+      return null
+    }
+    return grown / (elapsedMs / 1_000)
+  }
+}
 
 /** Prior tokens for one string under the published density. */
 function priorTokens(text: string): number {
@@ -376,19 +520,3 @@ export function measuredTokenScale(nodes: readonly ConversationNodeLike[]): numb
   if (prior <= 0) return null
   return Math.min(MAX_MEASURED_SCALE, Math.max(MIN_MEASURED_SCALE, actual / prior))
 }
-
-/**
- * Live decode throughput for the step currently streaming: estimated tokens
- * over the observed window, the same quotient the settled figures use. The
- * window starts at the first visible output, so first-token latency stays out
- * of the denominator exactly as the official `decodeMs` keeps it out.
- * @param tokens - calibrated output-token estimate for the in-flight blocks.
- * @param elapsedMs - observed decode window in ms.
- * @returns null before the floor elapses or with no tokens yet, leaving the
- *   caller to show the official figure rather than a first-chunk burst.
- */
-export function streamingTokensPerSecond(tokens: number, elapsedMs: number): number | null {
-  if (tokens <= 0 || elapsedMs < MIN_STREAM_WINDOW_MS) return null
-  return tokens / (elapsedMs / 1_000)
-}
-

@@ -10,7 +10,7 @@ import type { AssistantMessageNodeLike } from '../src/client/stats-line-core.ts'
 import {
   assistantStepReading, billedInputTokens, cacheHitPercent, cacheHitPercentPrecise,
   deriveStats, estimateOutputTokens, formatDuration, formatTokensCompact, formatTokensPerSecond,
-  measuredTokenScale, streamingTokensPerSecond, tokenBreakdown,
+  measuredTokenScale, StreamingRateSampler, tokenBreakdown,
   type StepReading, type TokenUsageLike, type WindowStats,
 } from '../src/client/stats-line-core.ts'
 
@@ -228,15 +228,105 @@ describe('streaming throughput (plugin readout)', () => {
       step(2, [{ kind: 'text', text: hanzi(100) }], 60),
     ])).toBeCloseTo(1.5)
   })
+})
 
-  it('withholds a live rate until the window is long enough to mean something', () => {
-    expect(streamingTokensPerSecond(200, 499)).toBeNull()
-    expect(streamingTokensPerSecond(200, 500)).toBeCloseTo(400)
-    expect(streamingTokensPerSecond(200, 2_000)).toBeCloseTo(100)
+/**
+ * The live figure is a rate over what the sampler watched, not the step's
+ * cumulative estimate over an ever-growing span. Every case below pins one
+ * consequence of that definition; the second one is the reported defect.
+ */
+describe('StreamingRateSampler (live decode throughput)', () => {
+  /** Feed one frame at `at` ms carrying the step's running estimate. */
+  const frame = (sampler: StreamingRateSampler, at: number, tokens: number): void => {
+    sampler.observe(tokens, at)
+  }
+
+  it('withholds a reading until the window spans the observation floor', () => {
+    const sampler = new StreamingRateSampler()
+    frame(sampler, 0, 0)
+    // The step is open and output has started, but the window is only 100 ms.
+    frame(sampler, 100, 20)
+    expect(sampler.ratePerSecond()).toBeNull()
+    // First published window: the 200 tokens the stream has produced so far
+    // over the 500 ms since the step opened — the same quotient the settled
+    // figure uses, which is why the startup delay is the floor and nothing more.
+    frame(sampler, 500, 200)
+    expect(sampler.ratePerSecond()).toBeCloseTo(400)
   })
 
-  it('returns null instead of a rate over zero tokens', () => {
-    expect(streamingTokensPerSecond(0, 5_000)).toBeNull()
-    expect(streamingTokensPerSecond(-1, 5_000)).toBeNull()
+  it('keeps a steady stream on its rate while the window grows and slides', () => {
+    const sampler = new StreamingRateSampler()
+    // 60 tokens/s: 6 tokens per 100 ms frame.
+    for (let at = 0; at <= 6_000; at += 100) frame(sampler, at, at * 0.06)
+    expect(sampler.ratePerSecond()).toBeCloseTo(60)
+  })
+
+  it('bounds the window, so an old artifact cannot distort the reading forever', () => {
+    const sampler = new StreamingRateSampler()
+    // A 240-token backlog lands at t=2_500 on a plausible frame, then the
+    // stream continues at 60 tokens/s. The backlog lifts the reading while the
+    // window still contains it and leaves with it — inside one window, never
+    // decaying across the rest of the step.
+    for (let at = 0; at <= 2_400; at += 600) frame(sampler, at, at * 0.06)
+    frame(sampler, 2_500, 384)
+    const spiked = sampler.ratePerSecond()!
+    expect(spiked).toBeGreaterThan(80)
+    for (let at = 3_100; at <= 6_000; at += 600) frame(sampler, at, 384 + (at - 2_500) * 0.06)
+    expect(sampler.ratePerSecond()).toBeCloseTo(60)
+  })
+
+  it('re-anchors instead of publishing a backlog the sampler could not have watched', () => {
+    // The reported defect: a backgrounded tab suspends animation frames while
+    // the stream keeps running, so the first frame after a return carries the
+    // whole backlog. Charging it to a window that just opened read as thousands
+    // of tok/s and then decayed for the rest of the step.
+    const sampler = new StreamingRateSampler()
+    frame(sampler, 0, 0)
+    frame(sampler, 400, 1_500)
+    expect(sampler.ratePerSecond()).toBeNull()
+    // The re-anchored window reports the growth observed from here on, so the
+    // backlog never enters the figure at all — before the fix this read 3_000
+    // and then decayed for the rest of the step as the denominator grew.
+    for (let at = 900; at <= 2_900; at += 500) frame(sampler, at, 1_500 + (at - 400) * 0.06)
+    expect(sampler.ratePerSecond()).toBeCloseTo(60)
+  })
+
+  it('publishes a fast stream and re-anchors a backlog past 3_000 tok/s', () => {
+    // The plausibility threshold sits at 3 tokens per ms — above the fastest
+    // model in service, so a real stream is never mistaken for an artifact — and
+    // it also caps what a 2 s window can report. The fast-stream arm is a
+    // 1 500 tok/s decode, the kind of figure a well-served model really shows.
+    const fast = new StreamingRateSampler()
+    frame(fast, 0, 0)
+    frame(fast, 1_000, 1_500)
+    frame(fast, 2_000, 3_000)
+    expect(fast.ratePerSecond()).toBeCloseTo(1_500)
+
+    // The backlog case the threshold exists for: a suspended tab hands over a
+    // whole step's output in one frame, so a 400 ms window would report
+    // 3 750 tok/s of output the sampler could not have watched.
+    const backlog = new StreamingRateSampler()
+    frame(backlog, 0, 0)
+    frame(backlog, 400, 1_500)
+    expect(backlog.ratePerSecond()).toBeNull()
+  })
+
+  it('re-anchors when the running estimate drops (retry or block replacement)', () => {
+    const sampler = new StreamingRateSampler()
+    for (let at = 0; at <= 1_000; at += 500) frame(sampler, at, at * 0.06)
+    expect(sampler.ratePerSecond()).toBeCloseTo(60)
+    // Blocks were replaced wholesale: the old counts describe text that is gone.
+    frame(sampler, 1_500, 3)
+    expect(sampler.ratePerSecond()).toBeNull()
+    for (let at = 2_000; at <= 4_000; at += 500) frame(sampler, at, 3 + (at - 1_500) * 0.06)
+    expect(sampler.ratePerSecond()).toBeCloseTo(60)
+  })
+
+  it('returns null instead of a rate over no growth', () => {
+    const sampler = new StreamingRateSampler()
+    frame(sampler, 0, 0)
+    frame(sampler, 5_000, 0)
+    expect(sampler.ratePerSecond()).toBeNull()
+    expect(new StreamingRateSampler().ratePerSecond()).toBeNull()
   })
 })

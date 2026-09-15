@@ -87,11 +87,6 @@ function isTrustedAuthority(hostUrl: URL, trustedHosts: readonly string[]): bool
   })
 }
 
-/** The web runtime's trusted-host source (mirror of dsh-web-app webRuntime). */
-export interface TrustedHostsSource {
-  trustedHosts?: string[]
-}
-
 export interface TrustFence {
   /** Accept the request when the Host is ours (loopback or trusted) and any
    *  attached browser markers are same-origin. */

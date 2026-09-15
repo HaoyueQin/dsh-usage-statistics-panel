@@ -4,7 +4,7 @@
  * returns the aggregate (or the backfill status). Failures surface as
  * {@link UsageApiError} with the wire code.
  */
-import type { BackfillStatus, UsageStatsRange, UsageStatsRequest } from '../wire.ts'
+import type { UsageStatsRange, UsageStatsRequest } from '../wire.ts'
 
 /** One wire failure. */
 export class UsageApiError extends Error {
@@ -49,9 +49,4 @@ async function post<T>(method: string, body: unknown): Promise<T> {
 /** Aggregate the usage panel renders for one range. */
 export async function fetchRange(req: UsageStatsRequest): Promise<UsageStatsRange> {
   return post<UsageStatsRange>('range', req)
-}
-
-/** The backfill (historical session scan) progress state. */
-export async function fetchStatus(): Promise<BackfillStatus> {
-  return post<BackfillStatus>('status', undefined)
 }

@@ -73,15 +73,6 @@ export interface UsageSessionEvent<T = unknown> {
   data: T
 }
 
-/** Token usage attached to assistant messages (mirror of dsh-llm TokenUsage). */
-export interface UsageTokens {
-  inputTokens: number
-  outputTokens: number
-  cacheReadTokens?: number
-  cacheWriteTokens?: number
-  reasoningTokens?: number
-}
-
 /** One persistence inspection (mirror of dsh-session-persistence's
  *  SessionInspection, DSH >= 0.1.2-rc.1). `inheritedEventCount` is the exact
  *  fork-inherited prefix length — 0 for a non-forked session — and is always
@@ -173,11 +164,6 @@ export interface UsageDomain {
 /** The storage domain service (mirror of @deepseek-ai/dsh-storage-domain). */
 export interface UsageStorageDomain {
   open(spec: { name: string; version: number; tables: Record<string, unknown> }): Promise<UsageDomain>
-}
-
-/** A settings namespace (mirror of @deepseek-ai/dsh-settings). */
-export interface UsageSettingsNamespace {
-  (id: string): string
 }
 
 /** The settings service (mirror of @deepseek-ai/dsh-settings). */

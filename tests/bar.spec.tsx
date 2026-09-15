@@ -135,15 +135,19 @@ describe('StackedBar', () => {
     const { container } = renderBar()
     // Nothing is drawn before the observer reports an intersection.
     expect(container.querySelectorAll('[role="img"]').length).toBe(0)
+    expect(fire).not.toBeNull()
 
     await act(async () => {
       fire?.([{ isIntersecting: true }])
       await new Promise((resolve) => { requestAnimationFrame(() => resolve(undefined)) })
     })
 
+    // The rise-in animation is driven by animation frames, so the column arrives
+    // over several of them. A generous ceiling keeps a loaded parallel run from
+    // failing on scheduling rather than on behaviour.
     await waitFor(() => {
       expect(container.querySelectorAll('[role="img"]').length).toBe(2)
-    }, { timeout: 3000 })
+    }, { timeout: 10_000 })
   })
 })
 

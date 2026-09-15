@@ -270,9 +270,12 @@ describe('StreamingRateSampler (live decode throughput)', () => {
     for (let at = 0; at <= 2_400; at += 600) frame(sampler, at, at * 0.06)
     frame(sampler, 2_500, 384)
     const spiked = sampler.ratePerSecond()!
-    expect(spiked).toBeGreaterThan(80)
-    for (let at = 3_100; at <= 6_000; at += 600) frame(sampler, at, 384 + (at - 2_500) * 0.06)
-    expect(sampler.ratePerSecond()).toBeCloseTo(60)
+    // The backlog lifts the figure it enters — 183 tok/s over the window — but the
+    // 100 ms since the last publication give the new reading only a tenth of the
+    // smoothed result, so a single bad frame cannot swing it.
+    expect(spiked).toBeGreaterThan(70)
+    for (let at = 3_100; at <= 8_000; at += 600) frame(sampler, at, 384 + (at - 2_500) * 0.06)
+    expect(sampler.ratePerSecond()).toBeCloseTo(60, -1)
   })
 
   it('re-anchors instead of publishing a backlog the sampler could not have watched', () => {
@@ -291,11 +294,71 @@ describe('StreamingRateSampler (live decode throughput)', () => {
     expect(sampler.ratePerSecond()).toBeCloseTo(60)
   })
 
-  it('publishes a fast stream and re-anchors a backlog past 3_000 tok/s', () => {
-    // The plausibility threshold sits at 3 tokens per ms — above the fastest
-    // model in service, so a real stream is never mistaken for an artifact — and
-    // it also caps what a 2 s window can report. The fast-stream arm is a
-    // 1 500 tok/s decode, the kind of figure a well-served model really shows.
+  it('re-anchors a backlog that arrives inside the observation floor', () => {
+    // The floor is a publishing gate, not a rejection gate. A backlog frame that
+    // lands 400 ms after the previous observation used to be answered with "no
+    // reading yet" — which left its 1 500 tokens in the window, so the NEXT frame
+    // published 1 366 tok/s (1 530 tokens over the 900 ms window) on a stream
+    // running at 60. The plausibility check therefore runs before the floor.
+    const sampler = new StreamingRateSampler()
+    frame(sampler, 0, 0)
+    frame(sampler, 400, 1_500)
+    expect(sampler.ratePerSecond()).toBeNull()
+    frame(sampler, 900, 1_530)
+    // Re-anchored, so the window holds the backlog's own count as its baseline:
+    // this reads the stream's rate, where the old order published 1 366 tok/s
+    // (1 530 tokens over the 900 ms window).
+    expect(sampler.ratePerSecond()).toBeCloseTo(60, -1)
+    for (let at = 1_400; at <= 3_400; at += 500) frame(sampler, at, 1_530 + (at - 900) * 0.06)
+    expect(sampler.ratePerSecond()).toBeCloseTo(60, -1)
+  })
+
+  it('holds the last reading while a quiet step adds nothing', () => {
+    // A step can go quiet mid-answer (the model is thinking, a tool is about to
+    // start). Frames that repeat the estimate carry no information, so they must
+    // not age the window into publishing a lower rate: the row keeps the last
+    // figure it could measure until the step settles and the official one returns.
+    const sampler = new StreamingRateSampler()
+    frame(sampler, 0, 0)
+    for (let at = 500; at <= 3_000; at += 500) frame(sampler, at, at * 0.06)
+    expect(sampler.ratePerSecond()).toBeCloseTo(60, -1)
+    for (let at = 3_500; at <= 8_000; at += 500) frame(sampler, at, 180)
+    expect(sampler.ratePerSecond()).toBeCloseTo(60, -1)
+  })
+
+  it('drops the window but keeps the figure when the measured scale moves', () => {
+    // The correction measured from settled steps re-prices the whole estimate, so
+    // growth already counted under the old scale must not be measured against the
+    // new one — but the step's rate did not change, only its units.
+    const sampler = new StreamingRateSampler()
+    frame(sampler, 0, 0)
+    for (let at = 500; at <= 1_500; at += 500) frame(sampler, at, at * 0.06)
+    expect(sampler.ratePerSecond()).toBeCloseTo(60, -1)
+    sampler.reset()
+    expect(sampler.ratePerSecond()).toBeCloseTo(60, -1)
+    // The next observations anchor on the new scale and measure from there.
+    frame(sampler, 2_000, 400)
+    frame(sampler, 2_500, 430)
+    expect(sampler.ratePerSecond()).toBeCloseTo(60, -1)
+  })
+
+  it('damps a single overshooting publication instead of following it', () => {
+    const sampler = new StreamingRateSampler()
+    frame(sampler, 0, 0)
+    frame(sampler, 1_000, 60)
+    expect(sampler.ratePerSecond()).toBeCloseTo(60, -1)
+    // 500 tokens on the next frame one window later: 454 tok/s over the window,
+    // of which the smoothed figure takes a tenth.
+    frame(sampler, 1_100, 560)
+    expect(sampler.ratePerSecond()).toBeLessThan(120)
+  })
+
+  it('publishes a fast stream and re-anchors a backlog past 1_500 tok/s', () => {
+    // The plausibility threshold sits at 1.5 tokens per ms — above the largest
+    // slope a real session produced (265 tokens in 246 ms ≈ 1.08 tok/ms) while
+    // still rejecting what only looks fast because the count was published late.
+    // The fast-stream arm is a 1 500 tok/s decode, exactly at the threshold, which
+    // a "greater than" test lets through.
     const fast = new StreamingRateSampler()
     frame(fast, 0, 0)
     frame(fast, 1_000, 1_500)
@@ -317,9 +380,12 @@ describe('StreamingRateSampler (live decode throughput)', () => {
     expect(sampler.ratePerSecond()).toBeCloseTo(60)
     // Blocks were replaced wholesale: the old counts describe text that is gone.
     frame(sampler, 1_500, 3)
-    expect(sampler.ratePerSecond()).toBeNull()
+    // The window restarts, but the figure on screen does not: the step is still
+    // streaming and its rate did not change, so falling back to the session
+    // average here would be a jump the stream cannot account for.
+    expect(sampler.ratePerSecond()).toBeCloseTo(60, -1)
     for (let at = 2_000; at <= 4_000; at += 500) frame(sampler, at, 3 + (at - 1_500) * 0.06)
-    expect(sampler.ratePerSecond()).toBeCloseTo(60)
+    expect(sampler.ratePerSecond()).toBeCloseTo(60, -1)
   })
 
   it('returns null instead of a rate over no growth', () => {

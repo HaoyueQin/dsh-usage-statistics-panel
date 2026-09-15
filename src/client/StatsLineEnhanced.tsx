@@ -28,7 +28,7 @@
  * backs the pills, `legacy.partial` the in-flight assistant output, and the
  * durable sessionStats projection stays the primary source.
  */
-import { memo, useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { IconDatabaseOutline16, IconGaugeOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale, SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
@@ -79,12 +79,14 @@ type PillDialog = Pick<StatDialogSeat, 'open' | 'setOpen'>
 /** The separator + figure shape both speed arms render into the gauge pill.
  *  The figure sits in a width-reserved slot (css.speed): the live reading
  *  changes every second, and a slot that tracked its digits would reflow the
- *  centred row — and with it the counts pill — on every refresh. */
+ *  centred row — and with it the counts pill — on every refresh. The slot is
+ *  rendered even with no figure at all (an empty session has no official figure
+ *  to fall back to until its first step settles), so the row's layout never
+ *  depends on whether a number is available. */
 function SpeedFigure({ text }: { text: string | null }) {
-  if (text === null) return null
   return (
     <>
-      <span className={css.sep} aria-hidden>·</span>
+      {text !== null && <span className={css.sep} aria-hidden>·</span>}
       <span className={css.speed} data-stats-speed>{text}</span>
     </>
   )
@@ -92,8 +94,8 @@ function SpeedFigure({ text }: { text: string | null }) {
 
 /**
  * How often the live reading is recomputed while a step streams. Deltas arrive
- * every animation frame, but a decode rate is a quotient over a growing window:
- * refreshing it once a second keeps the figure stable and matches the reference
+ * every delta, and this beat only covers a step that has gone quiet mid-answer,
+ * where no frame arrives to advance the window at all. It matches the reference
  * implementation this replicates (MiMo-Code's sidebar tps).
  */
 const LIVE_SPEED_REFRESH_MS = 1_000
@@ -114,6 +116,12 @@ const LIVE_SPEED_REFRESH_MS = 1_000
  * sequence. Between steps the partial is gone (the step's assistant/message
  * settles it and the next step has not begun), so Tool execution shows the
  * official figure until the next step opens its own window.
+ *
+ * Sampling happens in a layout effect and the figure it yields is published as
+ * state, so no render reads a clock or mutates the window: a render React starts
+ * and then discards must not decide what the next committed one displays. The
+ * rate itself comes from stats-line-core's StreamingRateSampler — a bounded
+ * window over observed token growth, smoothed, and held while nothing arrives.
  */
 function LiveSpeed({ useChat, scale, fallback, t }: {
   useChat: ChatSnapshotSelectorHook
@@ -129,37 +137,49 @@ function LiveSpeed({ useChat, scale, fallback, t }: {
     () => (partial == null ? 0 : estimateOutputTokens(partial.blocks) * scale),
     [partial, scale],
   )
-  // Every reading goes through the sampler, which measures the token growth it
-  // observed inside a bounded window rather than the step's cumulative estimate
-  // over an ever-growing span. That pair of definitions is what produced the
-  // reported figure: text the UI only published late — a frame carrying a
-  // batched backlog, which is what a backgrounded tab returns with, since
-  // requestAnimationFrame suspends while the stream keeps running — was charged
-  // to a window that had just opened, reading as thousands of tok/s and then
-  // decaying for the rest of the step as the denominator grew.
-  //
-  // A step change owns a fresh window, so the last frames of one step are never
-  // charged to the next. That reset is a render-time consequence of the key
-  // rather than an effect: switching steps renders with the new key, and the
-  // sampler that answers it is the new one, with no frame in between reporting
-  // a rate stitched from two steps.
+  // One sampler per step, allocated by the render that first sees the step: a
+  // window belongs to one step, and the allocation is idempotent, so a discarded
+  // render cannot hand the next committed one a window stitched from two steps.
   const sampler = useRef<{ key: string | null; rate: StreamingRateSampler } | null>(null)
-  const rate = sampler.current?.key === key ? sampler.current.rate : new StreamingRateSampler()
-  sampler.current = { key, rate }
-  // The sampler is fed at render time, so the window is built from the frames
-  // themselves and every delta can move it; the beat below only covers a step
-  // that has gone quiet mid-answer, where no frame arrives to extend the window.
-  rate.observe(tokens, Date.now())
-  const reading = rate.ratePerSecond()
+  if (sampler.current === null || sampler.current.key !== key) {
+    sampler.current = { key, rate: new StreamingRateSampler() }
+  }
+  const rate = sampler.current.rate
+  // The reading the effect below produced, tagged with the step it describes. The
+  // tag is what keeps a switch honest: the frame after a switch renders before the
+  // new step's first observation lands, and without it that frame would show the
+  // previous step's rate.
+  const [published, setPublished] = useState<{ key: string | null; rate: number | null }>({
+    key: null,
+    rate: null,
+  })
+  const scaleRef = useRef(scale)
+  // Every delta re-runs this (its dependencies move), and the beat re-runs it once
+  // a second so a step that has gone quiet still advances its window.
+  const [beat, setBeat] = useState(0)
+  useLayoutEffect(() => {
+    // A correction that moved re-prices the whole estimate, so growth already
+    // counted under the old one must not be measured against the new one: that
+    // would read as a burst the stream never produced.
+    if (scaleRef.current !== scale) {
+      scaleRef.current = scale
+      rate.reset()
+    }
+    rate.observe(tokens, Date.now())
+    const next = rate.ratePerSecond()
+    setPublished((previous) => (
+      previous.key === key && previous.rate === next ? previous : { key, rate: next }
+    ))
+  }, [tokens, key, beat, rate, scale])
   // Keyed on "a step is streaming", not on the step identity: switching steps
   // must not tear the beat down and defer the next one by a full period.
   const streaming = key !== null
-  const [, setBeat] = useState(0)
   useEffect(() => {
     if (!streaming) return
     const handle = setInterval(() => { setBeat(Date.now()) }, LIVE_SPEED_REFRESH_MS)
     return () => { clearInterval(handle) }
   }, [streaming])
+  const reading = published.key === key ? published.rate : null
   return <SpeedFigure text={reading === null
     ? fallback
     : t('stats.tokensPerSecond', { throughput: formatTokensPerSecond(reading) })} />

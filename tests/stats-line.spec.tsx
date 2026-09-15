@@ -240,6 +240,12 @@ describe('StatsLineEnhanced streaming throughput', () => {
   const partialWith = (hanzi: number, turn = 1, step = 1): unknown =>
     ({ turn, step, blocks: [{ kind: 'text', text: '中'.repeat(hanzi) }] })
   const OFFICIAL = '1 轮 · 1 步 · 20 tok/s'
+  /** The throughput figure the pill is showing, in tok/s. */
+  const shownRate = (pill: HTMLElement): number => {
+    const match = /([\d.]+) tok\/s/.exec(pill.textContent ?? '')
+    if (match === null) throw new Error(`no rate in "${pill.textContent ?? ''}"`)
+    return Number(match[1])
+  }
   const pills = { tokenUsage: USAGE, sessionStats: sessionStats({ turns: 1, steps: 1, decodeMs: 1_000, decodeTokens: 20 }) }
 
   beforeEach(() => {
@@ -378,39 +384,97 @@ describe('StatsLineEnhanced streaming throughput', () => {
     expect(pill.textContent).toContain('90 tok/s')
   })
 
-  it('re-anchors on a mid-step collapse instead of reporting a rate for a gap', () => {
+  it('keeps the reading through a mid-step collapse instead of jumping to the average', () => {
     // Block boundaries replace accumulated text wholesale (a reasoning block
     // closes, a retry empties the stream), so the estimate legitimately shrinks
-    // inside one step. A dip means the counts before it describe text that is no
-    // longer there: the window re-anchors, so the collapse itself never reads as
-    // a rate and the growth after it is measured from where the estimate landed.
+    // inside one step. A collapse means the counts before it describe text that is
+    // no longer there: the window re-anchors, so the collapse itself never reads as
+    // a rate. The figure stays where it was — the step is still streaming and its
+    // rate did not change — because dropping to the session average here is a jump
+    // the stream cannot account for.
     const { seat, pill } = mount(partialWith(0))
     act(() => { vi.advanceTimersByTime(500) })
     act(() => { seat.set(partialWith(charsBy(500))) })
-    expect(pill.textContent).toContain('60 tok/s')
+    expect(shownRate(pill)).toBe(60)
 
-    // 30 → 3 estimated tokens at t=1.5s: the window restarts, and with no span
-    // yet the official figure is what stays on screen.
+    // 30 → 3 estimated tokens at t=1.5s: the window restarts, the figure does not.
     act(() => { vi.advanceTimersByTime(1_000) })
     act(() => { seat.set(partialWith(5)) })
-    expect(pill.textContent).toContain('20 tok/s')
-    expect(pill.textContent).not.toContain('60 tok/s')
+    expect(shownRate(pill)).toBe(60)
 
-    // Growth resumes from the re-anchored count: 100 hanzi by t=2.0s is 60
-    // tokens over the 0.5 s window (the dip's frame and the delta that resumes
-    // the stream landed 50 ms apart, so the window opens on the latter), and the
-    // rate settles as the window grows past the 2 s cap.
+    // Growth resumes from the re-anchored count: 100 hanzi by t=2.0s is 60 tokens
+    // over the 0.5 s window that opened on the collapse. The elapsed second since
+    // the last publication is this smoothing's whole time constant, so the reading
+    // is adopted as it stands.
     act(() => { vi.advanceTimersByTime(500) })
     act(() => { seat.set(partialWith(charsBy(1_000))) })
-    expect(pill.textContent).toContain('114 tok/s')
+    expect(shownRate(pill)).toBe(114)
+
+    // A steady 100 hanzi/s follows, so the window slides past the collapse and the
+    // figure settles back on the stream's own rate rather than on the collapse.
     act(() => { vi.advanceTimersByTime(500) })
     act(() => { seat.set(partialWith(charsBy(1_500))) })
-    expect(pill.textContent).toContain('87 tok/s')
+    expect(shownRate(pill)).toBeGreaterThan(85)
+    expect(shownRate(pill)).toBeLessThan(115)
     act(() => { vi.advanceTimersByTime(1_000) })
     act(() => { seat.set(partialWith(charsBy(2_500))) })
-    // The window has slid past the re-anchor, so the reading is the stream's
-    // rate again (60 tok/s), not a value anchored on the collapsed count.
-    expect(pill.textContent).toMatch(/(6\d|7[0-5]) tok\/s/)
+    expect(shownRate(pill)).toBeGreaterThan(55)
+    expect(shownRate(pill)).toBeLessThan(80)
+  })
+
+  it('holds the reading while a step goes quiet instead of dropping to the average', () => {
+    // A step can stall mid-answer (the model is thinking, a tool is about to
+    // start). The official figure is the session's whole history, so showing it
+    // here would be a visible jump on a stream that has not changed rate.
+    const { seat, pill } = mount(partialWith(0))
+    act(() => { vi.advanceTimersByTime(500) })
+    act(() => { seat.set(partialWith(charsBy(500))) })
+    expect(shownRate(pill)).toBe(60)
+
+    // Four seconds of frames repeating the same estimate: the row keeps reading 60.
+    for (let beat = 0; beat < 4; beat += 1) {
+      act(() => { vi.advanceTimersByTime(1_000) })
+      act(() => { seat.set(partialWith(charsBy(500))) })
+      expect(shownRate(pill)).toBe(60)
+    }
+
+    // Only the step settling hands the slot back to the official figure.
+    act(() => { seat.set(null) })
+    expect(pill.textContent).toContain('20 tok/s')
+  })
+
+  it('re-anchors the live window when the measured correction moves', () => {
+    // The correction is measured from the session's settled steps, so a step that
+    // settles while another is streaming re-prices the estimate mid-flight. That
+    // jump is not output: without the re-anchor it would publish as a burst.
+    const settled: AssistantMessageNodeLike = {
+      ...assistant(1, 1, { outputTokens: 180 }),
+      blocks: [{ kind: 'text', text: '中'.repeat(200) }],
+    }
+    const { seat, pill } = mount(partialWith(0), true, [settled])
+    // ×1.5 from the settled step above: 50 hanzi is 30 prior tokens → 45.
+    act(() => { vi.advanceTimersByTime(500) })
+    act(() => { seat.set(partialWith(charsBy(500))) })
+    expect(shownRate(pill)).toBe(90)
+  })
+
+  it('lays the speed slot out even when no figure can be shown', () => {
+    // A session whose first step is still streaming has no settled decode time, so
+    // the official fallback is null. The slot must stay in the row anyway: a figure
+    // that vanished and reappeared would reflow the centred pills beside it.
+    const seat = liveSeat([], partialWith(0))
+    statsLineState.setStreamThroughput(true)
+    render(<StatsLineEnhanced
+      useChat={seat.useChat}
+      useProjection={projections({ tokenUsage: USAGE, sessionStats: sessionStats({ turns: 1, steps: 1 }) })}
+      t={t}
+    />)
+    const slot = document.querySelector('[data-stats-speed]')
+    expect(slot).not.toBeNull()
+    expect(slot?.textContent).toBe('')
+    // Nothing measurable yet, and nothing to fall back to: the row still renders.
+    act(() => { vi.advanceTimersByTime(200) })
+    expect(document.querySelector('[data-stats-speed]')).not.toBeNull()
   })
 
   it('restarts the window when the stream moves to the next step', () => {
@@ -447,17 +511,17 @@ describe('StatsLineEnhanced streaming throughput', () => {
     // And it stays out: the reading is the stream's own rate from here on, not
     // the backlog decaying as the denominator grows.
     act(() => { vi.advanceTimersByTime(250) })
-    act(() => { seat.set(partialWith(2_511)) })
+    act(() => { seat.set(partialWith(2_525)) })
     expect(pill.textContent).not.toContain('2500 tok/s')
 
     // The stream then continues at the steady 100 hanzi/s, delivered the way a
-    // live one is: a frame every 250 ms. The backlog stays out of the figure, and
-    // the window — bounded above — slides past its tail, so the reading settles
-    // on the stream's real rate (60 tok/s) instead of decaying across the whole
-    // step the way the cumulative quotient did.
-    for (let step = 1; step <= 9; step += 1) {
+    // live one is: a frame every 250 ms. The backlog the late frame carried stays
+    // out of the figure — it is what the window is anchored on — so the reading is
+    // the stream's real rate (60 tok/s) instead of decaying across the whole step
+    // the way the cumulative quotient did.
+    for (let step = 1; step <= 12; step += 1) {
       act(() => { vi.advanceTimersByTime(250) })
-      act(() => { seat.set(partialWith(2_486 + charsBy(step * 250))) })
+      act(() => { seat.set(partialWith(2_525 + step * 25)) })
     }
     expect(pill.textContent).toContain('60 tok/s')
   })

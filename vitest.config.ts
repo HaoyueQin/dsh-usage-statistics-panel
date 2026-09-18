@@ -6,14 +6,15 @@
  * (the default `css: false`).
  *
  * Inlining also forces Vite to resolve the inlined package's OWN bare
- * imports: `dsh-client-ui-primitives@0.1.6-alpha.1` ships a `lib/index.js`
- * with runtime imports (anser, diff, shiki, katex, micromark-*, mdast-*)
- * while its package.json declares them under devDependencies. This package
- * therefore lists those in its own devDependencies so the test graph
+ * imports: `dsh-client-ui-primitives@0.1.6-alpha.2` ships a `lib/index.js`
+ * with runtime imports (anser, diff, shiki, katex, simple-icons, micromark-*,
+ * mdast-*) while its package.json declares them under devDependencies. This
+ * package therefore lists those in its own devDependencies so the test graph
  * resolves; the shipped bundle never resolves them (ui-primitives is a
  * platform external), so this is a test-only concern. That mirror list
- * tracks the host line — `diff` joined it in 0.1.6-alpha.1, when DiffBlock
- * began importing `structuredPatch` at runtime.
+ * tracks the host line — `diff` joined it in 0.1.6-alpha.1 (DiffBlock's
+ * `structuredPatch`) and `simple-icons` in 0.1.6-alpha.2 (LinkIcon's site
+ * marks); both are plain imports at the top of the package's built entry.
  *
  * Maintenance note: this list is the minimal set for the CURRENT tests. If a
  * future test value-imports another `@deepseek-ai/*` package whose built

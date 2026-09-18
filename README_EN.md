@@ -62,9 +62,11 @@ After mounting, **hard-refresh the browser** (Cmd/Ctrl+Shift+R): client-half cha
 
 Once mounted, a "Usage statistics" page appears in the left navigation of the Settings shell.
 
-**Compatibility**: this plugin supports DeepSeek Harness `>= 0.1.2-rc.1` with a dual-path backfill: `list`+`inspect` on `0.1.2-rc.1`, `list`+`open`+paged `read`+`close` on `0.1.3-alpha.*` and later (`inspect` was removed upstream). Dev dependencies and the verification target track host `0.1.6-alpha.1`, verified against `0.1.2-rc.1`, `0.1.5-rc.2` and `0.1.6-alpha.1`; V3 log compatibility is covered by unit tests.
+**Compatibility**: this plugin supports DeepSeek Harness `>= 0.1.2-rc.1` with a dual-path backfill: `list`+`inspect` on `0.1.2-rc.1`, `list`+`open`+paged `read`+`close` on `0.1.3-alpha.*` and later (`inspect` was removed upstream). Dev dependencies and the verification target track host `0.1.6-alpha.2`, verified against `0.1.2-rc.1`, `0.1.5-rc.2`, `0.1.6-alpha.1` and `0.1.6-alpha.2`; V3 log compatibility is covered by unit tests.
 
-> The `@deepseek-ai/*` peer declarations state the capability floor only (`>=0.1.2-rc.1` is the earliest interface surface the plugin uses) and are all marked optional: no semver range matches a future pre-release host (`>=0.1.2-rc.1` satisfies neither `0.1.5-rc.2` nor `0.1.6-alpha.1`), so the supported host versions are those stated in this section rather than npm peer validation.
+The bottom-bar row adapts to the container it is rendered in: from `0.1.6-alpha.2` the host places it in a flex row beside the context-occupancy ring (which owns the centring, the gap, the top pad and the side clearance), while through `0.1.6-alpha.1` the row still owns its content width, its side gutters and its 4px top pad — one build stays aligned on both.
+
+> The `@deepseek-ai/*` peer declarations state the capability floor only (`>=0.1.2-rc.1` is the earliest interface surface the plugin uses) and are all marked optional: no semver range matches a future pre-release host (`>=0.1.2-rc.1` satisfies neither `0.1.5-rc.2` nor `0.1.6-alpha.2`), so the supported host versions are those stated in this section rather than npm peer validation.
 
 > **Older-host users**: if you run DeepSeek Harness `0.1.1-rc.2` or `0.1.2-alpha.*`, please install an older plugin version (`0.1.9` or earlier). `0.1.10` supports only `>= 0.1.2-rc.1`; from `0.1.11` one build serves both `0.1.2-rc.1` and `0.1.3-alpha.*`.
 

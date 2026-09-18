@@ -72,6 +72,10 @@ Token 桶语义：`inputTokens` 是 uncached input（即缓存 miss 侧），`ca
 - **展开层级**：模型区只有 "Other" 行可展开（列出被折叠的模型）；供应商区两级——排名行展开该供应商的模型，"Other" 展开被折叠的供应商（每行带该供应商的模型数），这些行再展开各自的模型。展开容器是行的**兄弟节点**且不带行类名，故测量始终只数行
 - **色板**：`--dsw-chart-1..10` + `--dsw-chart-other`（模型）、`--dsw-provider-1..5` + `--dsw-provider-other`（供应商独立色板，供应商不穿模型色），light/dark 两套（CSS `@media (prefers-color-scheme)`），色值经 color-mix 向底色柔化
 
+### StatsLineEnhanced.tsx — 底部信息栏接管
+
+以 id `stats`、`priority: -1` 注册进 `conversation.composer.dock`（list 槽，最低优先级条目渲染），遮蔽官方 StatsPills 并叠加两个读数开关。该行跨宿主代际有两套容器契约：`0.1.6-alpha.1` 及以前，槽位直接渲染进 InputBar 自己的列，行自持内容宽度（`--dsh-chat-content-width`）、左右 `clearance + 16px` 侧边距与 4px 顶距；`0.1.6-alpha.2` 起，槽位被放进与常驻 ContextMeter 并排的 flex 行 `.dock`，居中、12px 间距、顶距与侧边距由该容器负责，行只需在其中收缩。组件在 DOM 挂载时读父容器的计算样式并打 `data-dock-row` 标记，样式表按标记在两套声明间切换——一份构建同时满足两条宿主线。
+
 ### 样式
 
 全部视觉值走 DSH 语义 token（`--dsw-alias-*` 颜色、`--dsw-font-*` 排版），无静态色值、无主题选择器，浅色/深色由主题包负责。

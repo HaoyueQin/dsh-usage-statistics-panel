@@ -662,5 +662,29 @@ describe('StatsLineEnhanced host container contract', () => {
     const view = render(<StatsLineEnhanced {...props(source)} />)
     expect(rowOf(view).hasAttribute('data-dock-row')).toBe(false)
   })
+
+  it('probes past the slot renderer display:contents wrapper (live 0.1.6-alpha.2 DOM)', () => {
+    const { source } = makeSource([assistant(1, 1), tool()])
+    const view = render(
+      <div style={{ display: 'flex', flexDirection: 'row' }}>
+        <div style={{ display: 'contents' }}>
+          <StatsLineEnhanced {...props(source)} />
+        </div>
+      </div>,
+    )
+    expect(rowOf(view).hasAttribute('data-dock-row')).toBe(true)
+  })
+
+  it('stays unmarked when every ancestor only wraps without a box', () => {
+    const { source } = makeSource([assistant(1, 1), tool()])
+    const view = render(
+      <div style={{ display: 'contents' }}>
+        <div style={{ display: 'contents' }}>
+          <StatsLineEnhanced {...props(source)} />
+        </div>
+      </div>,
+    )
+    expect(rowOf(view).hasAttribute('data-dock-row')).toBe(false)
+  })
 })
 

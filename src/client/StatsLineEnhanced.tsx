@@ -100,20 +100,32 @@ function SpeedFigure({ text }: { text: string | null }) {
  * 0.1.6-alpha.1, where this row owns all four). The stylesheet carries both
  * contracts and keys them off `data-dock-row`.
  *
+ * The row's parent is NOT that container: the slot renderer wraps every entry
+ * in a `display: contents` element (measured against 0.1.6-alpha.2 in a live
+ * instance — the wrapper has no box, so its own display axes say nothing about
+ * the layout). The nearest ancestor that actually participates in layout is the
+ * one to read, so walk up past the wrappers (bounded, in case a host ever
+ * stacks several) and take the first real box's axes. Nothing found keeps the
+ * row unmarked, i.e. the older contract — the harmless direction.
+ *
  * A ref callback, not an effect: this is the one React seam that fires when the
  * row's DOM first exists, and an effect could not be trusted here — the
  * component returns null until the session has steps or tokens, so a mount-time
- * probe would run against no element and never repeat. The probe fails soft (an
- * unmarked row keeps the column contract, which costs 4px of top pad at worst)
- * and reads only the parent's computed display axes, never geometry.
+ * probe would run against no element and never repeat.
  */
 function markDockContainer(row: HTMLDivElement | null): void {
   if (row === null) return
-  const parent = row.parentElement
-  const view = parent === null ? null : row.ownerDocument.defaultView
-  if (parent === null || view === null) return
-  const { display, flexDirection } = view.getComputedStyle(parent)
-  row.toggleAttribute('data-dock-row', display === 'flex' && flexDirection === 'row')
+  const view = row.ownerDocument.defaultView
+  if (view === null) return
+  let box: HTMLElement | null = row.parentElement
+  for (let depth = 0; box !== null && depth < 8; depth += 1) {
+    const style = view.getComputedStyle(box)
+    if (style.display !== 'contents') {
+      row.toggleAttribute('data-dock-row', style.display === 'flex' && style.flexDirection === 'row')
+      return
+    }
+    box = box.parentElement
+  }
 }
 
 /**

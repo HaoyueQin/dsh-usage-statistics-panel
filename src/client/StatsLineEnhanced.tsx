@@ -93,6 +93,30 @@ function SpeedFigure({ text }: { text: string | null }) {
 }
 
 /**
+ * Tell the composer row which container the host rendered it in — it has to
+ * serve two layouts at once: inside InputBar's flex `.dock` (0.1.6-alpha.2+,
+ * beside the resident ContextMeter, which owns the row's centring, 12px gap,
+ * top pad and side clearance) or straight in InputBar's own column (through
+ * 0.1.6-alpha.1, where this row owns all four). The stylesheet carries both
+ * contracts and keys them off `data-dock-row`.
+ *
+ * A ref callback, not an effect: this is the one React seam that fires when the
+ * row's DOM first exists, and an effect could not be trusted here — the
+ * component returns null until the session has steps or tokens, so a mount-time
+ * probe would run against no element and never repeat. The probe fails soft (an
+ * unmarked row keeps the column contract, which costs 4px of top pad at worst)
+ * and reads only the parent's computed display axes, never geometry.
+ */
+function markDockContainer(row: HTMLDivElement | null): void {
+  if (row === null) return
+  const parent = row.parentElement
+  const view = parent === null ? null : row.ownerDocument.defaultView
+  if (parent === null || view === null) return
+  const { display, flexDirection } = view.getComputedStyle(parent)
+  row.toggleAttribute('data-dock-row', display === 'flex' && flexDirection === 'row')
+}
+
+/**
  * How often the live reading is recomputed while a step streams. Deltas arrive
  * every delta, and this beat only covers a step that has gone quiet mid-answer,
  * where no frame arrives to advance the window at all. It matches the reference
@@ -401,10 +425,13 @@ export const StatsLineEnhanced = memo(function StatsLineEnhanced(
   const hasTokens = usage !== undefined
     && (billedInputTokens(usage) > 0 || usage.outputTokens > 0)
   if (stats.steps === 0 && !hasTokens) return null
-  // data-composer-stats: InputBar tightens the composer bottom clearance only
-  // while this row renders (same contract as the official pills).
+  // data-composer-stats: through host 0.1.6-alpha.1 InputBar tightened the
+  // composer bottom clearance while this row rendered (the official pills'
+  // `:has` contract). 0.1.6-alpha.2 moved the row into InputBar's own flex
+  // `.dock` and dropped that rule, so the marker is inert there — kept because
+  // older hosts still need it and it costs nothing.
   return (
-    <div className={css.root} data-composer-stats>
+    <div ref={markDockContainer} className={css.root} data-composer-stats>
       {stats.steps > 0 && (
         <TimePill
           stats={stats}

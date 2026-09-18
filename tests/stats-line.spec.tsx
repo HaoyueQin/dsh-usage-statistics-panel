@@ -619,3 +619,48 @@ describe('StatsLineEnhanced streaming subscription isolation', () => {
     expect(screen.getByRole('button', { name: '1 轮 · 1 步 · 20 tok/s' }).textContent).toContain('60 tok/s')
   })
 });
+
+/**
+ * The row's host-container contract: one build serves two InputBar layouts, so
+ * the row marks which container it landed in at attach time and the stylesheet
+ * keys off that marker. Through 0.1.6-alpha.1 the slot renders straight into
+ * InputBar's own column and the row owns its content-width clamp, side gutters
+ * and 4px top pad; from 0.1.6-alpha.2 the row sits in InputBar's flex `.dock`
+ * beside the resident ContextMeter, which took all three over (the official
+ * StatsPills.module.css dropped the same declarations). The two container
+ * shapes are exactly what <InputBar> builds either side of that change.
+ */
+describe('StatsLineEnhanced host container contract', () => {
+  const rowOf = (view: ReturnType<typeof render>): HTMLElement => {
+    const row = view.container.querySelector('[data-composer-stats]')
+    expect(row).not.toBeNull()
+    return row as HTMLElement
+  }
+
+  it('marks the row when the host renders it inside the flex dock row (0.1.6-alpha.2+)', () => {
+    const { source } = makeSource([assistant(1, 1), tool()])
+    const view = render(
+      <div style={{ display: 'flex', flexDirection: 'row' }}>
+        <StatsLineEnhanced {...props(source)} />
+      </div>,
+    )
+    expect(rowOf(view).hasAttribute('data-dock-row')).toBe(true)
+  })
+
+  it('leaves the row unmarked on the composer column (<= 0.1.6-alpha.1)', () => {
+    const { source } = makeSource([assistant(1, 1), tool()])
+    const view = render(
+      <div style={{ display: 'flex', flexDirection: 'column' }}>
+        <StatsLineEnhanced {...props(source)} />
+      </div>,
+    )
+    expect(rowOf(view).hasAttribute('data-dock-row')).toBe(false)
+  })
+
+  it('leaves the row unmarked on a plain block container (no InputBar column styles)', () => {
+    const { source } = makeSource([assistant(1, 1), tool()])
+    const view = render(<StatsLineEnhanced {...props(source)} />)
+    expect(rowOf(view).hasAttribute('data-dock-row')).toBe(false)
+  })
+})
+

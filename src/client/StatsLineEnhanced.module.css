@@ -2,20 +2,42 @@
    a gauge pill (counts + output speed, click opens the time dialog) and a
    database pill (total tokens + cache hit, click opens the usage dialog).
    Replicated from the official StatsPills.module.css + stat-dialog.module.css
-   so the shadowed pills are visually identical (13/20 tertiary tier,
-   hover-pill affordance, shared dialog skin). */
+   (13/20 tertiary tier, hover-pill affordance, shared dialog skin).
+
+   Host contract: the row serves two containers at once, and picks between them
+   at attach time — the component marks which one it landed in (see
+   StatsLineEnhanced's `markDockContainer`):
+   - through 0.1.6-alpha.1 the dock slot renders straight into InputBar's own
+     column, and this row owns the content-width clamp, its side gutters and
+     its 4px top pad — the official StatsPills.module.css of that line;
+   - 0.1.6-alpha.2 renders it inside InputBar's flex `.dock` beside the resident
+     ContextMeter, which took all three jobs over, so the row only has to
+     shrink inside it (the official stylesheet's current form).
+   Both forms are kept side by side because one published build has to render
+   correctly on either host line. */
 
 .root {
   display: flex;
   justify-content: center;
   gap: 12px;
-  max-width: var(--dsh-chat-content-width);
-  width: 100%;
-  margin: 0 auto;
   box-sizing: border-box;
+  /* <= 0.1.6-alpha.1: this row is the composer column's content-width box. */
+  width: 100%;
+  max-width: var(--dsh-chat-content-width);
+  margin: 0 auto;
   padding: 4px calc(var(--dsh-composer-side-clearance) + 16px) 0px;
   font-size: var(--dsh-content-font-size-secondary, 13px);
   line-height: calc(20px + var(--dsh-content-font-delta-secondary, 0px));
+}
+
+/* 0.1.6-alpha.2+: InputBar's `.dock` owns the centring, the 12px gap, the top
+   pad and the side clearance. */
+.root[data-dock-row] {
+  width: auto;
+  min-width: 0;
+  max-width: 100%;
+  margin: 0;
+  padding: 0;
 }
 
 /* Dialog anchor: shrink-wraps its pill so the panel clamp measures the pill. */

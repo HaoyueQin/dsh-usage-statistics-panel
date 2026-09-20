@@ -4,39 +4,24 @@
  * mirrors one dimension up: ranked rows carry a rank number and Other does
  * not, Other opens the models it folded (ONE level — the provider section is
  * the one with two), and its detail wrapper is a SIBLING of the row it
- * belongs to, so opening it leaves the column at the collapsed height.
- *
- * The jsdom column-height case matters for CI: the real-browser check in
- * scripts/verify-models.mjs covers the same ground but never runs there.
+ * belongs to, so opening it leaves the ring beside it untouched.
  */
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, waitFor } from '@testing-library/react'
 import { UsageStatsSection, type UsageStatsSectionProps } from '../src/client/index.tsx'
 import type { UsageStatsRange } from '../src/wire.ts'
 
 const t = ((key: string) => key) as unknown as UsageStatsSectionProps['t']
 
-// jsdom performs no layout, so every rect is 0×0. The column height is the sum
-// of the list's top-level ROWS, so give every element a uniform row height and
-// replay the resize that expanding Other would cause.
-const ROW_H = 40
-const observers: Array<() => void> = []
-
 class ResizeObserverStub {
-  constructor(cb: () => void) { observers.push(cb) }
   observe(): void {}
   unobserve(): void {}
   disconnect(): void {}
 }
 
 beforeEach(() => {
-  observers.length = 0
   vi.stubGlobal('ResizeObserver', ResizeObserverStub)
-  vi.spyOn(Element.prototype, 'getBoundingClientRect').mockReturnValue({
-    height: ROW_H, width: 200, top: 0, left: 0, right: 200, bottom: ROW_H, x: 0, y: 0,
-    toJSON: () => ({}),
-  } as DOMRect)
 })
 
 /** Eleven models: the top ten are rank rows, m11 folds into the gray Other. */
@@ -115,7 +100,6 @@ async function renderPanel() {
 afterEach(() => {
   cleanup()
   vi.unstubAllGlobals()
-  vi.restoreAllMocks()
 })
 
 describe('model usage section', () => {
@@ -144,19 +128,5 @@ describe('model usage section', () => {
     // Only m11 sits beyond rank 10, and it must not stand among the rank rows.
     expect(detailNames(detailOf(otherRow))).toEqual(['m11'])
     expect(topRows(section).map((row) => row.querySelector('[class*="modelName"]')?.textContent)).not.toContain('m11')
-  })
-
-  it('keeps the column at its collapsed height when Other opens', async () => {
-    const container = await renderPanel()
-    const section = modelSection(container)
-    const svg = section.querySelector('svg[aria-label="modelUsage"]')!
-    // Eleven top-level rows; the detail wrapper is not one of them.
-    const collapsed = String(11 * ROW_H)
-    expect(svg.getAttribute('height')).toBe(collapsed)
-
-    fireEvent.click(rowNamed(section, 'other'))
-    await act(async () => { for (const cb of observers) cb() })
-
-    expect(svg.getAttribute('height')).toBe(collapsed)
   })
 })

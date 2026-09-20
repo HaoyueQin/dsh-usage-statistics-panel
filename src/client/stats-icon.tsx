@@ -1,9 +1,7 @@
 /**
- * The shared "usage statistics" glyph — the lucide BarChart3 icon. One path
- * authority for both surfaces that show it: the Settings-nav icon
- * (DOM-injected by settings-nav-icon.ts, which cannot use React elements) and
- * the sidebar quick entry (a React component). Keeping the path in one place
- * guarantees the two surfaces always render the identical SVG.
+ * The "usage statistics" glyph — the lucide BarChart3 icon, used by the
+ * sidebar quick entry. Kept as its own module so the path data has a single
+ * authority and the SVG stays identical wherever it is rendered.
  */
 
 /** The lucide BarChart3 path data (24x24 stroke icon). */

@@ -92,12 +92,12 @@ describe('chart colour rank assignment', () => {
 
     const chart = container.querySelector('svg[aria-label="modelUsage"]')!
     const segments = new Map<string, string>()
-    // Every stack segment carries its own aria-label, which is what this
-    // selector keys on.
+    // Every ring segment carries its own aria-label, which is what this
+    // selector keys on; a ring arc is stroked, not filled.
     for (const seg of Array.from(chart.querySelectorAll('[role="img"][aria-label]'))) {
       const label = seg.getAttribute('aria-label') ?? ''
       const model = label.split(':')[0] ?? ''
-      segments.set(model, seg.getAttribute('fill') ?? '')
+      segments.set(model, seg.getAttribute('stroke') ?? '')
     }
 
     // Rank order: m01=1 (blue) .. m10=10; the tail m11 collapses into the gray

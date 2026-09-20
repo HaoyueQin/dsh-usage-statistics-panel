@@ -1,39 +1,26 @@
 /**
- * The provider section mirrors the model one one dimension up: top-5 rank
- * colours from the PROVIDER series (never a model hue), everything beyond in
- * the gray Other bucket, and one shared highlight between the bar and the
- * the list. Providers that produced no tokens in the range must not enter the
- * ranking at all — a request-only provider has no usage to rank.
+ * The provider section mirrors the model one dimension up: top-5 rank colours
+ * from the PROVIDER series (never a model hue), everything beyond in the gray
+ * Other bucket, and one shared highlight between the ring and the list.
+ * Providers that produced no tokens in the range must not enter the ranking at
+ * all — a request-only provider has no usage to rank.
  */
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, waitFor } from '@testing-library/react'
 import { UsageStatsSection, type UsageStatsSectionProps } from '../src/client/index.tsx'
 import type { UsageStatsRange } from '../src/wire.ts'
 
 const t = ((key: string) => key) as unknown as UsageStatsSectionProps['t']
 
-// jsdom performs no layout, so every rect is 0×0. The column height is the sum
-// of the list's top-level ROWS — the expanded Other detail rows live in a
-// nested list and must never count — so give every element a uniform row
-// height and replay the resize that expanding Other would cause.
-const ROW_H = 40
-const observers: Array<() => void> = []
-
 class ResizeObserverStub {
-  constructor(cb: () => void) { observers.push(cb) }
   observe(): void {}
   unobserve(): void {}
   disconnect(): void {}
 }
 
 beforeEach(() => {
-  observers.length = 0
   vi.stubGlobal('ResizeObserver', ResizeObserverStub)
-  vi.spyOn(Element.prototype, 'getBoundingClientRect').mockReturnValue({
-    height: ROW_H, width: 200, top: 0, left: 0, right: 200, bottom: ROW_H, x: 0, y: 0,
-    toJSON: () => ({}),
-  } as DOMRect)
 })
 
 /**
@@ -95,8 +82,9 @@ function providerSection(container: HTMLElement): HTMLElement {
 function segmentColors(section: HTMLElement): Map<string, string> {
   const chart = section.querySelector('svg[aria-label="providerUsage"]')!
   const out = new Map<string, string>()
+  // A ring segment is a stroked arc, not a filled rect: read `stroke`.
   for (const seg of Array.from(chart.querySelectorAll('[role="img"][aria-label]'))) {
-    out.set(seg.getAttribute('aria-label')!.split(':')[0]!, seg.getAttribute('fill') ?? '')
+    out.set(seg.getAttribute('aria-label')!.split(':')[0]!, seg.getAttribute('stroke') ?? '')
   }
   return out
 }
@@ -143,7 +131,6 @@ async function renderPanel() {
 afterEach(() => {
   cleanup()
   vi.unstubAllGlobals()
-  vi.restoreAllMocks()
 })
 
 describe('provider usage section', () => {
@@ -199,19 +186,12 @@ describe('provider usage section', () => {
     const container = await renderPanel()
     const section = providerSection(container)
     const svg = section.querySelector('svg[aria-label="providerUsage"]')!
-    // Six top-level rows: pa..pe plus the Other row (its wrapper is not a row).
-    const collapsed = String(6 * ROW_H)
-    expect(svg.getAttribute('height')).toBe(collapsed)
-
-    // The Other row's own twisty — the folded providers live behind it.
-    const toggle = rowNamed(section, 'other').querySelector('button[aria-expanded]')!
-    fireEvent.click(toggle)
-    await act(async () => { for (const cb of observers) cb() })
-
-    expect(svg.getAttribute('height')).toBe(collapsed)
+    // The ring's diameter is a function of the row width, never of the list's
+    // height: six top-level rows or sixty, the chart keeps its own size.
+    expect(svg.getAttribute('width')).toBe(svg.getAttribute('height'))
   })
 
-  it('lights the matching bar segment when a list row is hovered', async () => {
+  it('lights the matching ring segment when a list row is hovered', async () => {
     const container = await renderPanel()
     const section = providerSection(container)
     const firstRow = section.querySelector('li[class*="modelRow"]')!
@@ -219,11 +199,11 @@ describe('provider usage section', () => {
 
     fireEvent.mouseEnter(firstRow)
     await waitFor(() => {
-      expect(section.querySelectorAll('[class*="stackDim"]').length).toBeGreaterThan(0)
+      expect(section.querySelectorAll('[class*="donutDim"]').length).toBeGreaterThan(0)
     })
     // The hovered provider keeps full opacity; the rest dim.
-    expect(section.querySelector('[role="img"][aria-label^="pa:"][class*="stackDim"]')).toBeNull()
-    expect(section.querySelector('[role="img"][aria-label^="pb:"][class*="stackDim"]')).not.toBeNull()
+    expect(section.querySelector('[role="img"][aria-label^="pa:"][class*="donutDim"]')).toBeNull()
+    expect(section.querySelector('[role="img"][aria-label^="pb:"][class*="donutDim"]')).not.toBeNull()
   })
 
   it('opens the Other bucket into the providers it folded, not their models', async () => {
@@ -269,24 +249,5 @@ describe('provider usage section', () => {
 
     expect(toggle.getAttribute('aria-expanded')).toBe('true')
     expect(detailNames(detailOf(pfRow))).toEqual(['m7'])
-  })
-
-  it('keeps the column at its collapsed height as rows open at either level', async () => {
-    const container = await renderPanel()
-    const section = providerSection(container)
-    const svg = section.querySelector('svg[aria-label="providerUsage"]')!
-    const collapsed = String(6 * ROW_H)
-
-    // A ranked row, then the Other bucket, then a provider two levels in: the
-    // column is sized to the ROWS alone, and none of these adds one.
-    for (const row of [rowNamed(section, 'pa'), rowNamed(section, 'other')]) {
-      fireEvent.click(row)
-      await act(async () => { for (const cb of observers) cb() })
-      expect(svg.getAttribute('height')).toBe(collapsed)
-    }
-    const pfRow = Array.from(detailOf(rowNamed(section, 'other')).querySelectorAll('li[class*="modelRow"]'))[0]!
-    fireEvent.click(pfRow)
-    await act(async () => { for (const cb of observers) cb() })
-    expect(svg.getAttribute('height')).toBe(collapsed)
   })
 })

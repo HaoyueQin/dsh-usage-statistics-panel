@@ -11,10 +11,8 @@
  *   the runtime sessions list feed
  * - storageDomain: @deepseek-ai/dsh-storage-domain (domain hub)
  * - webServer: @deepseek-ai/dsh-host-webserver (the WebServer)
- * - settings: @deepseek-ai/dsh-settings (settings namespace seam)
  * - slots: the client slot registry (ui-slots)
  * - locale: the client locale service
- * - connection: the client connection handle
  * Drift from upstream is contained to this file.
  *
  * This file must stay FREE of Node.js types (`node:http`, `node:stream`,
@@ -166,14 +164,6 @@ export interface UsageStorageDomain {
   open(spec: { name: string; version: number; tables: Record<string, unknown> }): Promise<UsageDomain>
 }
 
-/** The settings service (mirror of @deepseek-ai/dsh-settings). */
-export interface UsageSettingsService {
-  scope(namespace: string): {
-    get(): unknown
-    set(value: unknown): Promise<void>
-  }
-}
-
 /** One slots.register spec (mirror of the client ui-slots registration shape). */
 export interface UsageSlotEntrySpec {
   name: string
@@ -220,13 +210,6 @@ export interface UsageLocaleService {
   getLocale(): { active: string }
 }
 
-/** The client connection handle (mirror of @deepseek-ai/dsh-client-connection). */
-export interface UsageConnection {
-  api: {
-    call(method: string, params: unknown): Promise<{ ok: boolean; value?: unknown; error?: { code: string; message: string } }>
-  }
-}
-
 declare module 'cordis' {
   interface Context {
     effect(dispose: () => void | (() => void), label?: string): void
@@ -234,10 +217,8 @@ declare module 'cordis' {
     sessions: UsageSessionStore
     storageDomain: UsageStorageDomain
     webServer: UsageWebServer
-    settings: UsageSettingsService
     slots: UsageSlotsService
     locale: UsageLocaleService
-    connection: UsageConnection
   }
 }
 

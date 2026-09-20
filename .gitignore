@@ -14,8 +14,11 @@ verify-redesign-*.png
 .verify-backup/
 .mnemon/
 scripts/*-section.png
-# Release notes are local drafting files: they are not shipped in the npm
-# package (see the `files` field) and every release's notes are generated into
-# the GitHub Release by .github/workflows/release.yml, so the repository does
-# not carry them. docs/design.md stays tracked — it ships with the package.
-docs/release-notes-*.md
+# Markdown under docs/ is local working material — migration plans, design
+# drafts, prompts — with one exception: docs/design.md is the shipped design
+# note, linked from both READMEs and listed in package.json's `files`, so it
+# stays tracked. Release notes are covered by the same rule; every release's
+# notes are generated into the GitHub Release by .github/workflows/release.yml
+# rather than carried in the repository.
+docs/*.md
+!docs/design.md

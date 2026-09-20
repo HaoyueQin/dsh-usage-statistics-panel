@@ -27,7 +27,6 @@ import { Donut, useDonutSize, type DonutSegment } from './Donut.tsx'
 import { formatTokens, formatCompact, formatPercent, cacheRate, cacheRateText, daysBetween, localDay, indexOfDay, shortDay, providerOf, modelNameOf, smoothPath, niceTicks } from './format.ts'
 import type { UsageStatsKey } from './locales.ts'
 import type { UsageStatsTranslator } from './index.tsx'
-import { sidebarEntryState } from './sidebar-entry-state.ts'
 import { statsLineState } from './stats-line-state.ts'
 import css from './UsageStatsPanel.module.css'
 
@@ -318,7 +317,6 @@ export function UsageStatsPanel({ t }: { t: Translator }): JSX.Element {
         <div className={css.empty}>{t('empty')}</div>
       )}
       <div className={css.prefGroup}>
-        <EntryOption t={t} />
         <StatsLineOptions t={t} />
       </div>
     </div>
@@ -376,25 +374,7 @@ function SettingToggle({ title, desc, checked, ariaLabel, onChange }: {
 }
 
 /**
- * The framed preference at the bottom of the panel: toggling it shows a
- * "Usage statistics" shortcut above the Settings button in the left sidebar.
- */
-function EntryOption({ t }: { t: Translator }) {
-  const [enabled, setEnabled] = useState(sidebarEntryState.enabled)
-  useEffect(() => sidebarEntryState.subscribe(() => { setEnabled(sidebarEntryState.enabled) }), [])
-  return (
-    <SettingToggle
-      title={t('sidebarEntry')}
-      desc={t('sidebarEntryDesc')}
-      checked={enabled}
-      ariaLabel={t('sidebarEntry')}
-      onChange={(next) => { sidebarEntryState.setEnabled(next) }}
-    />
-  )
-}
-
-/**
- * The three bottom-bar enhancement preferences, below the sidebar entry:
+ * The three bottom-bar enhancement preferences:
  * "Precise cache hit rate" (two decimals on the usage pill and dialog),
  * "Session token breakdown" (an extra cache-miss row in the usage dialog) and
  * "Streaming throughput" (a live decode-speed estimate while a step streams,

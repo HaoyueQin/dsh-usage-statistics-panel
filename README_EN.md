@@ -18,7 +18,7 @@ English | [中文](README.md)
 [![Commit activity](https://img.shields.io/github/commit-activity/t/HaoyueQin/dsh-usage-statistics-panel)](https://github.com/HaoyueQin/dsh-usage-statistics-panel/graphs/commit-activity)
 [![Last commit](https://img.shields.io/github/last-commit/HaoyueQin/dsh-usage-statistics-panel)](https://github.com/HaoyueQin/dsh-usage-statistics-panel/commits)
 
-A usage statistics panel plugin for the DSH web UI: per-day token trend, a GitHub-style activity heatmap, a cache hit-rate curve, and two breakdowns — by model and by provider (donut + detail list each) — living on the plugin's own page inside the Plugins page.
+A usage statistics panel plugin for the DSH web UI: per-day token trend, a GitHub-style activity heatmap, a cache hit-rate curve, and two breakdowns — by model and by provider (donut + detail list each) — living on the plugin's own page inside the Plugins page, with its own row in the left rail.
 
 All charts are hand-drawn SVG with no chart library; the palette uses GitHub Primer's data-viz two-set tokens (the top ten models and the top five providers each get a distinct rank colour, everything else collapses into a gray "Other" bucket) and adapts to the DSH theme.
 
@@ -60,7 +60,7 @@ dsh plugin --profile <name> add dsh-usage-statistics-panel@latest
 
 After mounting, **hard-refresh the browser** (Cmd/Ctrl+Shift+R): client-half changes hot-reload in DSH, no restart needed; only host-half updates (collector/storage/routes) require restarting DSH.
 
-Once mounted, open **Plugins** in the left rail, then **Installed** → `usage-statistics-panel`, to reach the panel (the card shows the short name; the full package name is on its detail page). The **Usage statistics** quick entry at the sidebar foot can be enabled at the bottom of the panel and jumps straight to that page.
+Once mounted there are two ways in: the **Usage statistics** row in the left rail under New Session, or **Plugins** → **Installed** → `usage-statistics-panel` on its detail page (the card shows the short name; the full package name is on that page). Both render the same panel.
 
 **Compatibility**: this plugin supports DeepSeek Harness `>= 0.1.2-rc.1` with a dual-path backfill: `list`+`inspect` on `0.1.2-rc.1`, `list`+`open`+paged `read`+`close` on `0.1.3-alpha.*` and later (`inspect` was removed upstream). Dev dependencies and the verification target track host `0.1.6-alpha.2`, verified against `0.1.2-rc.1`, `0.1.5-rc.2`, `0.1.6-alpha.1` and `0.1.6-alpha.2`; V3 log compatibility is covered by unit tests.
 

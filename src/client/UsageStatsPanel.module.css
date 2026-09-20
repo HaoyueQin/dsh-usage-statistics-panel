@@ -8,6 +8,24 @@
  * palette, with a lifted dark variant defined below.
  */
 
+/* The panel as a standalone main panel. It gets the same 960px content column
+   the Plugins page gives it, so both entries render identically — without a
+   cap the charts would stretch to whatever the centre column happens to be. */
+.page {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  box-sizing: border-box;
+  height: 100%;
+  overflow: auto;
+  padding: 28px clamp(24px, 4vw, 48px) 48px;
+}
+
+.page > * {
+  width: 100%;
+  max-width: 960px;
+}
+
 .panel {
   display: flex;
   flex-direction: column;

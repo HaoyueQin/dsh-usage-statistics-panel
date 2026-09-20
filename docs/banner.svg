@@ -3,7 +3,6 @@
 <radialGradient id="gl" cx=".8" cy=".5" r=".6"><stop offset="0" stop-color="#4D6BFE" stop-opacity=".13"/><stop offset="1" stop-color="#4D6BFE" stop-opacity="0"/></radialGradient>
 <clipPath id="hw"><rect x="614" y="124" height="62" width="0"><animate attributeName="width" dur="6.4s" repeatCount="indefinite" values="0;0;172;172" keyTimes="0;.125;.3125;1"/></rect></clipPath>
 <clipPath id="tw"><rect x="800" y="110" height="94" width="0"><animate attributeName="width" dur="6.4s" repeatCount="indefinite" values="0;0;166;166" keyTimes="0;.1875;.40625;1"/></rect></clipPath>
-<clipPath id="sw"><rect x="1000" y="186" width="28" height="0"><animate attributeName="y" dur="6.4s" repeatCount="indefinite" values="186;186;112;112" keyTimes="0;.4375;.55;1"/><animate attributeName="height" dur="6.4s" repeatCount="indefinite" values="0;0;74;74" keyTimes="0;.4375;.55;1"/></rect></clipPath>
 </defs>
 <rect width="1200" height="260" fill="#F6F8FA"/>
 <rect width="1200" height="260" fill="url(#gl)"/>
@@ -11,7 +10,7 @@
 <text x="112" y="64.5" font-size="12" font-weight="600" letter-spacing=".8" fill="#fff" text-anchor="middle">DSH PLUGIN</text>
 <text x="64" y="111" font-size="35" font-weight="700" fill="#1F2328" textLength="470">DSH Usage Statistics Panel</text>
 <text x="64" y="141" font-size="15" fill="#59636E">Daily token trends, a heatmap, and per-model / per-provider breakdowns</text>
-<text x="64" y="163" font-size="15" fill="#59636E">Stacked bars that rise on scroll · fully local · in your DSH settings</text>
+<text x="64" y="163" font-size="15" fill="#59636E">Donuts sized to fit · fully local · its own page and rail row</text>
 <circle cx="70" cy="194" r="5" fill="#509FFF"/><circle cx="84" cy="194" r="5" fill="#6D9A73"/><circle cx="98" cy="194" r="5" fill="#D69159"/><circle cx="112" cy="194" r="5" fill="#B68CF5"/><circle cx="126" cy="194" r="5" fill="#E07DB2"/><circle cx="140" cy="194" r="5" fill="#55ADAD"/><circle cx="154" cy="194" r="5" fill="#CA7162"/><circle cx="168" cy="194" r="5" fill="#A2B15D"/><circle cx="182" cy="194" r="5" fill="#8179DE"/><circle cx="196" cy="194" r="5" fill="#E1BD5D"/>
 <text x="210" y="198.5" font-size="12" fill="#59636E">10 model colours</text>
 <path d="M330 194h16" stroke="#C8D0D8" stroke-width="2" stroke-linecap="round"/>
@@ -38,21 +37,18 @@
 <path fill="#D69159" d="M804 181v-5h11v5zM825 189v-4h11v4zM846 173v-7h11v7zM867 187v-3h11v3zM888 166v-8h11v8zM909 182v-4h11v4zM930 171v-7h11v7zM951 154v-12h11v12z"/>
 <path d="M804 122C826 119 846 124 868 121S908 115 930 118 956 114 962 115" fill="none" stroke="#4D6BFE" stroke-width="2.5"/>
 </g>
-<g clip-path="url(#sw)">
-<rect x="1004" y="112" width="20" height="74" rx="5" fill="#EBEDF0"/>
-<rect x="1004" y="112" width="20" height="20.4" fill="#509FFF"/>
-<rect x="1004" y="132.4" width="20" height="16.7" fill="#6D9A73"/>
-<rect x="1004" y="149.1" width="20" height="10.1" fill="#D69159"/>
-<rect x="1004" y="159.2" width="20" height="9" fill="#B68CF5"/>
-<rect x="1004" y="168.2" width="20" height="4.7" fill="#E07DB2"/>
-<rect x="1004" y="172.9" width="20" height="4.6" fill="#55ADAD"/>
-<rect x="1004" y="177.5" width="20" height="3.6" fill="#CA7162"/>
-<rect x="1004" y="181.1" width="20" height="4.9" fill="#89919B"/>
+<g>
+<circle cx="1014" cy="149" r="15" fill="none" stroke="#EBEDF0" stroke-width="8"/>
+<circle cx="1014" cy="149" r="15" fill="none" stroke="#509FFF" stroke-width="8" stroke-dasharray="26.01 68.24" stroke-dashoffset="0" transform="rotate(-90 1014 149)"/>
+<circle cx="1014" cy="149" r="15" fill="none" stroke="#6D9A73" stroke-width="8" stroke-dasharray="21.21 73.04" stroke-dashoffset="-26.01" transform="rotate(-90 1014 149)"/>
+<circle cx="1014" cy="149" r="15" fill="none" stroke="#D69159" stroke-width="8" stroke-dasharray="12.91 81.34" stroke-dashoffset="-47.22" transform="rotate(-90 1014 149)"/>
+<circle cx="1014" cy="149" r="15" fill="none" stroke="#89919B" stroke-width="8" stroke-dasharray="34.12 60.13" stroke-dashoffset="-60.13" transform="rotate(-90 1014 149)"/>
 </g>
 <g font-size="9" fill="#59636E"><animate attributeName="opacity" dur="6.4s" repeatCount="indefinite" values="0;0;1;1" keyTimes="0;.5469;.6094;1"/>
 <circle cx="1035" cy="133" r="3.5" fill="#509FFF"/><text x="1042" y="136">deepseek-v4</text><text x="1136" y="136" text-anchor="end">27.6%</text>
 <circle cx="1035" cy="151" r="3.5" fill="#6D9A73"/><text x="1042" y="154">deepseek-r1</text><text x="1136" y="154" text-anchor="end">22.5%</text>
-<circle cx="1035" cy="169" r="3.5" fill="#89919B"/><text x="1042" y="172">Other</text><text x="1136" y="172" text-anchor="end">49.9%</text>
+<circle cx="1035" cy="169" r="3.5" fill="#D69159"/><text x="1042" y="172">deepseek-v3</text><text x="1136" y="172" text-anchor="end">13.7%</text>
+<circle cx="1035" cy="187" r="3.5" fill="#89919B"/><text x="1042" y="190">Other</text><text x="1136" y="190" text-anchor="end">36.2%</text>
 </g>
 </g>
 </svg>

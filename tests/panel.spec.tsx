@@ -63,4 +63,30 @@ describe('UsageStatsSection', () => {
     expect(screen.getByRole('button', { name: 'refresh' }).hasAttribute('disabled')).toBe(true)
     vi.unstubAllGlobals()
   })
+
+  it('spans the trend chart across the full container width', async () => {
+    const RANGE = {
+      from: '2026-08-01', to: '2026-08-10', tokens: 1000, requests: 2, turns: 1,
+      cacheHit: 500, cacheMiss: 500, activeDays: 2, topModel: 'p/m', topProvider: 'p',
+      daily: Array.from({ length: 10 }, (_, i) => ({
+        day: `2026-08-${String(i + 1).padStart(2, '0')}`,
+        total: 100, byModel: { 'p/m': 100 }, byProvider: { p: 100 },
+        requests: 1, turns: 1, cacheHit: 50, cacheMiss: 50,
+      })),
+      models: [{ model: 'p/m', provider: 'p', tokens: 1000, percent: 100 }],
+      providers: [{ provider: 'p', tokens: 1000, percent: 100 }],
+    }
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: true, json: async () => ({ ok: true, value: RANGE }),
+    } as unknown as Response)))
+    const { container } = render(<UsageStatsSection {...({ t } as UsageStatsSectionProps)} />)
+    await act(async () => { await new Promise((r) => { setTimeout(r, 0) }) })
+    const chart = container.querySelector('svg[class*="chart"]')
+    expect(chart).not.toBeNull()
+    // width="100%" plus a viewBox built from the measured width is what makes
+    // the plot span the container; both must stay.
+    expect(chart!.getAttribute('width')).toBe('100%')
+    const viewBox = chart!.getAttribute('viewBox')!.split(' ')
+    expect(Number(viewBox[2])).toBeGreaterThan(0)
+  })
 })

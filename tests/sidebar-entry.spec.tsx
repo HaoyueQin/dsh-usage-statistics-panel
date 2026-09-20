@@ -1,14 +1,16 @@
 /**
  * Tests for the sidebar quick-entry feature: the framed preference row in the
  * panel (title + subtitle + switch) and the sidebar footer action button
- * (renders only while enabled, opens the Settings dialog at the usage-stats
- * section).
+ * (renders only while enabled; clicking it asks the injected face to open the
+ * panel's page on the Plugins page).
  */
 // @vitest-environment jsdom
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { UsageStatsSection, type UsageStatsSectionProps } from '../src/client/index.tsx'
-import { SidebarEntry, openUsageStatsSection, type SidebarEntryProps } from '../src/client/SidebarEntry.tsx'
+import { SidebarEntry, type SidebarEntryProps } from '../src/client/SidebarEntry.tsx'
 import { resetSidebarEntryStateForTests, sidebarEntryState } from '../src/client/sidebar-entry-state.ts'
 
 const STORAGE_KEY = 'dsh-usage-statistics-panel:sidebar-entry'
@@ -93,42 +95,20 @@ describe('SidebarEntry', () => {
   })
 })
 
-describe('openUsageStatsSection', () => {
-  it('clicks the settings trigger and then the matching nav row', () => {
-    // Sidebar-foot structure: the entry lives in the footer-actions wrapper,
-    // the settings trigger in the settings seat beside it.
-    const foot = document.createElement('div')
-    const entry = document.createElement('button')
-    const settingsSeat = document.createElement('div')
-    const trigger = document.createElement('button')
-    trigger.setAttribute('aria-haspopup', 'dialog')
-    foot.appendChild(entry)
-    settingsSeat.appendChild(trigger)
-    foot.appendChild(settingsSeat)
-    document.body.appendChild(foot)
+describe('SidebarEntry navigation', () => {
+  it('calls the injected openPanel when clicked', () => {
+    sidebarEntryState.setEnabled(true)
+    const openPanel = vi.fn()
+    render(<SidebarEntry {...({ wide: true, t: entryT, openPanel } as SidebarEntryProps)} />)
+    fireEvent.click(screen.getByRole('button', { name: 'nav' }))
+    expect(openPanel).toHaveBeenCalledOnce()
+  })
 
-    // A dialog with the section nav already open.
-    const dialog = document.createElement('div')
-    dialog.setAttribute('role', 'dialog')
-    const nav = document.createElement('nav')
-    const general = document.createElement('button')
-    general.textContent = 'General'
-    const usage = document.createElement('button')
-    usage.textContent = 'Usage statistics'
-    nav.appendChild(general)
-    nav.appendChild(usage)
-    dialog.appendChild(nav)
-    document.body.appendChild(dialog)
-
-    const triggerClick = vi.spyOn(trigger, 'click')
-    const usageClick = vi.spyOn(usage, 'click')
-    const generalClick = vi.spyOn(general, 'click')
-    vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => { cb(0); return 0 })
-
-    openUsageStatsSection(entry, 'Usage statistics')
-
-    expect(triggerClick).toHaveBeenCalledOnce()
-    expect(usageClick).toHaveBeenCalledOnce()
-    expect(generalClick).not.toHaveBeenCalled()
+  it('does not opt out of flex shrinking (the footer seat is shared)', () => {
+    // The regression this guards: `flex: none` kept this button at its full
+    // width and pushed every neighbour in the shared footer row to zero.
+    const css = readFileSync(join(__dirname, '..', 'src', 'client', 'SidebarEntry.module.css'), 'utf8')
+    const entryRule = css.slice(css.indexOf('.entry {'), css.indexOf('.entry:hover'))
+    expect(entryRule).not.toContain('flex: none')
   })
 })

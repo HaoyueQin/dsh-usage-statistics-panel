@@ -23,7 +23,7 @@ import { Button, Input } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { DailyTokenUsage, ModelTokenUsage, ProviderTokenUsage, UsageStatsRange, UsageStatsRequest } from '../wire.ts'
 import { fetchRange, UsageApiError } from './api.ts'
 import { ChartTip } from './ChartTip.tsx'
-import { StackedBar, useCollapsedHeight } from './StackedBar.tsx'
+import { Donut, useDonutSize, type DonutSegment } from './Donut.tsx'
 import { formatTokens, formatCompact, formatPercent, cacheRate, cacheRateText, daysBetween, localDay, indexOfDay, shortDay, providerOf, modelNameOf, smoothPath, niceTicks } from './format.ts'
 import type { UsageStatsKey } from './locales.ts'
 import type { UsageStatsTranslator } from './index.tsx'
@@ -35,11 +35,13 @@ type Translator = UsageStatsTranslator
 
 const RANGE_PRESETS = ['7', '14', '30', '90'] as const
 
-// The heatmap always shows a fixed window regardless of the range preset.
-// The DSH settings pane is much narrower than the reasonix settings modal,
-// so the window is 26 weeks (half a year) and the cells cap at 16px — the
-// chart must never overflow the container's sides.
-const HEAT_WEEKS = 26
+// The heatmap's DATA WINDOW: one year, fixed regardless of the range preset.
+// It is the window, not the number of weeks drawn — the render trims columns
+// to the container's width (see heatGeometry), so a narrow pane shows fewer
+// weeks without re-fetching. Sized to the Plugins page's 960px content column,
+// where 52 weeks land at roughly 15px cells: the density this chart is meant
+// to read at.
+export const HEAT_WEEKS = 52
 
 /** The trend chart caps its visible window at 180 days (mirrors reasonix). */
 const TREND_MAX_DAYS = 180
@@ -441,11 +443,6 @@ function StatCards({ stats, t }: { stats: UsageStatsRange; t: Translator }) {
     { icon: Coins, label: t('tokens'), value: formatTokens(stats.tokens), hint: t('tokensHint') },
     { icon: MessageSquare, label: t('sessions'), value: String(stats.turns) },
     { icon: MessagesSquare, label: t('requests'), value: String(stats.requests) },
-    // The two long-valued cards (tokens, top model) bookend the grid's first
-    // column: tokens leads row one, the model name leads row two directly
-    // under it — both get the wide track, the four short numerics fill the
-    // rest (mirrors the reasonix card sizing).
-    { icon: Cpu, label: t('topModel'), value: stats.topModel || '—', hint: t('topModelHint'), modelRef: true },
     {
       icon: Activity,
       label: t('cacheRate'),
@@ -456,6 +453,12 @@ function StatCards({ stats, t }: { stats: UsageStatsRange; t: Translator }) {
       sub: `${formatCompact(stats.cacheHit)} ${t('cachedTokens')}`,
     },
     { icon: CalendarDays, label: t('activeDays'), value: String(stats.activeDays) },
+    // The two long-valued cards bookend the row: total tokens leads it and the
+    // top model closes it, each on a wider track than the four short numerics
+    // between them. The model sits last because it carries the longest text —
+    // the model name over its provider — and the row's end is where that has
+    // the most room before FitText would have to shrink it.
+    { icon: Cpu, label: t('topModel'), value: stats.topModel || '—', hint: t('topModelHint'), modelRef: true },
   ]
   return (
     <div className={css.cards}>
@@ -534,6 +537,57 @@ const HEAT_BASE = 14 // cell size at which column trimming starts
 const HEAT_GAP = 3 // breathing gap between cells; mirrors the legend swatch gap
 const HEAT_RX = 3 // cell corner radius; matches the legend swatch (css .heatCell)
 
+/** One heatmap frame's geometry. */
+export interface HeatGeometry {
+  /** Cell edge in px. */
+  size: number
+  /** Weeks drawn. */
+  cols: number
+  /** Columns actually laid out, including the partial first week. */
+  totalWeeks: number
+}
+
+/**
+ * Solve the heatmap's geometry for an available width.
+ *
+ * Two rules, in this order: spend spare width on MORE WEEKS (up to the data
+ * window), and only then grow the cells to close the remaining gap. When the
+ * window does not fit at the base cell size, trim the earliest weeks and keep
+ * the base size.
+ *
+ * Two off-by-one traps are handled explicitly, because both produce a real
+ * overflow at the page's ~900px content width:
+ *  - "does it fit" is tested against `totalWeeks` (the laid-out column count,
+ *    one more than `cols` when the first week is partial), not `HEAT_WEEKS`;
+ *  - the fitting test reserves the trailing gap, so `baseCols` is derived from
+ *    `avail - HEAT_GAP` and the rendered width `cols*(size+GAP)+GAP` can never
+ *    exceed `avail`.
+ *
+ * The growth branch runs only when the solved cell size is still at or above
+ * the base size; otherwise the window does not truly fit and the trim branch
+ * runs. A `max(BASE, size)` fallback would silently render one column too many.
+ * @param avail - available width in px.
+ * @param startOffset - leading empty cells of the first week (0..6).
+ * @returns the cell size, the week count, and the laid-out column count.
+ */
+export function heatGeometry(avail: number, startOffset: number): HeatGeometry {
+  const totalWeeks = Math.ceil((HEAT_WEEKS * 7 + startOffset) / 7)
+  const baseCols = Math.max(1, Math.floor((avail - HEAT_GAP) / (HEAT_BASE + HEAT_GAP)))
+  if (baseCols >= totalWeeks) {
+    const size = (avail - HEAT_GAP) / totalWeeks - HEAT_GAP
+    if (size >= HEAT_BASE) return { size, cols: HEAT_WEEKS, totalWeeks }
+  }
+  const cols = Math.max(1, Math.min(baseCols, HEAT_WEEKS))
+  // Trim to the columns that fit, then grow the cells back to fill the width
+  // exactly. Holding the cells at the base size here would leave up to a whole
+  // cell of dead space on the right of a mid-width pane (measured: 15px at a
+  // 732px row), which is precisely the "always fill the width" this chart is
+  // meant to hold. `cols` was derived from `avail - GAP`, so the solved size is
+  // always at or above the base size; the floor only guards absurd widths.
+  const size = (avail - HEAT_GAP) / cols - HEAT_GAP
+  return { size: Math.max(HEAT_BASE, size), cols, totalWeeks: cols }
+}
+
 function Heatmap({ daily, from, to, t, panelRef }: { daily: DailyTokenUsage[]; from: string; to: string; t: Translator; panelRef: RefObject<HTMLDivElement | null> }) {
   // Memoized so a hover/tip state change re-renders without rebuilding the
   // per-day lookup (the daily array is stable between fetches).
@@ -544,27 +598,14 @@ function Heatmap({ daily, from, to, t, panelRef }: { daily: DailyTokenUsage[]; f
   }, [daily])
   const [tip, setTip] = useState<{ day: string; tokens: number; requests: number; cacheHit: number; cacheMiss: number; anchor: Element } | null>(null)
   const wrapRef = useRef<HTMLDivElement>(null)
-  const [geom, setGeom] = useState<{ size: number; cols: number }>({ size: HEAT_BASE, cols: HEAT_WEEKS })
+  const [geom, setGeom] = useState<HeatGeometry>(() => heatGeometry(HEAT_BASE * HEAT_WEEKS, 0))
 
   useEffect(() => {
     const el = wrapRef.current
     if (!el) return
     const update = () => {
       const avail = Math.max(1, el.clientWidth - 2)
-      const baseCols = Math.max(1, Math.floor((avail + HEAT_GAP) / (HEAT_BASE + HEAT_GAP)))
-      let next: { size: number; cols: number }
-      if (baseCols >= HEAT_WEEKS) {
-        const so = (indexOfDay(from) + 1) % 7
-        const totalWeeks = Math.ceil((HEAT_WEEKS * 7 + so) / 7)
-        // Cells grow to fill the full container width — the chart spans edge
-        // to edge (no right-hand gap), clamped by the wrap's own width.
-        const size = Math.max(HEAT_BASE, avail / totalWeeks - HEAT_GAP)
-        next = { size, cols: HEAT_WEEKS }
-      } else {
-        // Too narrow for the full window at the base size: keep the newest
-        // columns at the base size and trim the earliest ones.
-        next = { size: HEAT_BASE, cols: baseCols }
-      }
+      const next = heatGeometry(avail, (indexOfDay(from) + 1) % 7)
       // Only commit when the geometry actually changed — the heatmap SVG
       // width follows `geom.size`, and committing an identical value on
       // every ResizeObserver callback would feed a render loop and jitter.
@@ -583,7 +624,9 @@ function Heatmap({ daily, from, to, t, panelRef }: { daily: DailyTokenUsage[]; f
 
   const rows = 7
   const startOffset = days[0] ? (indexOfDay(days[0]) + 1) % 7 : 0
-  const weeks = Math.max(1, Math.ceil((days.length + startOffset) / 7))
+  // The solver already knows how many columns the layout has, including the
+  // partial first week, so the SVG width follows it directly.
+  const weeks = geom.totalWeeks
 
   return (
     <section className={css.section}>
@@ -832,24 +875,26 @@ function ModelUsage({ models, t, colorForModel, panelRef }: { models: GroupedMod
   const [tip, setTip] = useState<{ model: string; tokens: number; percent: number; anchor: Element; items?: ModelTokenUsage[] } | null>(null)
   const [hover, setHover] = useState<string | null>(null)
   const [expandedOther, setExpandedOther] = useState(false)
-  // The column is sized to the rows alone, so expanding Other never stretches
-  // the chart.
-  const [listRef, barH] = useCollapsedHeight()
+  // The ring's diameter follows the row's width, so the list keeps its own
+  // share of the space and expanding Other never stretches the chart.
+  const rowRef = useRef<HTMLDivElement>(null)
+  const size = useDonutSize(rowRef)
 
   if (models.length === 0) return null
   const other = models.find((m) => m.model === OTHER_MODEL)
 
-  // Stack order is the host's rank order, laid out top-to-bottom like the
-  // list beside it: rank 1 owns the TOP segment and the aggregated tail (the
-  // gray Other bucket) ends at the base.
-  const segments = models.map((m) => ({
+  // Ring order is the host's rank order, running clockwise from twelve
+  // o'clock to match the list beside it: rank 1 leads, and the aggregated tail
+  // (the gray Other bucket) closes the ring.
+  const segments: DonutSegment[] = models.map((m) => ({
     key: m.model,
     tokens: m.tokens,
     color: colorForModel(m.model),
     label: `${m.model === OTHER_MODEL ? t('other') : m.model}: ${formatTokens(m.tokens)} (${formatPercent(m.percent)})`,
   }))
+  const total = models.reduce((sum, m) => sum + m.tokens, 0)
 
-  // A bar segment and its list row drive the same highlight; only the
+  // A ring segment and its list row drive the same highlight; only the
   // segment carries an anchor, so only it raises the tooltip.
   const highlight = (key: string | null, anchor?: Element): void => {
     setHover(key)
@@ -862,29 +907,33 @@ function ModelUsage({ models, t, colorForModel, panelRef }: { models: GroupedMod
   return (
     <section className={css.section}>
       <h3 className={css.sectionTitle}>{t('modelUsage')}</h3>
-      <div className={css.models}>
-        <StackedBar
-          segments={segments}
-          ariaLabel={t('modelUsage')}
-          height={barH}
-          hovered={hover}
-          onHover={highlight}
-        />
-        {tip && (
-          <ChartTip anchor={tip.anchor} panelRef={panelRef}>
-            <div className={css.tipTitle}>{tip.model === OTHER_MODEL ? t('other') : tip.model}</div>
-            <div>{t('total')}: {formatTokens(tip.tokens)}</div>
-            <div>{t('percent')}: {formatPercent(tip.percent)}</div>
-            {tip.items && tip.items.length > 0 && (
-              <div className={css.tipBreakdown}>
-                {tip.items.map((it) => (
-                  <div key={it.model} className={clsx(css.tipRow, css.tipRowOther)}><i className={css.legendSwatch} style={{ background: OTHER_COLOR }} />{it.model}: {formatTokens(it.tokens)}</div>
-                ))}
-              </div>
-            )}
-          </ChartTip>
-        )}
-        <ul className={css.modelList} ref={listRef}>
+      <div className={css.models} ref={rowRef}>
+        <div className={css.donutWrap}>
+          <Donut
+            segments={segments}
+            size={size}
+            ariaLabel={t('modelUsage')}
+            centerValue={formatCompact(total)}
+            centerCaption={t('tokens')}
+            hovered={hover}
+            onHover={highlight}
+          />
+          {tip && (
+            <ChartTip anchor={tip.anchor} panelRef={panelRef}>
+              <div className={css.tipTitle}>{tip.model === OTHER_MODEL ? t('other') : tip.model}</div>
+              <div>{t('total')}: {formatTokens(tip.tokens)}</div>
+              <div>{t('percent')}: {formatPercent(tip.percent)}</div>
+              {tip.items && tip.items.length > 0 && (
+                <div className={css.tipBreakdown}>
+                  {tip.items.map((it) => (
+                    <div key={it.model} className={clsx(css.tipRow, css.tipRowOther)}><i className={css.legendSwatch} style={{ background: OTHER_COLOR }} />{it.model}: {formatTokens(it.tokens)}</div>
+                  ))}
+                </div>
+              )}
+            </ChartTip>
+          )}
+        </div>
+        <ul className={css.modelList}>
           {models.map((m, rank) => {
             const isOther = m.model === OTHER_MODEL
             return (
@@ -973,21 +1022,23 @@ function ProviderUsage({ providers, t, colorForProvider, panelRef }: { providers
   // rows may stand open at once and the two levels nest.
   const [openRanked, setOpenRanked] = useState<ReadonlySet<string>>(NO_KEYS)
   const [openFolded, setOpenFolded] = useState<ReadonlySet<string>>(NO_KEYS)
-  // The column is sized to the ROWS alone (a detail wrapper carries no row
-  // class), so expanding a row at either level never stretches the chart.
-  const [listRef, barH] = useCollapsedHeight()
+  // The ring's diameter follows the row's width, so the list keeps its own
+  // share of the space and expanding a row at either level never stretches it.
+  const rowRef = useRef<HTMLDivElement>(null)
+  const size = useDonutSize(rowRef)
 
   if (providers.length === 0) return null
 
   const flipRanked = (key: string): void => { setOpenRanked((prev) => toggleIn(prev, key)) }
   const flipFolded = (key: string): void => { setOpenFolded((prev) => toggleIn(prev, key)) }
 
-  const segments = providers.map((p) => ({
+  const segments: DonutSegment[] = providers.map((p) => ({
     key: p.provider,
     tokens: p.tokens,
     color: colorForProvider(p.provider),
     label: `${p.provider === OTHER_PROVIDER ? t('other') : p.provider}: ${formatTokens(p.tokens)} (${formatPercent(p.percent)})`,
   }))
+  const total = providers.reduce((sum, p) => sum + p.tokens, 0)
 
   const highlight = (key: string | null, anchor?: Element): void => {
     setHover(key)
@@ -1000,32 +1051,36 @@ function ProviderUsage({ providers, t, colorForProvider, panelRef }: { providers
   return (
     <section className={css.section}>
       <h3 className={css.sectionTitle}>{t('providerUsage')}</h3>
-      <div className={css.models}>
-        <StackedBar
-          segments={segments}
-          ariaLabel={t('providerUsage')}
-          height={barH}
-          hovered={hover}
-          onHover={highlight}
-        />
-        {tip && (
-          <ChartTip anchor={tip.anchor} panelRef={panelRef}>
-            <div className={css.tipTitle}>{tip.provider === OTHER_PROVIDER ? t('other') : tip.provider}</div>
-            <div>{t('total')}: {formatTokens(tip.tokens)}</div>
-            <div>{t('percent')}: {formatPercent(tip.percent)}</div>
-            {tip.models.length > 0 && (
-              <div className={css.tipBreakdown}>
-                {tip.models.map((m) => (
-                  <div key={m.model} className={clsx(css.tipRow, css.tipRowOther)}>
-                    <i className={css.legendSwatch} style={{ background: OTHER_PROVIDER_COLOR }} />
-                    {modelNameOf(m.model)}: {formatTokens(m.tokens)}
-                  </div>
-                ))}
-              </div>
-            )}
-          </ChartTip>
-        )}
-        <ul className={css.modelList} ref={listRef}>
+      <div className={css.models} ref={rowRef}>
+        <div className={css.donutWrap}>
+          <Donut
+            segments={segments}
+            size={size}
+            ariaLabel={t('providerUsage')}
+            centerValue={formatCompact(total)}
+            centerCaption={t('tokens')}
+            hovered={hover}
+            onHover={highlight}
+          />
+          {tip && (
+            <ChartTip anchor={tip.anchor} panelRef={panelRef}>
+              <div className={css.tipTitle}>{tip.provider === OTHER_PROVIDER ? t('other') : tip.provider}</div>
+              <div>{t('total')}: {formatTokens(tip.tokens)}</div>
+              <div>{t('percent')}: {formatPercent(tip.percent)}</div>
+              {tip.models.length > 0 && (
+                <div className={css.tipBreakdown}>
+                  {tip.models.map((m) => (
+                    <div key={m.model} className={clsx(css.tipRow, css.tipRowOther)}>
+                      <i className={css.legendSwatch} style={{ background: OTHER_PROVIDER_COLOR }} />
+                      {modelNameOf(m.model)}: {formatTokens(m.tokens)}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </ChartTip>
+          )}
+        </div>
+        <ul className={css.modelList}>
           {providers.map((p, rank) => {
             const isOther = p.provider === OTHER_PROVIDER
             const folded = p.folded ?? []

@@ -101,26 +101,33 @@
 
 /* ── numeric cards ─────────────────────────────────────────────────────── */
 
-/* Six cards in two rows of three. The first column is wider (1.35fr): it
-   holds the two long-valued cards — total tokens (row one) and the most used
-   model name (row two) — stacked and aligned, while the four short numerics
-   share the equal tracks (mirrors the reasonix card sizing). Narrow panes
-   degrade to equal columns instead of squeezing the wide one. */
+/* The two long-valued cards bookend the row — total tokens leads it, the top
+   model closes it — each on a wider track than the four short numerics
+   between them. At the Plugins page's 960px content width that is six columns
+   on one row. */
 .cards {
   display: grid;
-  grid-template-columns: 1.35fr 1fr 1fr;
+  grid-template-columns: 1.3fr repeat(4, 1fr) 1.3fr;
   gap: 10px;
 }
 
-@media (max-width: 560px) {
+/* Below the width where six cards hold their own, the grid folds to four
+   tracks and the two long cards take two each: they keep their extra width
+   instead of degrading to the numerics' size, and each row still fills. */
+@media (max-width: 720px) {
   .cards {
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(4, 1fr);
+  }
+
+  .cards > :first-child,
+  .cards > :last-child {
+    grid-column: span 2;
   }
 }
 
-@media (max-width: 380px) {
+@media (max-width: 430px) {
   .cards {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, 1fr);
   }
 }
 
@@ -372,42 +379,50 @@
   border-radius: 2px;
 }
 
-/* ── per-model / per-provider bar + list ───────────────────────────────── */
+/* ── per-model / per-provider chart + list ─────────────────────────────── */
 
+/* The ring is centred against the list beside it. The list's height is never
+   tied to the chart, so expanding a row cannot stretch anything. */
 .models {
   display: flex;
   gap: 16px;
-  align-items: flex-start;
+  align-items: center;
   flex-wrap: wrap;
   min-width: 0;
 }
 
-/* The column's height comes from the COLLAPSED list beside it (measured by
-   useCollapsedHeight), never from the list's live height — expanding Other
-   must not stretch the chart. */
-.barWrap {
+/* The ring's own wrapper. Its diameter comes from the measured row width (see
+   Donut.tsx), so it must never flex. */
+.donutWrap {
   position: relative;
   flex: 0 0 auto;
 }
 
-/* The stacked column's own class: NOT `.bar`, which the trend chart's rects
-   already own — one local name maps to one hashed class, so sharing it would
-   merge both rule sets and let an edit to either chart hit the other. */
-.stack {
+.donut {
   display: block;
 }
 
-.barSeg {
-  transition: filter 0.12s ease, opacity 0.12s ease;
+.donutTrack {
+  stroke: var(--dsw-alias-bg-mask-1);
 }
 
-.barSeg:hover,
-.barSeg:focus-visible {
-  filter: brightness(1.08);
+.donutSeg {
+  transition: stroke-width 0.12s ease, opacity 0.12s ease;
 }
 
-.stackDim {
+.donutDim {
   opacity: 0.35;
+}
+
+.donutCenter {
+  fill: var(--dsw-alias-label-primary);
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.donutLabel {
+  fill: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
 }
 
 .modelList {

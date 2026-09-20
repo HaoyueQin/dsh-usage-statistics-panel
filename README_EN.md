@@ -18,12 +18,12 @@ English | [中文](README.md)
 [![Commit activity](https://img.shields.io/github/commit-activity/t/HaoyueQin/dsh-usage-statistics-panel)](https://github.com/HaoyueQin/dsh-usage-statistics-panel/graphs/commit-activity)
 [![Last commit](https://img.shields.io/github/last-commit/HaoyueQin/dsh-usage-statistics-panel)](https://github.com/HaoyueQin/dsh-usage-statistics-panel/commits)
 
-A usage statistics panel plugin for the DSH web UI: per-day token trend, a GitHub-style activity heatmap, a cache hit-rate curve, and two breakdowns — by model and by provider (stacked bar + detail list each), added as a "Usage statistics" page in Settings.
+A usage statistics panel plugin for the DSH web UI: per-day token trend, a GitHub-style activity heatmap, a cache hit-rate curve, and two breakdowns — by model and by provider (donut + detail list each) — living on the plugin's own page inside the Plugins page.
 
 All charts are hand-drawn SVG with no chart library; the palette uses GitHub Primer's data-viz two-set tokens (the top ten models and the top five providers each get a distinct rank colour, everything else collapses into a gray "Other" bucket) and adapts to the DSH theme.
 
 <p align="center">
-  <img src="docs/demo.svg" alt="demo: a Usage statistics entry appears in the Settings nav, then cards, heatmap, trend and the stacked bars light up one by one" width="720">
+  <img src="docs/demo.svg" alt="demo: the plugin's own page opens inside the Plugins page, then cards, heatmap, trend and the donuts light up one by one" width="720">
 </p>
 
 ## Preview
@@ -33,21 +33,21 @@ All charts are hand-drawn SVG with no chart library; the palette uses GitHub Pri
 </p>
 
 <p align="center">
-  <img src="docs/images/model-usage.png" alt="Model usage and provider usage: stacked bars with detail lists" width="720">
+  <img src="docs/images/model-usage.png" alt="Model usage and provider usage: donuts with detail lists" width="720">
 </p>
 
 <p align="center">
-  <img src="docs/images/provider-usage.png" alt="Provider usage and the panel's option switches: stacked bar, detail list and three toggles" width="720">
+  <img src="docs/images/provider-usage.png" alt="Provider usage and the panel's option switches: donut, detail list and four toggles" width="720">
 </p>
 
 ## Features
 
 - **Time ranges**: last 7 / 14 / 30 / 90 days, or a custom from/to pair
 - **Summary cards**: token usage, sessions (completed turns), requests, active days, average cache hit-rate, top model
-- **26-week activity heatmap**: GitHub-style day cells, hover for the day's detail
-- **Daily token trend**: stacked bars with a smooth cache hit-rate curve (Catmull-Rom), hover for the per-model breakdown
-- **Model usage**: stacked bar + detail list; the top ten models keep distinct colours, the tail collapses into an expandable "Other" row, and the bar rises from its base as it scrolls into view
-- **Provider usage**: the same anatomy one dimension up — the top five providers keep distinct colours from their own palette, the tail collapses into a gray "Other" bucket, hovering either side lights the other, and the bar's hover tip lists every model that provider served. Each row expands (the Other bucket opens the providers it folded, and each of those opens its own models); expanding never moves the bar
+- **52-week activity heatmap**: GitHub-style day cells, hover for the day's detail; the data window is a fixed year and the column count adapts to the available width (a narrow pane shows fewer weeks), so the chart always spans its container edge to edge
+- **Daily token trend**: stacked bars with a smooth cache hit-rate curve (Catmull-Rom), hover for the per-model breakdown; the plot spans the container width at any size
+- **Model usage**: donut + detail list; the top ten models keep distinct colours, the tail collapses into an expandable "Other" row, and the ring's diameter adapts to the available width between 200 and 280px, centred against the list beside it
+- **Provider usage**: the same anatomy one dimension up — the top five providers keep distinct colours from their own palette, the tail collapses into a gray "Other" bucket, hovering either side lights the other, and the ring's hover tip lists every model that provider served. Each row expands (the Other bucket opens the providers it folded, and each of those opens its own models); expanding never resizes the ring
 - **Bottom-bar enhancements**: three switches at the bottom of the panel, framed like the sidebar-shortcut row and applied instantly — "Precise cache hit rate" (two decimals, e.g. 85.25%), "Session token breakdown" (total, input, cached input, uncached input and output in place of the default input/output pair), and "Streaming throughput" (the speed reading refreshes to a live estimate on every stream delta and hands back to the session's exact figure once the step settles; the estimate starts from DeepSeek's published character density and is calibrated against the chars-per-token ratio measured from the session's own settled steps, and the live rate counts only the token growth actually observed inside the last 2 s and smooths it, so neither a backlog the UI delivered late nor one noisy frame moves the display, and a step that goes quiet holds its last reading instead of dropping back to the session average)
 - **History backfill**: on first enable, the plugin enumerates and replays existing session logs; for a live session the collector attached to mid-flight, its pre-attachment history is recovered on the next boot by replaying the log prefix below the recorded seq boundary, so historical usage is accounted from day one as faithfully as the logs allow
 - **Local persistence**: data lands in `$DSH_HOME/storages/usage_history.json` (storage-domain), fully local, no external services
@@ -60,7 +60,7 @@ dsh plugin --profile <name> add dsh-usage-statistics-panel@latest
 
 After mounting, **hard-refresh the browser** (Cmd/Ctrl+Shift+R): client-half changes hot-reload in DSH, no restart needed; only host-half updates (collector/storage/routes) require restarting DSH.
 
-Once mounted, a "Usage statistics" page appears in the left navigation of the Settings shell.
+Once mounted, open **Plugins** in the left rail, then **Installed** → `usage-statistics-panel`, to reach the panel (the card shows the short name; the full package name is on its detail page). The **Usage statistics** quick entry at the sidebar foot can be enabled at the bottom of the panel and jumps straight to that page.
 
 **Compatibility**: this plugin supports DeepSeek Harness `>= 0.1.2-rc.1` with a dual-path backfill: `list`+`inspect` on `0.1.2-rc.1`, `list`+`open`+paged `read`+`close` on `0.1.3-alpha.*` and later (`inspect` was removed upstream). Dev dependencies and the verification target track host `0.1.6-alpha.2`, verified against `0.1.2-rc.1`, `0.1.5-rc.2`, `0.1.6-alpha.1` and `0.1.6-alpha.2`; V3 log compatibility is covered by unit tests.
 

@@ -3,10 +3,13 @@
  * official Settings trigger (42px row / 36px rail circle), so the entry sits
  * visually as one more foot control directly above Settings. All values ride
  * the DSH semantic tokens.
+ *
+ * No `flex` shorthand here on purpose: the `sidebar.footer.action` seat is a
+ * shared flex row, and opting out of shrinking would starve every neighbour
+ * registered in it. Default shrinking splits the row evenly.
  */
 
 .entry {
-  flex: none;
   display: flex;
   align-items: center;
   gap: 8px;

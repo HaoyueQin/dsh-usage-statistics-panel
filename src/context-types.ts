@@ -178,11 +178,23 @@ export interface UsageSettingsService {
 export interface UsageSlotEntrySpec {
   name: string
   id?: string
+  /** Keyed-slot key. The Plugins page matches a bundle's own configuration
+   *  entry by this value being the bundle's npm package name. */
+  key?: string
   order?: number
   priority?: number
   label?: () => string
   locale?: string
   inject?: () => object
+}
+
+/** Owner share the Plugins page passes to a bundle's configuration entry
+ *  (mirror of ui-plugin-manager's PluginConfigViewProps). The page asks for
+ *  `summary` on the `plugins.item` slot only; a bundle's own configuration is
+ *  requested as `page`, and the page draws the title, icon, and crumb itself. */
+export interface UsagePluginConfigOwnerProps {
+  /** Which view the page is requesting. */
+  readonly view: 'summary' | 'page'
 }
 
 /** The client slot registry service (mirror of the client store/ui-slots). */
@@ -195,6 +207,21 @@ export interface UsageSlotsService {
     callback: () => void | (() => void) | Iterable<() => void>,
   ): void
   register(spec: UsageSlotEntrySpec, component: unknown): () => void
+}
+
+/** The layout service (mirror of @deepseek-ai/dsh-client-ui-layout's ILayout
+ *  members this plugin touches). Panel geometry and main-panel selection live
+ *  in the layout owner; this face only drives transitions. */
+export interface UsageLayoutService {
+  /**
+   * Select a registered global central panel without changing the current
+   * Session, or null to show the Conversation.
+   * @throws when the selected main key is not registered; the current
+   *   selection is preserved.
+   */
+  selectPanel(panelId: string | null): void
+  /** Toggle the sidebar column (closed ⟷ contract default width). */
+  toggleSidebar(): void
 }
 
 /** The client-side locale service (mirror of @deepseek-ai/dsh-client-locale). */
@@ -226,6 +253,7 @@ declare module 'cordis' {
     slots: UsageSlotsService
     locale: UsageLocaleService
     connection: UsageConnection
+    layout: UsageLayoutService
   }
 }
 

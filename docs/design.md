@@ -1,6 +1,6 @@
 # 设计说明
 
-DSH Usage Statistics Panel 复刻 reasonix 的用量统计功能（PR #7238 / #7503），按 DeepSeek Harness 的插件规范实现：Host 半（Node）负责采集与聚合，Client 半（浏览器）负责设置页渲染，两者通过插件自有的 fenced HTTP 路由通信。
+DSH Usage Statistics Panel 复刻 reasonix 的用量统计功能（PR #7238 / #7503），按 DeepSeek Harness 的插件规范实现：Host 半（Node）负责采集与聚合，Client 半（浏览器）负责渲染（插件页内的独立页面，以及一个同名主面板），两者通过插件自有的 fenced HTTP 路由通信。
 
 ## 数据流
 
@@ -16,7 +16,7 @@ UsageCollector ──(turn,step 去重折叠)──▶ UsageStore (storage-domai
         └── inspect(id) 逐会话回放 ──────  /usage/api/range (fenced)
                                                 │
                                                 ▼
-                                    UsageStatsPanel (设置页, 手绘 SVG)
+                                    UsageStatsPanel (插件页 + 独立主面板, 手绘 SVG)
 ```
 
 ## Host 半
@@ -58,18 +58,20 @@ Token 桶语义：`inputTokens` 是 uncached input（即缓存 miss 侧），`ca
 
 ## Client 半
 
-### index.tsx — 设置页注册
+### index.tsx — 面板与侧栏入口注册
 
-`ctx.slots.inject('settings.section', ...)` 注册导航项（id `usage-statistics`，order 30），locale 座绑定 `usageStats` 命名空间（en/zh/zh-TW 三份字典）；inject face 携带 `locale()` getter（读 `ctx.locale.getLocale().active`），面板数值格式化跟随当前语言——中文显示 亿/万（简）或 億/萬（繁），英文用 k/M/B 图表惯例。组件经 `/usage/api` fetch 数据，不直接触 ctx。
+本插件注册三个槽位：`plugins.bundle.config`（keyed，键为本 bundle 的 npm 包名）把面板渲染进插件页里该组合包的详情页；`main`（keyed，键 `usage-stats`）把它注册成一个全局主面板；`sidebar.panellist`（list，id `usage-stats`，order 30）在左侧栏「新会话」下方加一行，点击即切到该主面板。面板因此由**同一组件渲染在两处**，`UsageStatsPanelPage` 用与插件页相同的 960px 内容列包住它，两处外观一致。locale 座绑定 `usageStats` 命名空间（en/zh/zh-TW 三份字典）；面板数值格式化跟随当前语言——中文显示 亿/万（简）或 億/萬（繁），英文用 k/M/B 图表惯例。组件经 `/usage/api` fetch 数据，不直接触 ctx。
+
+> 侧栏入口刻意**不**走 `sidebar.footer.action`：那个座位是宿主里一条与其它插件共享的 flex 行，注册在那里会与邻居争宽度——两个插件时尚可等分，三个以上就会把彼此的标签挤成省略号（2026-09 实测：256px 行里三个条目各约 85px，而「上下文洞察」一类的标签需要约 126px）。
 
 ### UsageStatsPanel.tsx — 图表
 
 移植自 reasonix 面板（853 行）+ PR #7503 的改动：
 
-- **热力图**：固定 40 周窗口，容器过窄时优先裁剪最早列；5 级色阶由 brand accent 经 color-mix 派生
+- **热力图**：数据窗口固定为一年（52 周）；宽度求解优先把空余宽度用在**更多周数**上，放不下整个窗口时改裁最早的列，两种情形都精确撑满容器；5 级色阶由 brand accent 经 color-mix 派生
 - **趋势图**：堆叠柱状图按全范围用量排名着色（模型颜色逐日稳定），叠加 Catmull-Rom 命中率曲线；最窄时裁剪最早天数，超过 180 天显示提示
-- **模型图 / 供应商图**：两者同一解剖——左侧堆叠柱（`StackedBar`）+ 右侧明细列表。模型取前 10 名分色、供应商取前 5 名分色，其余折叠为灰色 "Other"。柱高由列表的**折叠态**行高之和决定（只数行，展开容器不计），因此展开任一行都不改变柱高。柱子首次进入视口时自基部升起（IntersectionObserver + rAF，`prefers-reduced-motion` 或无 IntersectionObserver 时直接落到终态）；每段可聚焦（tabIndex + aria-label + focus/hover 出 tooltip）——分段数量有界（≤11），而热力图 ~180 个格子不适合逐格进 tab 序，故后两者保持鼠标悬停（SVG 整体带 role="img" 标注）
-- **展开层级**：模型区只有 "Other" 行可展开（列出被折叠的模型）；供应商区两级——排名行展开该供应商的模型，"Other" 展开被折叠的供应商（每行带该供应商的模型数），这些行再展开各自的模型。展开容器是行的**兄弟节点**且不带行类名，故测量始终只数行
+- **模型图 / 供应商图**：两者同一解剖——左侧环形占比图（`Donut`）+ 右侧明细列表。模型取前 10 名分色、供应商取前 5 名分色，其余折叠为灰色 "Other"。圆环直径由所在行的实测宽度求解（`resolveDonutSize`，钳在 200–280px），既随容器变化，又保证右侧明细列表不低于它的 flex 基准宽度；圆环与其列表在同一行内**垂直居中**（`align-items: center`），列表高度从不反过来决定图表尺寸。每段可聚焦（tabIndex + role="img" + aria-label + focus/hover 出 tooltip）——分段数量有界（≤11），而热力图 ~180 个格子不适合逐格进 tab 序，故热力图与趋势图保持鼠标悬停（SVG 整体带 role="img" 标注）
+- **展开层级**：模型区只有 "Other" 行可展开（列出被折叠的模型）；供应商区两级——排名行展开该供应商的模型，"Other" 展开被折叠的供应商（每行带该供应商的模型数），这些行再展开各自的模型。展开容器是行的**兄弟节点**且不带行类名；圆环的直径只依赖行的**宽度**，故展开任一行都不会改变图表尺寸
 - **色板**：`--dsw-chart-1..10` + `--dsw-chart-other`（模型）、`--dsw-provider-1..5` + `--dsw-provider-other`（供应商独立色板，供应商不穿模型色），light/dark 两套（CSS `@media (prefers-color-scheme)`），色值经 color-mix 向底色柔化
 
 ### StatsLineEnhanced.tsx — 底部信息栏接管
@@ -96,4 +98,5 @@ Token 桶语义：`inputTokens` 是 uncached input（即缓存 miss 侧），`ca
 - 回扫跳过启动时的**活跃会话**：这些会话在插件启动前的历史 usage 不计（避免与实时流重复折叠）；其后的增量由实时监听覆盖并写入游标，重启后同样不会重放
 - 旧会话日志若无 provider usage（或日志被压缩清理），无法回溯
 - `usage_history` 域版本 1；若需迁移，bump domain version 并写迁移
-- 热力图/趋势图的 tooltip 仅鼠标触发（格子数量不适合逐格进 tab 序）；柱状图分段支持键盘
+- 热力图/趋势图的 tooltip 仅鼠标触发（格子数量不适合逐格进 tab 序）；环形图分段支持键盘
+- 侧栏入口的落点是「新会话」下方的面板行：它占的是 `sidebar.panellist` 的一行，而不是能自行隐藏的按钮——面板行一旦注册就常驻（与内置的插件/技能/MCP 行一致），所以没有「显示/隐藏入口」的开关

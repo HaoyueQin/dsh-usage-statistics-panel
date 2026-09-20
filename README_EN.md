@@ -23,7 +23,7 @@ A usage statistics panel plugin for the DSH web UI: per-day token trend, a GitHu
 All charts are hand-drawn SVG with no chart library; the palette uses GitHub Primer's data-viz two-set tokens (the top ten models and the top five providers each get a distinct rank colour, everything else collapses into a gray "Other" bucket) and adapts to the DSH theme.
 
 <p align="center">
-  <img src="docs/demo.svg" alt="demo: the plugin's own page opens inside the Plugins page, then cards, heatmap, trend and the donuts light up one by one" width="720">
+  <img src="docs/demo.svg" alt="demo: the Usage statistics row in the left rail lights up, then the panel fills in with the toolbar, cards, heatmap, trend and the model donut" width="720">
 </p>
 
 ## Preview

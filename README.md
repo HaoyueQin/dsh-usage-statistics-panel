@@ -23,7 +23,7 @@ DSH web 插件的用量统计面板：按天 Token 趋势、GitHub 风格活跃�
 所有图表均为手绘 SVG，不依赖图表库；配色使用 GitHub Primer 的 data-viz 双套色板（模型前 10 名、供应商前 5 名各取一个等级色，其余归入灰色 "Other" 桶），并随 DSH 主题自适应。
 
 <p align="center">
-  <img src="docs/demo-zh.svg" alt="demo：安装后在插件页打开本插件的独立页面，卡片、热力图、趋势与环形占比图依次点亮" width="720">
+  <img src="docs/demo-zh.svg" alt="demo：左侧栏「使用统计」行点亮后，面板依次展开工具栏、卡片、热力图、趋势图与模型环形占比图" width="720">
 </p>
 
 ## 预览

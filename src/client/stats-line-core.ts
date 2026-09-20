@@ -458,7 +458,7 @@ export class StreamingRateSampler {
     // the numerator, only push the window's far end forward, and every second it
     // did that the reading would sag toward the step's average for no reason the
     // stream can account for. The beat that re-renders a quiet step lands here,
-    // and so does a re-render caused by something else entirely (a settings
+    // and so does a re-render caused by something else entirely (a preference
     // flip, a sibling's update): neither may move the figure.
     if (tokens === last.tokens) return
     this.samples.push({ at: now, tokens })

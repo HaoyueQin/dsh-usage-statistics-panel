@@ -8,6 +8,8 @@
  * here instead of in the browser.
  */
 // @vitest-environment jsdom
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { apply, BUNDLE_NAME, PANEL_ID } from '../src/client/index.tsx'
 import type { Context, UsageSlotEntrySpec } from '../src/context-types.ts'
@@ -52,6 +54,28 @@ describe('client registration surface', () => {
     // The row addresses the panel by the same key the main slot declares.
     expect(main!.key).toBe(PANEL_ID)
     expect(row!.id).toBe(PANEL_ID)
+  })
+
+  it('keys the Plugins-page entry by the package name, not a copied literal', () => {
+    // The page renders a bundle's own entry only when the registration key
+    // EQUALS the bundle's npm package name, so a rename in package.json that
+    // misses BUNDLE_NAME would silently drop the panel from the Plugins page.
+    const pkg = JSON.parse(
+      readFileSync(join(process.cwd(), 'package.json'), 'utf8'),
+    ) as { name: string }
+    expect(BUNDLE_NAME).toBe(pkg.name)
+  })
+
+  it('orders the sidebar row after the shipped panel rows, labelled from the dictionary', () => {
+    const { ctx, recorded } = fakeCtx()
+    apply(ctx)
+    const row = recorded.find((r) => r.name === 'sidebar.panellist')!
+    // The shipped Plugins page row registers at order 0 (ui-plugin-manager);
+    // ours must sort after it, and its label must resolve through the bound
+    // locale dictionary (the fake t returns the key verbatim).
+    expect(row.order).toBe(30)
+    expect(row.locale).toBe('usageStats')
+    expect(row.label?.()).toBe('nav')
   })
 
   it('does not register into the shared footer row', () => {

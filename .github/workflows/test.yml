@@ -30,6 +30,12 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
 
+      # tsconfig.json covers src AND tests, while the build's declaration pass
+      # (tsconfig.build.json) covers src only — so this is the step that typechecks
+      # the test files.
+      - name: Typecheck
+        run: pnpm typecheck
+
       # pnpm test = pnpm build && vitest run (manifest-consistency asserts the
       # built artifacts exist, same ordering as release.yml).
       - name: Test

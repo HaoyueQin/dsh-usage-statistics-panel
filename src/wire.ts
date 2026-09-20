@@ -37,7 +37,7 @@ export interface ProviderTokenUsage {
   percent: number
 }
 
-/** The full aggregate the settings panel renders for one time range and source filter. */
+/** The full aggregate the panel renders for one time range. */
 export interface UsageStatsRange {
   from: string // inclusive
   to: string // inclusive

@@ -60,7 +60,7 @@ Token 桶语义：`inputTokens` 是 uncached input（即缓存 miss 侧），`ca
 
 ### index.tsx — 面板与侧栏入口注册
 
-本插件注册三个槽位：`plugins.bundle.config`（keyed，键为本 bundle 的 npm 包名）把面板渲染进插件页里该组合包的详情页；`main`（keyed，键 `usage-stats`）把它注册成一个全局主面板；`sidebar.panellist`（list，id `usage-stats`，order 30）在左侧栏「新会话」下方加一行，点击即切到该主面板。面板因此由**同一组件渲染在两处**，`UsageStatsPanelPage` 用与插件页相同的 960px 内容列包住它，两处外观一致。locale 座绑定 `usageStats` 命名空间（en/zh/zh-TW 三份字典）；面板数值格式化跟随当前语言——中文显示 亿/万（简）或 億/萬（繁），英文用 k/M/B 图表惯例。组件经 `/usage/api` fetch 数据，不直接触 ctx。
+本插件注册三个面板相关槽位：`plugins.bundle.config`（keyed，键为本 bundle 的 npm 包名）把面板渲染进插件页里该组合包的详情页；`main`（keyed，键 `usage-stats`）把它注册成一个全局主面板；`sidebar.panellist`（list，id `usage-stats`，order 30）在左侧栏「新会话」下方加一行，点击即切到该主面板。面板因此由**同一组件渲染在两处**，`UsageStatsPanelPage` 用与插件页相同的 960px 内容列包住它（模块 css 的 `.page` 逐条镜像插件页自己的 `.page`，含 padding 与前景色 token），两处外观一致。locale 座绑定 `usageStats` 命名空间（en/zh/zh-TW 三份字典）；面板数值格式化跟随当前语言——中文显示 亿/万（简）或 億/萬（繁），英文用 k/M/B 图表惯例。组件经 `/usage/api` fetch 数据，不直接触 ctx。
 
 > 侧栏入口刻意**不**走 `sidebar.footer.action`：那个座位是宿主里一条与其它插件共享的 flex 行，注册在那里会与邻居争宽度——两个插件时尚可等分，三个以上就会把彼此的标签挤成省略号（2026-09 实测：256px 行里三个条目各约 85px，而「上下文洞察」一类的标签需要约 126px）。
 

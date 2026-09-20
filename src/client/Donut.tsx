@@ -11,8 +11,9 @@
  * Accessibility follows the convention this panel already set with its former
  * stacked column: each segment is `role="img"` with an `aria-label` and is
  * keyboard focusable, because focusing a piece of a chart has no activation to
- * promise. `role="button"` would promise one; `role="group"` on the SVG would
- * hide every labelled segment from the accessibility tree.
+ * promise. `role="button"` would promise one; `role="img"` on the SVG itself
+ * would collapse the whole chart into one node and hide every labelled
+ * segment, hence the outer `role="group"`.
  */
 import { useEffect, useState, type FocusEvent, type MouseEvent, type RefObject } from 'react'
 import clsx from 'clsx'

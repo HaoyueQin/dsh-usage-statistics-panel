@@ -13,7 +13,7 @@
  *
  * The panel row and the stats line live in two different slot trees but inside
  * the SAME client bundle instance, so a tiny module store keeps them in sync
- * without touching the host or the settings document. Reads are defensive
+ * without touching the host or any settings store. Reads are defensive
  * (private mode / quota make storage throw); partial or corrupt blobs fall
  * back to defaults value by value.
  */

@@ -37,7 +37,7 @@ DSH web 插件的用量统计面板：按天 Token 趋势、GitHub 风格活跃�
 </p>
 
 <p align="center">
-  <img src="docs/images/provider-usage.png" alt="各供应商用量与面板设置项：环形占比图、明细列表与四个开关" width="720">
+  <img src="docs/images/provider-usage.png" alt="各供应商用量：环形占比图与明细列表，前 5 名分色、其余归入可展开的 Other 桶" width="720">
 </p>
 
 ## 功能

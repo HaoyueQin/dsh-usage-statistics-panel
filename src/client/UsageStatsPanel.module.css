@@ -9,7 +9,8 @@
  */
 
 /* The panel as a standalone main panel. It gets the same 960px content column
-   the Plugins page gives it, so both entries render identically — without a
+   the Plugins page gives it — the declarations below mirror the Plugins page's
+   own `.page` (padding and all) so both entries render identically. Without the
    cap the charts would stretch to whatever the centre column happens to be. */
 .page {
   display: flex;
@@ -19,6 +20,7 @@
   height: 100%;
   overflow: auto;
   padding: 28px clamp(24px, 4vw, 48px) 48px;
+  color: var(--dsw-alias-label-primary);
 }
 
 .page > * {

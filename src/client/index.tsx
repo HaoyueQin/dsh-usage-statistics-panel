@@ -10,8 +10,9 @@
  * The sidebar row is the quick way in, and it deliberately does NOT ride
  * `sidebar.footer.action`: that seat is a single flex row shared with every
  * other plugin's footer action, so an entry there competes for width with its
- * neighbours instead of getting a row of its own (see
- * docs/design-panel-migration.md §7).
+ * neighbours instead of getting a row of its own. A `sidebar.panellist` row is
+ * a seat no other plugin shares, and the row is always present (like the
+ * shipped panel rows), so there is no preference to control it.
  *
  * Type note: the host slot contracts this file needs are mirrored in
  * src/context-types.ts rather than imported from the owning packages, which is

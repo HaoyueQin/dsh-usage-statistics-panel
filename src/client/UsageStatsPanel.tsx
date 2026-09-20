@@ -1,9 +1,11 @@
 /**
- * UsageStatsPanel renders the "usage statistics" settings section. It reads
- * the aggregate from the host (via the fenced /usage/api route) and draws
- * every chart by hand in SVG — a GitHub-style activity heatmap, a stacked
- * per-day token trend with a cache hit-rate curve, and two ranked sections
- * (models and providers) that each pair a stacked column with a detail list.
+ * UsageStatsPanel renders the "usage statistics" panel. One component mounts
+ * in two places — the Plugins page's own page for this bundle and the panel's
+ * standalone main panel — so it reads the aggregate from the host (via the
+ * fenced /usage/api route) and draws every chart by hand in SVG — a
+ * GitHub-style activity heatmap, a stacked per-day token trend with a cache
+ * hit-rate curve, and two ranked sections (models and providers) that each
+ * pair a ring with a detail list.
  * No chart library; colours come from a fixed two-series palette
  * (--dsw-chart-1..10 + the gray --dsw-chart-other for models,
  * --dsw-provider-1..5 + the gray --dsw-provider-other for providers, the
@@ -87,8 +89,8 @@ export function UsageStatsPanel({ t }: { t: Translator }): JSX.Element {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const generationRef = useRef(0)
-  // The panel bounds the chart tooltips: a tip must never leave the settings
-  // panel even when the hovered cell sits near its edge.
+  // The panel bounds the chart tooltips: a tip must never leave the panel
+  // even when the hovered cell sits near its edge.
   const panelRef = useRef<HTMLDivElement>(null)
 
   // Heatmap window: the last HEAT_WEEKS*7 days, fixed regardless of `range`.
@@ -332,12 +334,12 @@ function isEmptyRange(stats: UsageStatsRange): boolean {
   return stats.tokens === 0 && stats.cacheHit === 0 && stats.requests === 0 && stats.turns === 0
 }
 
-// ── Sidebar quick-entry preference ────────────────────────────────────────
+// ── Bottom-bar preference rows ────────────────────────────────────────────
 
 /**
  * One framed preference row: title + subtitle on the left, the switch on the
  * right. The switch mirrors the official DSH switch (role=switch, track +
- * thumb); the shared store keeps the settings row and the consumer in sync
+ * thumb); the shared store keeps each row and its consumer in sync
  * instantly because both run in the same client bundle.
  */
 function SettingToggle({ title, desc, checked, ariaLabel, onChange }: {
@@ -849,7 +851,7 @@ function DailyTrend({ models, daily, t, colorForModel, panelRef }: { models: Gro
   )
 }
 
-// ── Section 6: per-model bar + list ──────────────────────────────────────
+// ── Section 6: per-model ring + list ────────────────────────────────────
 
 function ModelUsage({ models, t, colorForModel, panelRef }: { models: GroupedModel[]; t: Translator; colorForModel: (m: string) => string; panelRef: RefObject<HTMLDivElement | null> }) {
   const [tip, setTip] = useState<{ model: string; tokens: number; percent: number; anchor: Element; items?: ModelTokenUsage[] } | null>(null)
@@ -919,7 +921,6 @@ function ModelUsage({ models, t, colorForModel, panelRef }: { models: GroupedMod
             return (
               <li
                 key={m.model}
-                data-bar-row=""
                 className={clsx(css.modelRow, isOther && css.modelRowExpandable)}
                 onMouseEnter={() => highlight(m.model)}
                 onMouseLeave={() => highlight(null)}
@@ -963,7 +964,7 @@ function ModelUsage({ models, t, colorForModel, panelRef }: { models: GroupedMod
             <li className={clsx(css.modelOtherWrap, expandedOther && css.modelOtherOpen)}>
               <ul className={css.modelOtherList}>
                 {other.items.map((it) => (
-                  <li key={it.model} data-bar-row="" className={clsx(css.modelRow, css.modelRowSub)}>
+                  <li key={it.model} className={clsx(css.modelRow, css.modelRowSub)}>
                     <i className={css.legendSwatch} style={{ background: OTHER_COLOR }} />
                     <div className={css.modelId}>
                       <span className={css.modelName}>{modelNameOf(it.model)}</span>
@@ -984,10 +985,10 @@ function ModelUsage({ models, t, colorForModel, panelRef }: { models: GroupedMod
   )
 }
 
-// ── Section 7: per-provider bar + list ───────────────────────────────────
+// ── Section 7: per-provider ring + list ─────────────────────────────────
 //
-// The same anatomy as the model section one dimension up: a stacked column
-// on the left, the ranked list on the right, and one shared highlight so
+// The same anatomy as the model section one dimension up: the ring on the
+// left, the ranked list on the right, and one shared highlight so
 // hovering either side lights the other. Every row opens a detail list of its
 // own — a ranked provider opens the models it served, the Other bucket opens
 // the providers it folded, and each of those opens ITS models (two levels).
@@ -1074,7 +1075,6 @@ function ProviderUsage({ providers, t, colorForProvider, panelRef }: { providers
                     role/tabIndex — a role=button li would nest two
                     interactive elements. */}
                 <li
-                  data-bar-row=""
                   className={clsx(css.modelRow, css.modelRowExpandable)}
                   onMouseEnter={() => highlight(p.provider)}
                   onMouseLeave={() => highlight(null)}
@@ -1103,11 +1103,11 @@ function ProviderUsage({ providers, t, colorForProvider, panelRef }: { providers
                   </div>
                 </li>
                 {/* The detail list is a SIBLING of the row and never carries a
-                    row class, so the collapsed-height measure beside the bar
-                    keeps counting rows only — opening it cannot stretch the
-                    column. It stays mounted (the accordion animates a grid
-                    track) and is simply skipped when the row has nothing to
-                    show. */}
+                    row class. The ring's diameter is solved from the ROW's own
+                    width, never from the list's height, so opening a detail
+                    list cannot resize the chart. It stays mounted (the
+                    accordion animates a grid track) and is simply skipped when
+                    the row has nothing to show. */}
                 {hasDetail && (
                   <li className={clsx(css.modelOtherWrap, open && css.modelOtherOpen)}>
                     <ul className={css.modelOtherList}>
@@ -1117,7 +1117,6 @@ function ProviderUsage({ providers, t, colorForProvider, panelRef }: { providers
                             return (
                               <Fragment key={f.provider}>
                                 <li
-                                  data-bar-row=""
                                   className={clsx(css.modelRow, css.modelRowSub, css.modelRowExpandable)}
                                   onClick={() => flipFolded(f.provider)}
                                 >
@@ -1146,7 +1145,7 @@ function ProviderUsage({ providers, t, colorForProvider, panelRef }: { providers
                                   <li className={clsx(css.modelOtherWrap, openSub && css.modelOtherOpen)}>
                                     <ul className={css.modelOtherList}>
                                       {f.models.map((m) => (
-                                        <li key={m.model} data-bar-row="" className={clsx(css.modelRow, css.modelRowSub, css.modelRowDeep)}>
+                                        <li key={m.model} className={clsx(css.modelRow, css.modelRowSub, css.modelRowDeep)}>
                                           <i className={css.legendSwatch} style={{ background: OTHER_PROVIDER_COLOR }} />
                                           <div className={css.modelId}>
                                             <span className={css.modelName}>{modelNameOf(m.model)}</span>

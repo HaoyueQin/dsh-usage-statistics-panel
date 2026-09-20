@@ -209,21 +209,6 @@ export interface UsageSlotsService {
   register(spec: UsageSlotEntrySpec, component: unknown): () => void
 }
 
-/** The layout service (mirror of @deepseek-ai/dsh-client-ui-layout's ILayout
- *  members this plugin touches). Panel geometry and main-panel selection live
- *  in the layout owner; this face only drives transitions. */
-export interface UsageLayoutService {
-  /**
-   * Select a registered global central panel without changing the current
-   * Session, or null to show the Conversation.
-   * @throws when the selected main key is not registered; the current
-   *   selection is preserved.
-   */
-  selectPanel(panelId: string | null): void
-  /** Toggle the sidebar column (closed ⟷ contract default width). */
-  toggleSidebar(): void
-}
-
 /** The client-side locale service (mirror of @deepseek-ai/dsh-client-locale). */
 export interface UsageLocaleService {
   /** Single-locale form: one dictionary for one locale tag. */
@@ -253,7 +238,6 @@ declare module 'cordis' {
     slots: UsageSlotsService
     locale: UsageLocaleService
     connection: UsageConnection
-    layout: UsageLayoutService
   }
 }
 

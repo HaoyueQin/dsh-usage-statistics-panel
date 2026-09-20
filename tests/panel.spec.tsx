@@ -1,12 +1,14 @@
 /**
- * Panel render smoke test: the settings section mounts, the empty state and
- * the toolbar render without crashing (jsdom). Chart internals (SVG math)
- * are covered by the format tests; this guards the composition.
+ * Panel render smoke test: both mounts render without crashing — the Plugins
+ * page's `UsageStatsSection` and the standalone `UsageStatsPanelPage` (the
+ * sidebar row's target), the toolbar and the empty state included (jsdom).
+ * Chart internals (SVG math) are covered by the format tests; this guards the
+ * composition and the 960px content column the main panel wraps it in.
  */
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
-import { UsageStatsSection, type UsageStatsSectionProps } from '../src/client/index.tsx'
+import { UsageStatsPanelPage, UsageStatsSection, type UsageStatsPanelPageProps, type UsageStatsSectionProps } from '../src/client/index.tsx'
 
 const t = ((key: string) => key) as unknown as UsageStatsSectionProps['t']
 
@@ -88,5 +90,28 @@ describe('UsageStatsSection', () => {
     expect(chart!.getAttribute('width')).toBe('100%')
     const viewBox = chart!.getAttribute('viewBox')!.split(' ')
     expect(Number(viewBox[2])).toBeGreaterThan(0)
+  })
+})
+
+describe('UsageStatsPanelPage', () => {
+  const RANGE = {
+    from: '2026-08-01', to: '2026-08-26', tokens: 12_345, requests: 3, turns: 2,
+    cacheHit: 9_000, cacheMiss: 3_345, activeDays: 2, topModel: 'p/m', topProvider: 'p',
+    daily: [], models: [], providers: [],
+  }
+
+  it('wraps the panel in the content column the Plugins page gives it', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: true, json: async () => ({ ok: true, value: RANGE }),
+    } as unknown as Response)))
+    const { container } = render(<UsageStatsPanelPage {...({ t } as UsageStatsPanelPageProps)} />)
+    await act(async () => { await new Promise((r) => { setTimeout(r, 0) }) })
+    // The sidebar row selects this mount; it must render the SAME panel, wrapped
+    // so the charts get the Plugins page's content column instead of stretching
+    // to the centre column's width.
+    const page = container.firstElementChild as HTMLElement
+    expect(page.className).toContain('page')
+    expect(page.querySelector('[class*="toolbar"]')).not.toBeNull()
+    expect(screen.getByRole('button', { name: 'rangePreset.7' })).toBeTruthy()
   })
 })

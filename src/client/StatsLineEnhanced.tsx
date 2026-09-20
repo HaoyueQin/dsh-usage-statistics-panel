@@ -11,7 +11,7 @@
  * Two plugin-side readouts ride the same pills: with precise cache hit rate
  * on, the hit figure renders two decimals; with the session token breakdown
  * on, the usage dialog gains the cache-miss row. Both toggles live in
- * stats-line-state.ts (shared with the settings panel) and apply instantly.
+ * stats-line-state.ts (shared with the usage panel) and apply instantly.
  *
  * The third toggle, streaming throughput, replaces the gauge pill's speed
  * figure with a live estimate while a step is still streaming and drops back to
@@ -417,8 +417,8 @@ export const StatsLineEnhanced = memo(function StatsLineEnhanced(
   // back to the window-scoped fold wholesale (same field names).
   const projected = useProjection('sessionStats')
   const stats = useMemo(() => projected ?? deriveStats(settledNodes ?? []), [projected, settledNodes])
-  // Toggles live in the same client bundle as the settings panel; subscribe so
-  // a flip in Settings updates the bottom bar immediately.
+  // Toggles live in the same client bundle as the usage panel; subscribe so
+  // a flip in the panel updates the bottom bar immediately.
   const [cachePrecision, setCachePrecision] = useState(statsLineState.cachePrecision)
   const [tokenDetail, setTokenDetail] = useState(statsLineState.tokenDetail)
   const [streamThroughput, setStreamThroughput] = useState(statsLineState.streamThroughput)

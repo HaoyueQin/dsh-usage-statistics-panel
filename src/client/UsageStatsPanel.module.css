@@ -292,41 +292,54 @@
      those on SVG2 rects — pinning every cell to a fixed px and widening the
      visual gap. The legend swatches carry the same size inline, so both
      always match the measured geom.size. */
+  /* Depth at this size, WITHOUT a per-cell backdrop-filter: the cells are SVG
+     geometry, where backdrop-filter is accepted by the CSSOM but changes
+     nothing on paint (measured on 364 live cells: the screenshot came out
+     byte-identical to no blur at all). What reads as a glass tile instead is
+     the translucent fill below — it lets the panel's own glass bed through —
+     carried by one hairline highlight over one soft under-shadow. */
+  filter:
+    drop-shadow(0 -0.5px 0 var(--dsw-heat-sheen))
+    drop-shadow(0 0.5px 0.8px var(--dsw-heat-shade));
 }
 
 /* The five heat levels use DeepSeek's brand blue (#4D6BFE) as a fixed ramp,
    light and dark variants below — never the theme accent, which can read
    near-black against the base surface in dark mode. level0 (no data) is a
    neutral empty cell. The cells are SVG <rect>s, so the color rides `fill`
-   (background is a no-op on SVG geometry). */
+   (background is a no-op on SVG geometry) — but the legend swatches are HTML,
+   so both declarations stay in step.
+   Each level is mixed a little toward transparent so the bed shows through;
+   the amount is deliberately modest, because the ramp is a DATA encoding and
+   washing it out would cost readability. */
 .heatLevel0 {
-  fill: var(--dsw-heat-0);
-  background: var(--dsw-heat-0);
+  fill: color-mix(in srgb, var(--dsw-heat-0) 82%, transparent);
+  background: color-mix(in srgb, var(--dsw-heat-0) 82%, transparent);
 }
 
 .heatLevel1 {
-  fill: var(--dsw-heat-1);
-  background: var(--dsw-heat-1);
+  fill: color-mix(in srgb, var(--dsw-heat-1) 82%, transparent);
+  background: color-mix(in srgb, var(--dsw-heat-1) 82%, transparent);
 }
 
 .heatLevel2 {
-  fill: var(--dsw-heat-2);
-  background: var(--dsw-heat-2);
+  fill: color-mix(in srgb, var(--dsw-heat-2) 82%, transparent);
+  background: color-mix(in srgb, var(--dsw-heat-2) 82%, transparent);
 }
 
 .heatLevel3 {
-  fill: var(--dsw-heat-3);
-  background: var(--dsw-heat-3);
+  fill: color-mix(in srgb, var(--dsw-heat-3) 82%, transparent);
+  background: color-mix(in srgb, var(--dsw-heat-3) 82%, transparent);
 }
 
 .heatLevel4 {
-  fill: var(--dsw-heat-4);
-  background: var(--dsw-heat-4);
+  fill: color-mix(in srgb, var(--dsw-heat-4) 82%, transparent);
+  background: color-mix(in srgb, var(--dsw-heat-4) 82%, transparent);
 }
 
 .heatLevel5 {
-  fill: var(--dsw-heat-5);
-  background: var(--dsw-heat-5);
+  fill: color-mix(in srgb, var(--dsw-heat-5) 82%, transparent);
+  background: color-mix(in srgb, var(--dsw-heat-5) 82%, transparent);
 }
 
 /* ── daily trend ───────────────────────────────────────────────────────── */
@@ -758,6 +771,10 @@
   --dsw-heat-3: #8ea4ff;
   --dsw-heat-4: #6884ff;
   --dsw-heat-5: #4d6bfe;
+  /* Heatmap cell depth: a highlight above, a shade below. Light trays need
+     the stronger pair; the dark tray below lifts the shade instead. */
+  --dsw-heat-sheen: rgb(255 255 255 / 0.55);
+  --dsw-heat-shade: rgb(0 0 0 / 0.20);
   --dsw-trend-line: #4d6bfe;
   --dsw-chart-1: color-mix(in srgb, #0576ff 70%, white);
   --dsw-chart-2: color-mix(in srgb, #2f6f37 70%, white);
@@ -791,6 +808,9 @@
     --dsw-heat-3: #6e8bff;
     --dsw-heat-4: #93aaff;
     --dsw-heat-5: #c4d0ff;
+    /* Same depth pair, recalibrated: a dark tray swallows a light shade. */
+    --dsw-heat-sheen: rgb(255 255 255 / 0.30);
+    --dsw-heat-shade: rgb(0 0 0 / 0.50);
     --dsw-trend-line: #7d95ff;
     --dsw-chart-1: color-mix(in srgb, #0576ff 65%, white);
     --dsw-chart-2: color-mix(in srgb, #2f6f37 65%, white);

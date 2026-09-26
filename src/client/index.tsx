@@ -33,6 +33,7 @@ import { UsageStatsPanel } from './UsageStatsPanel.tsx'
 import { StatsIcon } from './stats-icon.tsx'
 import { StatsLineEnhanced } from './StatsLineEnhanced.tsx'
 import { LOCALE_NS, en, zh, zhTW, type UsageStatsKey } from './locales.ts'
+import { isCompatibleGlass, whenGlassReady } from './glass.ts'
 import css from './UsageStatsPanel.module.css'
 
 /** This bundle's npm package name — the key the Plugins page matches on. */
@@ -43,6 +44,13 @@ export const PANEL_ID = 'usage-stats'
 
 /** Where the row sits among the global panels: after the shipped ones. */
 const PANEL_ORDER = 30
+
+/** The attribute every glass-eligible surface in this bundle carries. The
+ *  panel's class names are CSS Module hashes (`[hash]_local`), so a static
+ *  selector cannot name them; this attribute is the stable handle the
+ *  background plugin's glass registry matches on. The value only labels which
+ *  surface it is — the registry rule is one recipe for all of them. */
+const GLASS_SURFACE_SELECTOR = '[data-dsh-usage-glass]'
 
 /** The typed translator seat the framework injects for this namespace. */
 export type UsageStatsTranslator = TranslateNS<typeof LOCALE_NS>
@@ -93,6 +101,32 @@ export function apply(ctx: Context): void {
     const offZhTw = ctx.locale.register(LOCALE_NS, 'zh-TW', zhTW)
     return () => { offZh(); offEn(); offZhTw() }
   }, 'dsh-usage-statistics-panel: dictionaries')
+
+  // Join the background plugin's frosted-glass sheet when it is installed.
+  // `fill` is the right mode for these surfaces: the panel paints with
+  // `--dsw-alias-bg-layer-*` and `--dsw-alias-bg-overlay`, none of which the
+  // bridge's `token` list covers, so the registry has to take the fill over as
+  // well as add the sheen and blur. Nothing is value-imported from that
+  // plugin — the contract is a browser global plus a ready event — so a user
+  // who does not have it resolves null here and every surface keeps its own
+  // paint. The handle is disposed with the fiber, which is also what retracts
+  // the rules on uninstall.
+  ctx.effect(() => {
+    let unregister: (() => void) | undefined
+    let disposed = false
+    void whenGlassReady().then((glass) => {
+      if (disposed || !isCompatibleGlass(glass)) return
+      unregister = glass.register({
+        plugin: BUNDLE_NAME,
+        selectors: [GLASS_SURFACE_SELECTOR],
+        mode: 'fill',
+      })
+    })
+    return () => {
+      disposed = true
+      unregister?.()
+    }
+  }, 'dsh-usage-statistics-panel: frosted-glass surfaces')
 
   const t = ctx.locale.bind(LOCALE_NS)
 

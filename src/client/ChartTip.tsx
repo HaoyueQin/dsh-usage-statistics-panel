@@ -94,6 +94,7 @@ export function ChartTip({ anchor, panelRef, children, gap = 8, margin = 8 }: Ch
     <div
       ref={ref}
       className={css.tip}
+      data-dsh-usage-glass="tip"
       role="tooltip"
       style={pos === null ? { visibility: 'hidden' } : { left: pos.left, top: pos.top }}
     >

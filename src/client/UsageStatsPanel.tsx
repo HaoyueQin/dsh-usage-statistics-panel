@@ -238,9 +238,9 @@ export function UsageStatsPanel({ t }: { t: Translator }): JSX.Element {
   const trendModels = groupedStats?.models ?? []
 
   return (
-    <div className={css.panel} ref={panelRef}>
+    <div className={css.panel} data-dsh-usage-glass="panel" ref={panelRef}>
       <div className={css.toolbar}>
-        <div className={css.group} role="group" aria-label={t('range')}>
+        <div className={css.group} data-dsh-usage-glass="group" role="group" aria-label={t('range')}>
           {RANGE_PRESETS.map((r) => (
             <Button
               key={r}
@@ -318,7 +318,7 @@ export function UsageStatsPanel({ t }: { t: Translator }): JSX.Element {
       {!error && stats && isEmptyRange(stats) && (
         <div className={css.empty}>{t('empty')}</div>
       )}
-      <div className={css.prefGroup}>
+      <div className={css.prefGroup} data-dsh-usage-glass="pref">
         <StatsLineOptions t={t} />
       </div>
     </div>
@@ -445,7 +445,7 @@ function StatCards({ stats, t }: { stats: UsageStatsRange; t: Translator }) {
   return (
     <div className={css.cards}>
       {cards.map((c) => (
-        <div className={css.card} key={c.label} title={c.hint}>
+        <div className={css.card} data-dsh-usage-glass="card" key={c.label} title={c.hint}>
           <div className={css.cardHead}>
             <c.icon className={css.cardIcon} size={14} strokeWidth={2} aria-hidden="true" />
             <span className={css.cardLabel}>{c.label}</span>
@@ -915,7 +915,7 @@ function ModelUsage({ models, t, colorForModel, panelRef }: { models: GroupedMod
             </ChartTip>
           )}
         </div>
-        <ul className={css.modelList}>
+        <ul className={css.modelList} data-dsh-usage-glass="list">
           {models.map((m, rank) => {
             const isOther = m.model === OTHER_MODEL
             return (
@@ -1061,7 +1061,7 @@ function ProviderUsage({ providers, t, colorForProvider, panelRef }: { providers
             </ChartTip>
           )}
         </div>
-        <ul className={css.modelList}>
+        <ul className={css.modelList} data-dsh-usage-glass="list">
           {providers.map((p, rank) => {
             const isOther = p.provider === OTHER_PROVIDER
             const folded = p.folded ?? []

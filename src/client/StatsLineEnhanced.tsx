@@ -30,7 +30,7 @@
  */
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { IconDatabaseOutline16, IconGaugeOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconDatabaseOutlineRegular, IconGaugeOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale, SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
 import { LOCALE_NS } from './locales.ts'
 import { statsLineState } from './stats-line-state.ts'
@@ -255,7 +255,7 @@ function TimePill({ stats, t, dialog, useChat, scale, liveSpeed }: {
     return (
       <span className={css.anchor}>
         <span className={css.pill}>
-          <IconGaugeOutline16 />
+          <IconGaugeOutlineRegular />
           {label}
         </span>
       </span>
@@ -271,7 +271,7 @@ function TimePill({ stats, t, dialog, useChat, scale, liveSpeed }: {
         aria-label={officialTps === null ? counts : counts + ' · ' + officialTps}
         onClick={() => { setOpen(!open) }}
       >
-        <IconGaugeOutline16 />
+        <IconGaugeOutlineRegular />
         {label}
       </button>
       {open && createPortal(
@@ -284,7 +284,7 @@ function TimePill({ stats, t, dialog, useChat, scale, liveSpeed }: {
         >
           <div className={css.dialogTitle}>
             <span className={css.dialogTitleLabel}>
-              <IconGaugeOutline16 />
+              <IconGaugeOutlineRegular />
               {t('stats.dialog.title')}
             </span>
           </div>
@@ -349,7 +349,7 @@ function UsagePill({ usage, t, dialog, cachePrecision, tokenDetail }: {
         aria-label={cacheHitText === null ? totalText : totalText + ' · ' + cacheHitText}
         onClick={() => { setOpen(!open) }}
       >
-        <IconDatabaseOutline16 />
+        <IconDatabaseOutlineRegular />
         <span className={css.label}>
           {totalText}
           {cacheHitText !== null && (
@@ -370,7 +370,7 @@ function UsagePill({ usage, t, dialog, cachePrecision, tokenDetail }: {
         >
           <div className={css.dialogTitle}>
             <span className={css.dialogTitleLabel}>
-              <IconDatabaseOutline16 />
+              <IconDatabaseOutlineRegular />
               {t('stats.dialog.usageTitle')}
             </span>
             <span className={css.dialogTitleValue}>{exactCount(total)}</span>

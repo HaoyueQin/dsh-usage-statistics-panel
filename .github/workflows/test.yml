@@ -1,8 +1,8 @@
 # Single-host regression: devDependencies pin every @deepseek-ai/* package to
-# the DSH 0.1.6-alpha.2 line, so every push/PR runs the full build+test suite
+# the DSH 0.1.7-rc.2 line, so every push/PR runs the full build+test suite
 # against exactly that baseline. The peer range states the capability floor
-# only (DSH >= 0.1.2-rc.1) and is optional: no semver range matches a future
-# pre-release host, so the supported versions live in the README.
+# only (DSH >= 0.1.7-rc.1) and is optional: it matches only the pre-release of
+# the same tuple, so the supported versions live in the README.
 name: test
 
 on:

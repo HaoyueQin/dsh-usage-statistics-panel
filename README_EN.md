@@ -62,13 +62,13 @@ After mounting, **hard-refresh the browser** (Cmd/Ctrl+Shift+R): client-half cha
 
 Once mounted there are two ways in: the **Usage statistics** row in the left rail under New Session, or **Plugins** → **Installed** → `usage-statistics-panel` on its detail page (the card shows the short name; the full package name is on that page). Both render the same panel.
 
-**Compatibility**: this plugin supports DeepSeek Harness `>= 0.1.2-rc.1` with a dual-path backfill: `list`+`inspect` on `0.1.2-rc.1`, `list`+`open`+paged `read`+`close` on `0.1.3-alpha.*` and later (`inspect` was removed upstream). Dev dependencies and the verification target track host `0.1.6-alpha.2`, verified against `0.1.2-rc.1`, `0.1.5-rc.2`, `0.1.6-alpha.1` and `0.1.6-alpha.2`; V3 log compatibility is covered by unit tests.
+**Compatibility**: this plugin supports DeepSeek Harness `>= 0.1.7-rc.1`; dev dependencies and the verification target track host `0.1.7-rc.2`, verified on `0.1.7-rc.2`, with V3 / V4 session-log compatibility covered by unit tests. The dual-path backfill (`list`+`inspect` on `0.1.2-rc.1`, `list`+`open`+paged `read`+`close` from `0.1.3-alpha.*`) is retained.
 
 The bottom-bar row adapts to the container it is rendered in: from `0.1.6-alpha.2` the host places it in a flex row beside the context-occupancy ring (which owns the centring, the gap, the top pad and the side clearance), while through `0.1.6-alpha.1` the row still owns its content width, its side gutters and its 4px top pad — one build stays aligned on both.
 
-> The `@deepseek-ai/*` peer declarations state the capability floor only (`>=0.1.2-rc.1` is the earliest interface surface the plugin uses) and are all marked optional: no semver range matches a future pre-release host (`>=0.1.2-rc.1` satisfies neither `0.1.5-rc.2` nor `0.1.6-alpha.2`), so the supported host versions are those stated in this section rather than npm peer validation.
+> The `@deepseek-ai/*` peer declarations state the capability floor only (`>=0.1.7-rc.1` is the earliest interface surface the plugin uses) and are all marked optional. Under semver's pre-release rule that range matches only the pre-release of the same tuple — `0.1.7-rc.2` satisfies it, while the next pre-release line (`0.1.8-rc.1`) does not — so the supported host versions are those stated in this section rather than npm peer validation.
 
-> **Older-host users**: if you run DeepSeek Harness `0.1.1-rc.2` or `0.1.2-alpha.*`, please install an older plugin version (`0.1.9` or earlier). `0.1.10` supports only `>= 0.1.2-rc.1`; from `0.1.11` one build serves both `0.1.2-rc.1` and `0.1.3-alpha.*`.
+> **Older-host users**: on DeepSeek Harness `0.1.6-alpha.2` or earlier, install plugin version `0.3.0` or older. On the `0.1.7` line the host renamed the whole `@deepseek-ai/dsh-client-ui-primitives` icon export set to a weight-based scheme (`*Outline16` → `*OutlineRegular` / `*Medium`) with **zero overlap** between the two generations: the old names resolve to `undefined` on `0.1.7+` and break the bottom info bar — one build cannot serve both.
 
 ## Data source
 

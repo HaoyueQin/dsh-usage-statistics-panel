@@ -37,9 +37,10 @@ const NODE_BUILTINS = new Set([
 ])
 
 /** Module specifiers the web shell shares into the frozen module table — an
- *  exact mirror of the official PLATFORM_MODULES list (DSH 0.1.6-alpha.2,
+ *  exact mirror of the official PLATFORM_MODULES list (DSH 0.1.7-rc.2,
  *  packages/client/web/src/platform.ts; that line's
- *  PRELOADED_CLIENT_EXTERNALS is empty). Every @deepseek-ai value import must
+ *  PRELOADED_CLIENT_EXTERNALS is empty, and the list is byte-identical from
+ *  0.1.6-alpha.2 through 0.1.7-rc.2). Every @deepseek-ai value import must
  *  stay inside this list, or the bundle leaks a module id the host table
  *  cannot resolve. */
 const CLIENT_EXTERNALS = [
@@ -51,6 +52,7 @@ const CLIENT_EXTERNALS = [
   '@deepseek-ai/dsh-client-store',
   '@deepseek-ai/dsh-client-ui-slots',
   '@deepseek-ai/dsh-client-ui-primitives',
+  '@deepseek-ai/dsh-client-ui-dockkit',
 ]
 
 /**

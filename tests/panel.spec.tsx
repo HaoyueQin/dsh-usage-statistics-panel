@@ -100,11 +100,12 @@ describe('UsageStatsPanelPage', () => {
     daily: [], models: [], providers: [],
   }
 
-  it('wraps the panel in the content column the Plugins page gives it', async () => {
+  it('wraps the panel in the content column the Plugins page gives it, with the back control', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => ({
       ok: true, json: async () => ({ ok: true, value: RANGE }),
     } as unknown as Response)))
-    const { container } = render(<UsageStatsPanelPage {...({ t } as UsageStatsPanelPageProps)} />)
+    const goBack = vi.fn()
+    const { container } = render(<UsageStatsPanelPage {...({ t, goBack } as UsageStatsPanelPageProps)} />)
     await act(async () => { await new Promise((r) => { setTimeout(r, 0) }) })
     // The sidebar row selects this mount; it must render the SAME panel, wrapped
     // so the charts get the Plugins page's content column instead of stretching
@@ -113,5 +114,10 @@ describe('UsageStatsPanelPage', () => {
     expect(page.className).toContain('page')
     expect(page.querySelector('[class*="toolbar"]')).not.toBeNull()
     expect(screen.getByRole('button', { name: 'rangePreset.7' })).toBeTruthy()
+    // The standalone entry — and only it — carries the back control: the Plugins
+    // page entry sits in that page's own chrome, which draws its own crumb back
+    // to the bundle list.
+    fireEvent.click(screen.getByRole('button', { name: 'back' }))
+    expect(goBack).toHaveBeenCalledTimes(1)
   })
 })

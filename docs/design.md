@@ -60,7 +60,11 @@ Token 桶语义：`inputTokens` 是 uncached input（即缓存 miss 侧），`ca
 
 ### index.tsx — 面板与侧栏入口注册
 
-本插件注册三个面板相关槽位：`plugins.bundle.config`（keyed，键为本 bundle 的 npm 包名）把面板渲染进插件页里该组合包的详情页；`main`（keyed，键 `usage-stats`）把它注册成一个全局主面板；`sidebar.panellist`（list，id `usage-stats`，order 30）在左侧栏「新会话」下方加一行，点击即切到该主面板。面板因此由**同一组件渲染在两处**，`UsageStatsPanelPage` 用与插件页相同的 960px 内容列包住它（模块 css 的 `.page` 逐条镜像插件页自己的 `.page`，含 padding 与前景色 token），两处外观一致。locale 座绑定 `usageStats` 命名空间（en/zh/zh-TW 三份字典）；面板数值格式化跟随当前语言——中文显示 亿/万（简）或 億/萬（繁），英文用 k/M/B 图表惯例。组件经 `/usage/api` fetch 数据，不直接触 ctx。
+本插件注册三个面板相关槽位：`plugins.bundle.config`（keyed，键为本 bundle 的 npm 包名）把面板渲染进插件页里该组合包的详情页；`main`（keyed，键 `usage-stats`）把它注册成一个全局主面板；`sidebar.panellist`（list，id `usage-stats`，order 30）在左侧栏「新会话」下方加一行，点击即切到该主面板。面板因此由**同一组件渲染在两处**，`UsageStatsPanelPage` 用与插件页相同的 960px 内容列包住它（模块 css 的 `.page` 逐条镜像插件页自己的 `.page`，含 padding 与前景色 token），两处外观一致。locale 座绑定 `usageStats` 命名空间（en/zh/zh-TW 三份字典）；面板数值格式化跟随当前语言——中文显示 亿/万（简）或 億/萬（繁），英文用 k/M/B 图表惯例。组件经 `/usage/api` fetch 数据，不直接触 ctx（返回控制是唯一例外：主面板的 `goBack` 经槽位 `inject` 传入，见下）。
+
+### index.tsx — 主面板的返回控制
+
+独立主面板左上角有返回按钮，回到**进入该面板之前**的界面。宿主**没有**面板历史——`ctx.layout` 只写当前选中项（`ILayout` 仅暴露 `selectPanel` 与 `panelInfo`），所以历史由本插件自己重建：apply 订阅 `ctx.layout.panelInfo`（`inject` 因此增加 `layout`），每当 `usage-stats` 成为选中项就记下它替换掉的那个 key——读者从会话、插件页还是别的面板进来，目标都对。`selectPanel` 对已注销的 key 会抛错，而抛错会把读者困在面板里，所以目标不可用时回退到 `selectPanel(null)`（回到当前会话；`null` 永远是合法选择）。按钮只画在独立主面板：插件页那个入口在宿主自己的 chrome 里，本就有回到组合包列表的面包屑。图标取自已依赖的 `lucide-react`，不再引入 primitives 图标名去跟宿主改名保持同步。
 
 > 侧栏入口刻意**不**走 `sidebar.footer.action`：那个座位是宿主里一条与其它插件共享的 flex 行，注册在那里会与邻居争宽度——两个插件时尚可等分，三个以上就会把彼此的标签挤成省略号（2026-09 实测：256px 行里三个条目各约 85px，而「上下文洞察」一类的标签需要约 126px）。
 

@@ -13,6 +13,7 @@
  * - webServer: @deepseek-ai/dsh-host-webserver (the WebServer)
  * - slots: the client slot registry (ui-slots)
  * - locale: the client locale service
+ * - layout: @deepseek-ai/dsh-client-ui-layout (the panel-selection face)
  * Drift from upstream is contained to this file.
  *
  * This file must stay FREE of Node.js types (`node:http`, `node:stream`,
@@ -210,6 +211,36 @@ export interface UsageLocaleService {
   getLocale(): { active: string }
 }
 
+/** Root-scoped navigation state (mirror of ui-layout's PanelInfo). */
+export interface UsagePanelInfo {
+  /** Selected global panel; null displays the current Conversation. */
+  readonly activePanelId: string | null
+}
+
+/** A read-only observable over the layout store (the `HostObservable` face
+ *  ui-layout exposes on `panelInfo`, narrowed to the two reads this plugin
+ *  makes). */
+export interface UsagePanelInfoSource {
+  getSnapshot(): UsagePanelInfo
+  /** Subscribe to selection changes; returns the unsubscribe handle. */
+  subscribe(listener: () => void): () => void
+}
+
+/** The layout service (mirror of ui-layout's ILayout, narrowed to panel
+ *  selection). The shell keeps NO navigation history: `selectPanel` writes the
+ *  selection and nothing else, so "where did the reader come from" is the
+ *  caller's to remember. */
+export interface UsageLayoutService {
+  /** The current selection, shared with `selectPanel`'s own store. */
+  readonly panelInfo: UsagePanelInfoSource
+  /**
+   * Select a global central panel without changing the current Session.
+   * @param panelId - a registered main key, or null for the Conversation.
+   * @throws when the key is not registered; the current selection survives.
+   */
+  selectPanel(panelId: string | null): void
+}
+
 declare module 'cordis' {
   interface Context {
     effect(dispose: () => void | (() => void), label?: string): void
@@ -219,6 +250,7 @@ declare module 'cordis' {
     webServer: UsageWebServer
     slots: UsageSlotsService
     locale: UsageLocaleService
+    layout: UsageLayoutService
   }
 }
 

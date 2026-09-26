@@ -28,6 +28,15 @@ function fakeCtx(): { ctx: Context; recorded: UsageSlotEntrySpec[] } {
       inject: (_name: string, callback: () => void | (() => void)) => { callback() },
       register: (spec: UsageSlotEntrySpec) => { recorded.push(spec); return () => {} },
     },
+    // The back control's history source; this spec is about the registration
+    // surface, so the panel never moves here.
+    layout: {
+      panelInfo: {
+        getSnapshot: () => ({ activePanelId: null }),
+        subscribe: () => () => {},
+      },
+      selectPanel: () => {},
+    },
   } as unknown as Context
   return { ctx, recorded }
 }

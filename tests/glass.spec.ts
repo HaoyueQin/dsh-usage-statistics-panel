@@ -38,6 +38,15 @@ function fakeCtx(): { ctx: Context; disposers: Array<() => void> } {
       inject: (_name: string, callback: () => void | (() => void)) => { callback() },
       register: () => () => {},
     },
+    // `apply` also reads the layout service for the panel's back control; no
+    // panel moves in this spec, so a stationary stub is enough.
+    layout: {
+      panelInfo: {
+        getSnapshot: () => ({ activePanelId: null }),
+        subscribe: () => () => {},
+      },
+      selectPanel: () => {},
+    },
   } as unknown as Context
   return { ctx, disposers }
 }

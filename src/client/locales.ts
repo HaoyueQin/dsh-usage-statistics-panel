@@ -11,6 +11,7 @@ export const LOCALE_NS = 'usageStats'
 /** The typed translator key union for the panel's locale seat. */
 export type UsageStatsKey =
   | 'nav'
+  | 'back'
   | 'range'
   | 'rangePreset.7'
   | 'rangePreset.14'
@@ -71,6 +72,7 @@ export type UsageStatsKey =
 
 export const en: Record<UsageStatsKey, string> = {
   nav: 'Usage statistics',
+  back: 'Back',
   range: 'Time range',
   'rangePreset.7': 'Last 7 days',
   'rangePreset.14': 'Last 14 days',
@@ -132,6 +134,7 @@ export const en: Record<UsageStatsKey, string> = {
 
 export const zh: Record<UsageStatsKey, string> = {
   nav: '使用统计',
+  back: '返回',
   range: '时间范围',
   'rangePreset.7': '最近 7 天',
   'rangePreset.14': '最近 14 天',
@@ -193,6 +196,7 @@ export const zh: Record<UsageStatsKey, string> = {
 
 export const zhTW: Record<UsageStatsKey, string> = {
   nav: '使用統計',
+  back: '返回',
   range: '時間範圍',
   'rangePreset.7': '最近 7 天',
   'rangePreset.14': '最近 14 天',

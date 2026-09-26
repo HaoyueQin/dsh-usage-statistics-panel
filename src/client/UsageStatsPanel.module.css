@@ -28,6 +28,21 @@
   max-width: 960px;
 }
 
+/* The standalone panel's back control. Only the main panel renders this seat —
+   the Plugins page entry already sits inside the page's own chrome, which
+   draws its own crumb back to the bundle list. The spacing matches the gap the
+   panel keeps between its own sections. */
+.backRow {
+  display: flex;
+  margin-bottom: 18px;
+}
+
+.back {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .panel {
   display: flex;
   flex-direction: column;

@@ -60,7 +60,7 @@ dsh plugin --profile <name> add dsh-usage-statistics-panel@latest
 
 After mounting, **hard-refresh the browser** (Cmd/Ctrl+Shift+R): client-half changes hot-reload in DSH, no restart needed; only host-half updates (collector/storage/routes) require restarting DSH.
 
-Once mounted there are two ways in: the **Usage statistics** row in the left rail under New Session, or **Plugins** → **Installed** → `usage-statistics-panel` on its detail page (the card shows the short name; the full package name is on that page). Both render the same panel.
+Once mounted there are two ways in: the **Usage statistics** row in the left rail under New Session, or **Plugins** → **Installed** → `usage-statistics-panel` on its detail page (the card shows the short name; the full package name is on that page). Both render the same panel. The standalone panel also carries a **back** control in its top-left corner, returning to whatever was selected before it — the Conversation, the Plugins page, or another plugin's panel.
 
 **Compatibility**: this plugin supports DeepSeek Harness `>= 0.1.7-rc.1`; dev dependencies and the verification target track host `0.1.7-rc.2`, verified on `0.1.7-rc.2`, with V3 / V4 session-log compatibility covered by unit tests. The dual-path backfill (`list`+`inspect` on `0.1.2-rc.1`, `list`+`open`+paged `read`+`close` from `0.1.3-alpha.*`) is retained.
 

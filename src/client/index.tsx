@@ -29,6 +29,8 @@ import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type { PropsLocale, PropsRuntime, TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
+import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
+import { ArrowLeft } from 'lucide-react'
 import { UsageStatsPanel } from './UsageStatsPanel.tsx'
 import { StatsIcon } from './stats-icon.tsx'
 import { StatsLineEnhanced } from './StatsLineEnhanced.tsx'
@@ -59,8 +61,11 @@ export type UsageStatsSectionProps =
   UsagePluginConfigOwnerProps
   & PropsLocale<typeof LOCALE_NS>
 
-/** The main-panel share: no owner props, only the locale seat. */
-export type UsageStatsPanelPageProps = PropsLocale<typeof LOCALE_NS>
+/** The main-panel share: the locale seat plus the back control's action. */
+export type UsageStatsPanelPageProps = PropsLocale<typeof LOCALE_NS> & {
+  /** Return to whatever the reader was looking at before this panel. */
+  goBack: () => void
+}
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
@@ -68,7 +73,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
   }
 }
 
-export const inject = ['slots', 'locale']
+export const inject = ['slots', 'locale', 'layout']
 
 /** The panel as the Plugins page renders it: the page owns the title, the
  *  icon, and the crumb, so this is the bare panel. */
@@ -77,10 +82,20 @@ export function UsageStatsSection(props: UsageStatsSectionProps): JSX.Element {
 }
 
 /** The panel as a standalone main panel, wrapped in the same 960px content
- *  column the Plugins page gives it so both entries look identical. */
+ *  column the Plugins page gives it so both entries look identical.
+ *
+ *  Only this entry carries the back control. The Plugins page entry sits in
+ *  the page's own chrome, which already draws a crumb back to the bundle list,
+ *  so a second control there would be noise rather than help. */
 export function UsageStatsPanelPage(props: UsageStatsPanelPageProps): JSX.Element {
   return (
     <div className={css.page}>
+      <div className={css.backRow}>
+        <Button size="sm" variant="ghost" className={css.back} onClick={props.goBack}>
+          <ArrowLeft size={14} strokeWidth={2} aria-hidden="true" />
+          {props.t('back')}
+        </Button>
+      </div>
       <UsageStatsPanel t={props.t} />
     </div>
   )
@@ -130,6 +145,39 @@ export function apply(ctx: Context): void {
 
   const t = ctx.locale.bind(LOCALE_NS)
 
+  // Where the reader came from, for the standalone panel's back control.
+  //
+  // The shell keeps no navigation history — `ctx.layout` writes a selection
+  // and nothing else — so this bundle remembers the previous panel itself.
+  // Subscribing (rather than reading on demand) is what makes the target right
+  // even when the reader takes the long way in: from the Plugins page's bundle
+  // detail, or from another panel entirely.
+  let previousPanelId: string | null = null
+  let lastPanelId = ctx.layout.panelInfo.getSnapshot().activePanelId
+  ctx.effect(() => ctx.layout.panelInfo.subscribe(() => {
+    const next = ctx.layout.panelInfo.getSnapshot().activePanelId
+    if (next === PANEL_ID && lastPanelId !== PANEL_ID) previousPanelId = lastPanelId
+    lastPanelId = next
+  }), 'dsh-usage-statistics-panel: panel history')
+
+  // Go back to the remembered panel, or to the Conversation.
+  //
+  // A remembered key may have been unregistered since, and `selectPanel` throws
+  // on an unknown key — a throw here would strand the reader on this panel
+  // behind a control that does nothing. `null` is always a legal selection, so
+  // falling back to it keeps the control total.
+  const goBack = (): void => {
+    if (previousPanelId === null || previousPanelId === PANEL_ID) {
+      ctx.layout.selectPanel(null)
+      return
+    }
+    try {
+      ctx.layout.selectPanel(previousPanelId)
+    } catch {
+      ctx.layout.selectPanel(null)
+    }
+  }
+
   // The panel on the Plugins page: the page declares this keyed slot and
   // renders the entry on the page of the bundle whose package name equals the
   // key. The registration lives as long as this bundle's row stays enabled.
@@ -145,6 +193,7 @@ export function apply(ctx: Context): void {
     name: 'main',
     key: PANEL_ID,
     locale: LOCALE_NS,
+    inject: () => ({ goBack }),
   }, UsageStatsPanelPage))
 
   // The sidebar row, under New Session beside the shipped global panels. A

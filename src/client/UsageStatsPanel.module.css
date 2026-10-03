@@ -322,6 +322,15 @@
 
 .heatmap {
   display: block;
+  /* The 364 cells each keep their own two-layer drop-shadow chain (see
+     `.heatCell`) — 728 blurs that the compositor would otherwise re-run on
+     every scroll repaint of the tile, which is what made scrolling this panel
+     drop frames while idle was clean (#4). Promoting the SVG onto its own
+     compositing layer takes that rasterization off the scroll path and leaves
+     the painted result untouched, so the cell depth stays as designed. Note
+     that the promotion is what does the work: `contain: paint` on its own
+     measured no better than no mitigation at all. */
+  transform: translateZ(0);
 }
 
 .heatLegend {

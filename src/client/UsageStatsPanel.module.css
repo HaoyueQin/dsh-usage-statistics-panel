@@ -322,6 +322,20 @@
 
 .heatmap {
   display: block;
+  /* The glass-tile depth for the cells lives HERE, on the group, not on each
+     cell. A drop-shadow consumes the rendered alpha, and the 364 spaced cells
+     are 364 separate opaque regions in it, so every cell still casts its own
+     hairline highlight and soft under-shadow — but the chain runs twice
+     instead of 364 × 2 = 728 times. Per element it is re-rasterized on every
+     scroll repaint, which measured p95 48.6ms per frame while scrolling the
+     panel (about 5% of frames past 20ms) against a 6.9ms idle frame and long
+     tasks at 0 — rasterization, not JS (#4). On the group the same scroll
+     measures p95 13.1ms with 0.3% of frames past 20ms, and a pixel diff
+     against the per-cell version is at most 2/255 (1/255 inside the cells;
+     the remainder is rounding in the 3px gaps). */
+  filter:
+    drop-shadow(0 -0.5px 0 var(--dsw-heat-sheen))
+    drop-shadow(0 0.5px 0.8px var(--dsw-heat-shade));
 }
 
 .heatLegend {
@@ -330,6 +344,14 @@
   gap: 3px;
   font-size: 13px;
   color: var(--dsw-alias-label-tertiary);
+}
+
+/* The legend swatches are HTML and sit outside the SVG, so they carry their own
+   copy of the same two shadows — five elements, not three hundred. */
+.heatLegend .heatCell {
+  filter:
+    drop-shadow(0 -0.5px 0 var(--dsw-heat-sheen))
+    drop-shadow(0 0.5px 0.8px var(--dsw-heat-shade));
 }
 
 .heatCell {
@@ -345,10 +367,8 @@
      nothing on paint (measured on 364 live cells: the screenshot came out
      byte-identical to no blur at all). What reads as a glass tile instead is
      the translucent fill below — it lets the panel's own glass bed through —
-     carried by one hairline highlight over one soft under-shadow. */
-  filter:
-    drop-shadow(0 -0.5px 0 var(--dsw-heat-sheen))
-    drop-shadow(0 0.5px 0.8px var(--dsw-heat-shade));
+     carried by one hairline highlight over one soft under-shadow, which the
+     heatmap SVG as a whole paints now (see `.heatmap`). */
 }
 
 /* The five heat levels use DeepSeek's brand blue (#4D6BFE) as a fixed ramp,

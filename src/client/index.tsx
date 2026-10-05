@@ -50,9 +50,14 @@ const PANEL_ORDER = 30
 /** The attribute every glass-eligible surface in this bundle carries. The
  *  panel's class names are CSS Module hashes (`[hash]_local`), so a static
  *  selector cannot name them; this attribute is the stable handle the
- *  background plugin's glass registry matches on. The value only labels which
- *  surface it is — the registry rule is one recipe for all of them. */
-const GLASS_SURFACE_SELECTOR = '[data-dsh-usage-glass]'
+ *  background plugin's glass registry matches on. The value splits the two
+ *  recipes: the panel surfaces take the registry's `fill` mode (the registry
+ *  takes their own paints over), while the stat dialogs — the two popovers
+ *  under the composer — keep their official menu fill and join the sheet
+ *  for the shared sheen + blur chain (`token` mode). */
+const GLASS_ATTR_SELECTOR = '[data-dsh-usage-glass]'
+const GLASS_DIALOG_SELECTOR = '[data-dsh-usage-glass="dialog"]'
+const GLASS_PANEL_SELECTOR = `${GLASS_ATTR_SELECTOR}:not(${GLASS_DIALOG_SELECTOR})`
 
 /** The typed translator seat the framework injects for this namespace. */
 export type UsageStatsTranslator = TranslateNS<typeof LOCALE_NS>
@@ -117,29 +122,38 @@ export function apply(ctx: Context): void {
     return () => { offZh(); offEn(); offZhTw() }
   }, 'dsh-usage-statistics-panel: dictionaries')
 
-  // Join the background plugin's frosted-glass sheet when it is installed.
-  // `fill` is the right mode for these surfaces: the panel paints with
-  // `--dsw-alias-bg-layer-*` and `--dsw-alias-bg-overlay`, none of which the
-  // bridge's `token` list covers, so the registry has to take the fill over as
-  // well as add the sheen and blur. Nothing is value-imported from that
-  // plugin — the contract is a browser global plus a ready event — so a user
-  // who does not have it resolves null here and every surface keeps its own
-  // paint. The handle is disposed with the fiber, which is also what retracts
-  // the rules on uninstall.
+  // Join the background plugin's frosted-glass sheet when it is installed,
+  // in the two modes its registry documents. `fill` for the panel surfaces:
+  // they paint with `--dsw-alias-bg-layer-*` and `--dsw-alias-bg-overlay`,
+  // none of which the bridge's `token` list covers, so the registry has to
+  // take the fill over as well as add the sheen and blur. `token` for the
+  // stat dialogs: they already paint the official menu material (`--dsw-
+  // specific-menu` plus the official blur, see StatsLineEnhanced.module.css)
+  // and only join the shared sheen + blur chain — the same treatment the
+  // bridge gives the official stat dialogs. Nothing is value-imported from
+  // that plugin — the contract is a browser global plus a ready event — so a
+  // user who does not have it resolves null here and every surface keeps its
+  // own paint. The handles are disposed with the fiber, which is also what
+  // retracts the rules on uninstall.
   ctx.effect(() => {
-    let unregister: (() => void) | undefined
+    const unregisters: Array<() => void> = []
     let disposed = false
     void whenGlassReady().then((glass) => {
       if (disposed || !isCompatibleGlass(glass)) return
-      unregister = glass.register({
+      unregisters.push(glass.register({
         plugin: BUNDLE_NAME,
-        selectors: [GLASS_SURFACE_SELECTOR],
+        selectors: [GLASS_PANEL_SELECTOR],
         mode: 'fill',
-      })
+      }))
+      unregisters.push(glass.register({
+        plugin: BUNDLE_NAME,
+        selectors: [GLASS_DIALOG_SELECTOR],
+        mode: 'token',
+      }))
     })
     return () => {
       disposed = true
-      unregister?.()
+      for (const off of unregisters) off()
     }
   }, 'dsh-usage-statistics-panel: frosted-glass surfaces')
 

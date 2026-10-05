@@ -103,7 +103,12 @@ button.pill[aria-expanded='true'] {
 }
 
 /* Portal dialog surface: fixed in the viewport, left/top supplied inline from
-   the anchored-position clamp (12px viewport margin, layers above overlays). */
+   the anchored-position clamp (12px viewport margin, layers above overlays).
+   Material = the official stat-dialog PAIRING, which dsh 0.1.7's menu
+   redesign made mandatory: `--dsw-specific-menu` is translucent there
+   (rgba 58%/45%), so the blur token must ride along — the 0.1.5-era recipe
+   this file copied was a single opaque line, and a fill-only copy reads as
+   bare transparency over the page (issue #6). */
 .dialogPanel {
   position: fixed;
   z-index: 1100;
@@ -115,6 +120,7 @@ button.pill[aria-expanded='true'] {
   border: 0;
   border-radius: 12px;
   background: var(--dsw-specific-menu);
+  backdrop-filter: var(--dsw-menu-backdrop-filter);
   --dsw-elevation-stroke-color: var(--dsw-alias-border-l1);
   box-shadow: var(--dsw-elevation-prominent);
   font-size: 12px;

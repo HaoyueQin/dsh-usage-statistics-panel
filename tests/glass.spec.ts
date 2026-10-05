@@ -4,9 +4,10 @@
  * The panel only ever touches the background plugin through a browser global
  * and a ready event, so these tests pin the two things that can silently break
  * a user's install: that a missing plugin leaves the panel exactly as it was
- * (nothing registered, nothing thrown), and that the registration carries the
- * identity, version and fill mode the bridge documents. The dispose path is
- * covered too, because the handle is what retracts the rules on uninstall.
+ * (nothing registered, nothing thrown), and that the registrations carry the
+ * identity, version and the two fill modes the bridge documents. The dispose
+ * path is covered too, because the handles are what retract the rules on
+ * uninstall.
  */
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -136,18 +137,27 @@ describe('isCompatibleGlass', () => {
 })
 
 describe('apply: glass registration', () => {
-  it('registers the panel surfaces as one fill-mode selector set', async () => {
+  it('registers panel surfaces fill-mode and the stat dialogs token-mode', async () => {
     const { specs } = publishBridge()
     const { ctx } = fakeCtx()
     apply(ctx)
     await flush()
 
-    expect(specs).toHaveLength(1)
-    expect(specs[0]!.plugin).toBe(BUNDLE_NAME)
-    expect(specs[0]!.mode).toBe('fill')
-    // A single anchor attribute, so one registration covers both places the
-    // panel renders (its own main panel and the Plugins page).
-    expect(specs[0]!.selectors).toEqual(['[data-dsh-usage-glass]'])
+    expect(specs).toHaveLength(2)
+    const [fill, token] = specs as [GlassSurfaceSpec, GlassSurfaceSpec]
+    expect(fill.plugin).toBe(BUNDLE_NAME)
+    expect(fill.mode).toBe('fill')
+    // One anchor attribute covers every panel surface (its own main panel and
+    // the Plugins page); the :not guard keeps the stat dialogs — token mode
+    // below — out of the fill takeover, while future surface values inherit
+    // the fill recipe automatically.
+    expect(fill.selectors).toEqual(['[data-dsh-usage-glass]:not([data-dsh-usage-glass="dialog"])'])
+    expect(token.plugin).toBe(BUNDLE_NAME)
+    expect(token.mode).toBe('token')
+    // The dialogs keep their official menu fill and join the sheet for the
+    // shared sheen + blur chain only — the same treatment the bridge gives
+    // the official stat dialogs.
+    expect(token.selectors).toEqual(['[data-dsh-usage-glass="dialog"]'])
   })
 
   it('registers nothing while the background plugin is absent', async () => {
@@ -164,10 +174,10 @@ describe('apply: glass registration', () => {
     const { ctx, disposers } = fakeCtx()
     apply(ctx)
     await flush()
-    expect(specs).toHaveLength(1)
+    expect(specs).toHaveLength(2)
 
     for (const dispose of disposers) dispose()
-    expect(unregisters).toEqual([0])
+    expect(unregisters).toEqual([0, 1])
   })
 
   it('never registers when the fiber is disposed before the bridge arrives', async () => {

@@ -278,6 +278,7 @@ function TimePill({ stats, t, dialog, useChat, scale, liveSpeed }: {
         <div
           ref={panelRef}
           className={css.dialogPanel}
+          data-dsh-usage-glass="dialog"
           role="dialog"
           aria-label={t('stats.dialog.title')}
           style={pos ?? MEASURE_STYLE}
@@ -364,6 +365,7 @@ function UsagePill({ usage, t, dialog, cachePrecision, tokenDetail }: {
         <div
           ref={panelRef}
           className={css.dialogPanel}
+          data-dsh-usage-glass="dialog"
           role="dialog"
           aria-label={t('stats.dialog.usageTitle')}
           style={pos ?? MEASURE_STYLE}

@@ -82,6 +82,20 @@ interface CompactionSummaryData {
   usage?: UsageEventData['usage']
 }
 
+/** The `llm/stream` request fields this collector reads. The waterfall's own
+ *  `GenerateOptions` is far wider; only the route and the purpose matter here. */
+interface LlmStreamOptions {
+  provider?: string
+  model?: string
+  purpose?: string
+}
+
+/** One `llm/stream` chunk; only the usage sample is read. */
+interface LlmStreamChunk {
+  type?: string
+  usage?: UsageEventData['usage']
+}
+
 export interface CollectorOptions {
   /** The source label recorded with every sample (matches the reasonix Source). */
   source?: string
@@ -431,6 +445,80 @@ export class UsageCollector {
       this.folds.delete(sid)
       this.routes.delete(sid)
     })
+    // Auxiliary model calls that leave no usage in the session log. A session
+    // title is generated through this context's `ctx.llm.stream()` with
+    // `purpose: 'session-title'`; the call is billed like any other, but the
+    // only event it logs is its REQUEST (`session/title-llm-request`), whose
+    // response usage is discarded before it can reach a session event. The
+    // waterfall is therefore the only place that usage is observable — and
+    // because it is not in the log, it cannot be backfilled: a title call that
+    // happens while this plugin is not running is lost for good.
+    ctx.on?.('llm/stream', ((options: LlmStreamOptions, next: () => AsyncIterable<LlmStreamChunk>) =>
+      this.observeAuxiliaryCall(options, next)) as never)
+  }
+
+  /**
+   * Wrap one `llm/stream` call at the waterfall. Every other call — the whole
+   * agent loop, compaction — is returned UNWRAPPED (`next()` untouched), so
+   * the hot path pays nothing for this subscription; only a `session-title`
+   * call gets an observing wrapper.
+   *
+   * The wrapper's one rule: record what the call actually reported, once the
+   * stream settles. A stream that throws records nothing — the call never
+   * settled, and a waterfall listener cannot tell a short-circuited call from
+   * a failed one.
+   */
+  private observeAuxiliaryCall(
+    options: LlmStreamOptions,
+    next: () => AsyncIterable<LlmStreamChunk>,
+  ): AsyncIterable<LlmStreamChunk> {
+    if (options?.purpose !== 'session-title') return next()
+    // Both are captured when the call STARTS, so a generation running past
+    // midnight is attributed to the day it began.
+    const day = dayKey(Date.now())
+    const model = UsageCollector.refOf({ provider: options.provider, model: options.model })
+    return this.recordTitleCall(next(), day, model)
+  }
+
+  /**
+   * Forward a title generation's stream while observing its usage, then
+   * record the settled call as TWO samples: its tokens and a request marker.
+   *
+   * Splitting them keeps the store's request semantics untouched — a
+   * token-free marker already counts one request, and a token sample never
+   * does — which is what makes this half of the accounting independent of the
+   * compaction path. The two samples share a day and model, so they land on
+   * the same row.
+   */
+  private async *recordTitleCall(
+    stream: AsyncIterable<LlmStreamChunk>,
+    day: string,
+    model: string | undefined,
+  ): AsyncIterable<LlmStreamChunk> {
+    let usage: UsageEventData['usage'] | undefined
+    for await (const chunk of stream) {
+      // The LAST usage sample wins: adapters emit cumulative samples, and the
+      // assembler's own contract is overwrite (see BlockAssembler.usage).
+      if (chunk?.type === 'usage' && chunk.usage !== undefined) usage = chunk.usage
+      yield chunk
+    }
+    const record = (sample: UsageSample): void => {
+      // Same observational contract as every other record: a degraded store
+      // is counted, never allowed to escape as an unhandled rejection.
+      void this.store.record(sample).catch(() => { this.status.recordFailures++ })
+    }
+    if (usage !== undefined) {
+      record({
+        day,
+        model,
+        inputTokens: usage.inputTokens ?? 0,
+        outputTokens: usage.outputTokens ?? 0,
+        cacheReadTokens: usage.cacheReadTokens ?? 0,
+        cacheWriteTokens: usage.cacheWriteTokens ?? 0,
+      })
+    }
+    // The call itself, whether or not it reported tokens: one provider call.
+    record({ day, model, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, request: true })
   }
 
   /** Whether a backfill is in progress or was completed. */

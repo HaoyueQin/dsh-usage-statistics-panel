@@ -333,7 +333,10 @@ describe('UsageCollector.backfill', () => {
     // Boot 1: the live listener first observes event seq 2 (mid-session);
     // the prefix [0,2) is then backfilled and marked seen.
     const ctxListeners: Array<(...a: unknown[]) => void> = []
-    const collector1 = new UsageCollector({ on: (_e: string, l: never) => { ctxListeners.push(l as unknown as (...a: unknown[]) => void) } } as never, durableStore() as never)
+    // Capture the session/event subscription only: this mock emits one event
+    // type, so handing a session event to the collector's `llm/stream`
+    // listener would call it without its waterfall `next`.
+    const collector1 = new UsageCollector({ on: (e: string, l: never) => { if (e === 'session/event') ctxListeners.push(l as unknown as (...a: unknown[]) => void) } } as never, durableStore() as never)
     collector1.start()
     for (const ev of fiveEvents.slice(2)) {
       for (const l of ctxListeners) l({ id: 'S1' }, ev)
@@ -780,5 +783,90 @@ describe('live recording never escapes a rejection', () => {
     })
     await new Promise((resolve) => setTimeout(resolve, 0))
     expect(collector.status.recordFailures).toBe(1)
+  })
+})
+
+describe('UsageCollector auxiliary calls (llm/stream)', () => {
+  /** Drive the captured `llm/stream` waterfall listener and drain its output. */
+  async function runWaterfall(
+    listeners: Map<string, Array<(...args: never[]) => void>>,
+    options: Record<string, unknown>,
+    chunks: Array<Record<string, unknown>>,
+  ): Promise<Array<Record<string, unknown>>> {
+    const listener = (listeners.get('llm/stream') ?? [])[0] as unknown as (
+      options: Record<string, unknown>,
+      next: () => AsyncIterable<Record<string, unknown>>,
+    ) => AsyncIterable<Record<string, unknown>>
+    expect(listener).toBeDefined()
+    const next = () => (async function* () { for (const chunk of chunks) yield chunk })()
+    const out: Array<Record<string, unknown>> = []
+    for await (const chunk of listener(options, next)) out.push(chunk)
+    return out
+  }
+
+  function recordingStore() {
+    const recorded: Array<Record<string, unknown>> = []
+    return {
+      recorded,
+      seenSessions: async () => new Set<string>(),
+      liveSequences: async () => new Map<string, number>(),
+      markSeenSessions: async () => {},
+      markLiveSequences: async () => {},
+      count: async () => recorded.length,
+      record: async (sample: Record<string, unknown>) => { recorded.push(sample) },
+    } as unknown as ConstructorParameters<typeof UsageCollector>[1] & { recorded: Array<Record<string, unknown>> }
+  }
+
+  it('records a session-title call as its last usage sample plus one request', async () => {
+    const { ctx, listeners } = captureCtx()
+    const store = recordingStore()
+    const collector = new UsageCollector(ctx as never, store as never)
+    collector.start()
+    const chunks = [
+      { type: 'text-delta', text: 'Ti' },
+      { type: 'usage', usage: { inputTokens: 10, outputTokens: 1 } },
+      { type: 'usage', usage: { inputTokens: 300, outputTokens: 20, cacheReadTokens: 5 } },
+      { type: 'finish', finish: { kind: 'stop' } },
+    ]
+    const out = await runWaterfall(listeners, { purpose: 'session-title', provider: 'deepseek', model: 'deepseek-flash' }, chunks)
+    // The wrapper must forward the stream untouched.
+    expect(out).toEqual(chunks)
+
+    const tokens = store.recorded.find((s) => s.request !== true)
+    const request = store.recorded.find((s) => s.request === true)
+    expect(store.recorded).toHaveLength(2)
+    // The LAST usage sample wins: adapters emit cumulative samples.
+    expect(tokens?.inputTokens).toBe(300)
+    expect(tokens?.outputTokens).toBe(20)
+    expect(tokens?.cacheReadTokens).toBe(5)
+    expect(tokens?.model).toBe('deepseek/deepseek-flash')
+    expect(request?.model).toBe('deepseek/deepseek-flash')
+    expect(request?.inputTokens).toBe(0)
+  })
+
+  it('leaves every other purpose untouched', async () => {
+    for (const purpose of [undefined, 'compaction']) {
+      const { ctx, listeners } = captureCtx()
+      const store = recordingStore()
+      const collector = new UsageCollector(ctx as never, store as never)
+      collector.start()
+      const chunks = [{ type: 'usage', usage: { inputTokens: 5, outputTokens: 1 } }]
+      const out = await runWaterfall(listeners, { purpose, provider: 'deepseek', model: 'deepseek-flash' }, chunks)
+      expect(out).toEqual(chunks)
+      expect(store.recorded).toHaveLength(0)
+    }
+  })
+
+  it('counts a completed title call even when it emitted no usage sample', async () => {
+    const { ctx, listeners } = captureCtx()
+    const store = recordingStore()
+    const collector = new UsageCollector(ctx as never, store as never)
+    collector.start()
+    const chunks = [{ type: 'text-delta', text: 'Title' }, { type: 'finish', finish: { kind: 'stop' } }]
+    await runWaterfall(listeners, { purpose: 'session-title', provider: 'deepseek', model: 'deepseek-flash' }, chunks)
+    // The call happened; only its token buckets are unknown.
+    expect(store.recorded).toHaveLength(1)
+    expect(store.recorded[0]!.request).toBe(true)
+    expect(store.recorded[0]!.model).toBe('deepseek/deepseek-flash')
   })
 })

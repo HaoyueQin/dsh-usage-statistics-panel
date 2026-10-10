@@ -108,6 +108,63 @@ describe('UsageFold', () => {
     expect(fold.fold(event('request/context', 1, 1, T, { provider: 'deepseek', model: 'chat' }))).toBeNull()
   })
 
+  it('folds a compaction summary as its tokens plus one request', () => {
+    const fold = new UsageFold()
+    const s = fold.fold({
+      type: 'compaction/summary',
+      seq: 9,
+      time: T,
+      data: {
+        compactionId: 'cmp-1',
+        provider: 'deepseek',
+        model: 'deepseek-flash',
+        usage: { inputTokens: 1000, outputTokens: 200, cacheReadTokens: 30 },
+      },
+    })
+    expect(s).not.toBeNull()
+    expect(s!.day).toBe('2026-08-02')
+    expect(s!.inputTokens).toBe(1000)
+    expect(s!.outputTokens).toBe(200)
+    expect(s!.cacheReadTokens).toBe(30)
+    // One real provider call, so the token sample ALSO counts a request.
+    expect(s!.request).toBe(true)
+    // The summary event names the route that wrote it (authoritative — the
+    // call is outside the agent loop, so there is no step to attribute it to).
+    expect(s!.model).toBe('deepseek/deepseek-flash')
+  })
+
+  it('counts a compaction summary as one request even when it emitted no usage', () => {
+    const fold = new UsageFold()
+    // `usage` is optional ("when emitted") — the provider call still happened.
+    const s = fold.fold({
+      type: 'compaction/summary',
+      seq: 9,
+      time: T,
+      data: { compactionId: 'cmp-2', provider: 'deepseek', model: 'deepseek-flash' },
+    })
+    expect(s).not.toBeNull()
+    expect(s!.request).toBe(true)
+    expect(s!.inputTokens + s!.outputTokens).toBe(0)
+    expect(s!.model).toBe('deepseek/deepseek-flash')
+  })
+
+  it('swallows a repeated compaction summary for the same compaction id', () => {
+    const fold = new UsageFold()
+    const summary = () => ({
+      type: 'compaction/summary',
+      seq: 9,
+      time: T,
+      data: {
+        compactionId: 'cmp-3',
+        provider: 'deepseek',
+        model: 'deepseek-flash',
+        usage: { inputTokens: 500, outputTokens: 20 },
+      },
+    })
+    expect(fold.fold(summary())).not.toBeNull()
+    expect(fold.fold(summary())).toBeNull()
+  })
+
   it('records a pure-cache call (zero uncached input, zero output, real cache traffic)', () => {
     const fold = new UsageFold()
     const s = fold.fold(event('assistant/message', 1, 1, T, {
@@ -174,6 +231,23 @@ describe('UsageCollector.backfill', () => {
     const collectorB = new UsageCollector(ctx as never, storeB as never)
     await collectorB.backfill(persistence(['s1'], events), { list: () => [] } as never)
     expect(storeB.state.recorded.length).toBe(0)
+  })
+
+  it('keeps a compaction summary\'s own route through a replayed log', async () => {
+    // The replay fold observes the session's loop route first; the summary
+    // event still names its own route and must keep it. This is the path that
+    // backfills historical compaction usage.
+    const ctx = { on: () => {} }
+    const store = memoryStore()
+    const collector = new UsageCollector(ctx as never, store as never)
+    await collector.backfill(persistence(['s1'], [
+      { type: 'request/context', seq: 0, time: T, data: { provider: 'deepseek', model: 'deepseek-flash' } },
+      { type: 'compaction/summary', seq: 1, time: T, data: { compactionId: 'cmp-b1', provider: 'openai', model: 'gpt-x', usage: { inputTokens: 700, outputTokens: 80 } } },
+    ]), { list: () => [] } as never)
+    expect(store.state.recorded).toHaveLength(1)
+    expect(store.state.recorded[0]!.model).toBe('openai/gpt-x')
+    expect(store.state.recorded[0]!.inputTokens).toBe(700)
+    expect(store.state.recorded[0]!.request).toBe(true)
   })
 
   it('does not double-count a session the live listener already recorded (restart regression)', async () => {
@@ -402,6 +476,28 @@ describe('UsageCollector live attribution', () => {
     emit(listeners, 'session/event', { id: 'A' }, { type: 'assistant/message', seq: 1, time: T, data: { turn: 9, step: 9, usage: { inputTokens: 5, outputTokens: 5 } } })
     expect(store.recorded).toHaveLength(1)
     expect(store.recorded[0]!.model).toBeUndefined()
+  })
+
+  it('keeps a compaction summary\'s own route instead of the session route', () => {
+    // The summarization call sits outside the agent loop: the event names the
+    // route that wrote the summary, and that route wins over the session's
+    // last-known loop route even when the two differ.
+    const { ctx, listeners } = captureCtx()
+    const store = recordingStore()
+    const collector = new UsageCollector(ctx as never, store as never)
+    collector.start()
+    emit(listeners, 'session/event', { id: 'C' }, { type: 'request/context', seq: 0, time: T, data: { provider: 'deepseek', model: 'deepseek-flash' } })
+    emit(listeners, 'session/event', { id: 'C' }, {
+      type: 'compaction/summary',
+      seq: 1,
+      time: T,
+      data: { compactionId: 'cmp-9', provider: 'openai', model: 'gpt-x', usage: { inputTokens: 700, outputTokens: 80 } },
+    })
+    expect(store.recorded).toHaveLength(1)
+    expect(store.recorded[0]!.model).toBe('openai/gpt-x')
+    expect(store.recorded[0]!.inputTokens).toBe(700)
+    // The call is counted as a request as well as for its tokens.
+    expect(store.recorded[0]!.request).toBe(true)
   })
 })
 

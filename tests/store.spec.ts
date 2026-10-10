@@ -77,6 +77,19 @@ describe('UsageStore', () => {
     expect(rows[0]!.inputTokens + rows[0]!.outputTokens).toBe(0)
   })
 
+  it('counts one request together with the call tokens (a call that reports both)', async () => {
+    const store = new UsageStore(memoryDomain())
+    // A compaction summary reports provider usage AND is one real provider
+    // call: unlike the token-free step/start marker, its row must carry both.
+    await store.record({ day: '2026-08-01', model: 'deepseek/deepseek-flash', inputTokens: 1000, outputTokens: 200, cacheReadTokens: 30, cacheWriteTokens: 0, request: true })
+    const rows = await store.rangeRows('2026-08-01', '2026-08-01')
+    expect(rows).toHaveLength(1)
+    expect(rows[0]!.requests).toBe(1)
+    expect(rows[0]!.inputTokens).toBe(1000)
+    expect(rows[0]!.outputTokens).toBe(200)
+    expect(rows[0]!.cacheReadTokens).toBe(30)
+  })
+
   it('keeps different models and days on separate rows', async () => {
     const store = new UsageStore(memoryDomain())
     await store.record({ day: '2026-08-01', model: 'a/m1', inputTokens: 10, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 })

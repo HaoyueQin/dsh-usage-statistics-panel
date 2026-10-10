@@ -305,15 +305,16 @@ export class UsageStore {
       if (sample.turn) {
         return { ...base, turns: base.turns + 1, lastSeen: Date.now() }
       }
-      if (sample.request) {
-        // A provider-call marker (step/start or a started retry): one request,
-        // no tokens — reasonix counts failed calls too. Requests are counted
-        // ONLY here: a successful call also produces a usage sample, and
-        // counting both would double every call.
-        return { ...base, requests: base.requests + 1, lastSeen: Date.now() }
-      }
+      // The request marker and the token buckets are ORTHOGONAL: a marker
+      // counts one provider call whether or not that call reported tokens.
+      // `step/start` and started retries carry none (reasonix counts failed
+      // calls too); a `compaction/summary` reports usage for the very call it
+      // counts, so it sets both. A plain token sample leaves the marker unset
+      // — its call was already counted by its own step/start, and bumping
+      // requests here too would double every successful call.
       return {
         ...base,
+        requests: base.requests + (sample.request ? 1 : 0),
         inputTokens: base.inputTokens + sample.inputTokens,
         outputTokens: base.outputTokens + sample.outputTokens,
         cacheReadTokens: base.cacheReadTokens + sample.cacheReadTokens,

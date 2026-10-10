@@ -71,6 +71,31 @@ interface RequestContextData {
   model?: string
 }
 
+/** The `compaction/summary` payload: the summarization call's own facts. The
+ *  route that wrote the summary is authoritative — the call sits outside the
+ *  agent loop, so no step can attribute it — and `usage` is optional because a
+ *  backend reports it only "when emitted". */
+interface CompactionSummaryData {
+  compactionId?: string
+  provider?: string
+  model?: string
+  usage?: UsageEventData['usage']
+}
+
+/** The `llm/stream` request fields this collector reads. The waterfall's own
+ *  `GenerateOptions` is far wider; only the route and the purpose matter here. */
+interface LlmStreamOptions {
+  provider?: string
+  model?: string
+  purpose?: string
+}
+
+/** One `llm/stream` chunk; only the usage sample is read. */
+interface LlmStreamChunk {
+  type?: string
+  usage?: UsageEventData['usage']
+}
+
 export interface CollectorOptions {
   /** The source label recorded with every sample (matches the reasonix Source). */
   source?: string
@@ -162,6 +187,7 @@ export class UsageFold {
       const data = ev.data as AssistantMessageData
       return data.usage ? this.replaceSample(ev, data.usage) : null
     }
+    if (ev.type === 'compaction/summary') return this.compactionSample(ev)
     return null
   }
 
@@ -213,6 +239,50 @@ export class UsageFold {
     // First emission: hand the store its own copy. The internal object stays
     // fold-owned — mutating it on a later duplicate would rewrite the sample
     // already sitting in the store's write path through the shared reference.
+    return { ...sample }
+  }
+
+  /**
+   * Fold one `compaction/summary` — the one place a provider call's usage
+   * reaches the log OUTSIDE the agent loop. The summarization call produces no
+   * `assistant/message` (its summary enters the surface as a `user/message`,
+   * which carries no usage), so this event is the only record of that call and
+   * the only source for its tokens. Two consequences:
+   *
+   * - The sample carries tokens AND the request marker. The marker is not
+   *   redundant here: nothing else counts this call as a request, because no
+   *   `step/start` opened it. (A plain token sample leaves the marker unset.)
+   * - The event names the route that wrote the summary, and that route is
+   *   authoritative — there is no step, and often no session route at all, to
+   *   attribute the call to. The collector must therefore NOT overwrite this
+   *   sample's model with the session's last-known route.
+   *
+   * A summary with no `usage` still counts as one request (the call happened);
+   * dedupe is by `compactionId`, since there is no (turn, step) slot to key by
+   * and a replayed log reports the same summary once per replay.
+   */
+  private compactionSample(ev: UsageSessionEvent): UsageSample | null {
+    const data = ev.data as CompactionSummaryData
+    const id = data?.compactionId
+    const key = typeof id === 'string' && id !== '' ? `compaction:${id}` : null
+    if (key !== null && this.seen.has(key)) return null
+    const usage = data?.usage
+    const sample: UsageSample = {
+      day: dayKey(ev.time),
+      inputTokens: usage?.inputTokens ?? 0,
+      outputTokens: usage?.outputTokens ?? 0,
+      cacheReadTokens: usage?.cacheReadTokens ?? 0,
+      cacheWriteTokens: usage?.cacheWriteTokens ?? 0,
+      request: true,
+    }
+    const provider = data?.provider
+    const model = data?.model
+    if (typeof provider === 'string' && provider !== '' && typeof model === 'string' && model !== '') {
+      sample.model = `${provider}/${model}`
+    } else if (typeof model === 'string' && model !== '') {
+      sample.model = model
+    }
+    if (key !== null) this.seen.set(key, sample)
     return { ...sample }
   }
 }
@@ -356,8 +426,11 @@ export class UsageCollector {
       if (!sample) return
       // Turn markers carry no model attribution (the store lands them on the
       // synthetic "(turns)" row); everything else attributes to the event's
-      // own source first, then this session's route (observed or seeded).
-      if (!sample.turn) sample.model = fromSource ?? this.routeFor(sid)
+      // own source first, then this session's route (observed or seeded). A
+      // sample that already named its own route (compaction/summary) keeps it:
+      // the session route belongs to the agent loop's calls, not to a
+      // summarization call the loop never made.
+      if (!sample.turn && sample.model === undefined) sample.model = fromSource ?? this.routeFor(sid)
       // Recording is observational: a store refusal (degraded domain, disk
       // failure, ...) is counted, never allowed to escape as an unhandled
       // rejection — those take the whole host down.
@@ -372,6 +445,80 @@ export class UsageCollector {
       this.folds.delete(sid)
       this.routes.delete(sid)
     })
+    // Auxiliary model calls that leave no usage in the session log. A session
+    // title is generated through this context's `ctx.llm.stream()` with
+    // `purpose: 'session-title'`; the call is billed like any other, but the
+    // only event it logs is its REQUEST (`session/title-llm-request`), whose
+    // response usage is discarded before it can reach a session event. The
+    // waterfall is therefore the only place that usage is observable — and
+    // because it is not in the log, it cannot be backfilled: a title call that
+    // happens while this plugin is not running is lost for good.
+    ctx.on?.('llm/stream', ((options: LlmStreamOptions, next: () => AsyncIterable<LlmStreamChunk>) =>
+      this.observeAuxiliaryCall(options, next)) as never)
+  }
+
+  /**
+   * Wrap one `llm/stream` call at the waterfall. Every other call — the whole
+   * agent loop, compaction — is returned UNWRAPPED (`next()` untouched), so
+   * the hot path pays nothing for this subscription; only a `session-title`
+   * call gets an observing wrapper.
+   *
+   * The wrapper's one rule: record what the call actually reported, once the
+   * stream settles. A stream that throws records nothing — the call never
+   * settled, and a waterfall listener cannot tell a short-circuited call from
+   * a failed one.
+   */
+  private observeAuxiliaryCall(
+    options: LlmStreamOptions,
+    next: () => AsyncIterable<LlmStreamChunk>,
+  ): AsyncIterable<LlmStreamChunk> {
+    if (options?.purpose !== 'session-title') return next()
+    // Both are captured when the call STARTS, so a generation running past
+    // midnight is attributed to the day it began.
+    const day = dayKey(Date.now())
+    const model = UsageCollector.refOf({ provider: options.provider, model: options.model })
+    return this.recordTitleCall(next(), day, model)
+  }
+
+  /**
+   * Forward a title generation's stream while observing its usage, then
+   * record the settled call as TWO samples: its tokens and a request marker.
+   *
+   * Splitting them keeps the store's request semantics untouched — a
+   * token-free marker already counts one request, and a token sample never
+   * does — which is what makes this half of the accounting independent of the
+   * compaction path. The two samples share a day and model, so they land on
+   * the same row.
+   */
+  private async *recordTitleCall(
+    stream: AsyncIterable<LlmStreamChunk>,
+    day: string,
+    model: string | undefined,
+  ): AsyncIterable<LlmStreamChunk> {
+    let usage: UsageEventData['usage'] | undefined
+    for await (const chunk of stream) {
+      // The LAST usage sample wins: adapters emit cumulative samples, and the
+      // assembler's own contract is overwrite (see BlockAssembler.usage).
+      if (chunk?.type === 'usage' && chunk.usage !== undefined) usage = chunk.usage
+      yield chunk
+    }
+    const record = (sample: UsageSample): void => {
+      // Same observational contract as every other record: a degraded store
+      // is counted, never allowed to escape as an unhandled rejection.
+      void this.store.record(sample).catch(() => { this.status.recordFailures++ })
+    }
+    if (usage !== undefined) {
+      record({
+        day,
+        model,
+        inputTokens: usage.inputTokens ?? 0,
+        outputTokens: usage.outputTokens ?? 0,
+        cacheReadTokens: usage.cacheReadTokens ?? 0,
+        cacheWriteTokens: usage.cacheWriteTokens ?? 0,
+      })
+    }
+    // The call itself, whether or not it reported tokens: one provider call.
+    record({ day, model, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, request: true })
   }
 
   /** Whether a backfill is in progress or was completed. */
@@ -536,7 +683,10 @@ export class UsageCollector {
               }
               const sample = fold.fold(ev)
               if (sample) {
-                if (!sample.turn) sample.model = route || undefined
+                // Same rule as the live path: a sample that named its own
+                // route (compaction/summary) is not re-attributed to the
+                // session's agent-loop route.
+                if (!sample.turn && sample.model === undefined) sample.model = route || undefined
                 await this.store.record(sample)
               }
             }

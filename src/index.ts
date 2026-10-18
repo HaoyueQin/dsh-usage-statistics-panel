@@ -164,9 +164,46 @@ export function apply(ctx: Context, config: UsageStatsConfig = {}): void {
   // disposer aborts an in-flight scan: without it, a fiber teardown (plugin
   // reload) would leave the scan running fire-and-forget behind the closed
   // domain.
+  //
+  // The hour table arrived after the day cursors were populated, so an
+  // existing install has day rows but no hour history. Once the day
+  // backfill settles, replay the logs into the hour table ONCE — only when
+  // the day pass was clean (an errored pass retries next boot instead of
+  // letting the hour pass claim sessions the day pass may still rewrite) and
+  // only for an existing store (a fresh install's `all` pass already
+  // double-wrote and marked the hour history complete).
+  const ensureHourHistory = async (): Promise<void> => {
+    await store.readyPromise()
+    if (await store.hoursReady()) return
+    if (!(await store.hasAnyDayRows())) return
+    if (collector.status.error !== undefined) return
+    // The upgrade boundary: a session still open right now must replay its
+    // pre-upgrade prefix from the log, and the live path owns everything from
+    // this seq on. Same sampling rule as resetAndRescan.
+    const previous = await store.hoursLiveSequences()
+    const boundaries = new Map<string, number>()
+    for (const handle of ctx.sessions.list()) {
+      const seq = handle.seq
+      if (typeof seq === 'number' && Number.isFinite(seq) && seq >= 0) {
+        boundaries.set(handle.id, seq)
+        continue
+      }
+      const old = previous.get(handle.id)
+      boundaries.set(handle.id, typeof old === 'number' ? old : -1)
+    }
+    await store.markHoursLiveSequences(boundaries)
+    scanController?.abort()
+    const controller = new AbortController()
+    scanController = controller
+    await collector.backfillHours(ctx.sessionPersistence, ctx.sessions, controller.signal)
+  }
+
   ctx.effect(() => {
     collector.start()
-    void rescan()
+    void (async () => {
+      await rescan()
+      await ensureHourHistory()
+    })()
     return () => {
       scanController?.abort()
     }

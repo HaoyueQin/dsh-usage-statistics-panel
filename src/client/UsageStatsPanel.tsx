@@ -26,7 +26,7 @@ import type { DailyTokenUsage, ModelTokenUsage, ProviderTokenUsage, UsageStatsRa
 import { fetchRange, rebuildStats, UsageApiError } from './api.ts'
 import { ChartTip } from './ChartTip.tsx'
 import { Donut, useDonutSize, type DonutSegment } from './Donut.tsx'
-import { formatTokens, formatCompact, formatPercent, cacheRate, cacheRateText, daysBetween, localDay, indexOfDay, shortDay, providerOf, modelNameOf, smoothPath, niceTicks } from './format.ts'
+import { formatTokens, formatCompact, formatPercent, cacheRate, cacheRateText, daysBetween, localDay, indexOfDay, bucketAxisLabel, bucketTitle, providerOf, modelNameOf, smoothPath, niceTicks } from './format.ts'
 import type { UsageStatsKey } from './locales.ts'
 import type { UsageStatsTranslator } from './index.tsx'
 import { statsLineState } from './stats-line-state.ts'
@@ -34,7 +34,7 @@ import css from './UsageStatsPanel.module.css'
 
 type Translator = UsageStatsTranslator
 
-const RANGE_PRESETS = ['7', '14', '30', '90'] as const
+const RANGE_PRESETS = ['today', '3', '7', '14', '30', '90'] as const
 
 /** How long the rebuild button stays armed without a second press. */
 const REBUILD_ARM_MS = 5000
@@ -381,7 +381,7 @@ export function UsageStatsPanel({ t }: { t: Translator }): JSX.Element {
         <>
           <StatCards stats={stats} t={t} />
           <Heatmap daily={heatDaily} from={heatWindow.from} to={heatWindow.to} t={t} panelRef={panelRef} />
-          <DailyTrend models={trendModels} daily={trendDaily} t={t} colorForModel={colorForModel} panelRef={panelRef} />
+          <DailyTrend models={trendModels} daily={trendDaily} granularity={stats?.granularity ?? 'day'} t={t} colorForModel={colorForModel} panelRef={panelRef} />
           <ModelUsage models={trendModels} t={t} colorForModel={colorForModel} panelRef={panelRef} />
           <ProviderUsage providers={groupedProviders ?? []} t={t} colorForProvider={colorForProvider} panelRef={panelRef} />
           {stats.to && (
@@ -744,7 +744,7 @@ function Heatmap({ daily, from, to, t, panelRef }: { daily: DailyTokenUsage[]; f
 
 // ── Section 5: stacked daily token trend ──────────────────────────────────
 
-function DailyTrend({ models, daily, t, colorForModel, panelRef }: { models: GroupedModel[]; daily: GroupedDaily[]; t: Translator; colorForModel: (m: string) => string; panelRef: RefObject<HTMLDivElement | null> }) {
+function DailyTrend({ models, daily, granularity, t, colorForModel, panelRef }: { models: GroupedModel[]; daily: GroupedDaily[]; granularity: 'day' | 'hour'; t: Translator; colorForModel: (m: string) => string; panelRef: RefObject<HTMLDivElement | null> }) {
   const [tip, setTip] = useState<{ day: string; total: number; byModel: Record<string, number>; otherByModel?: Record<string, number>; cacheHit: number; cacheMiss: number; anchor: Element } | null>(null)
   const [hover, setHover] = useState<string | null>(null)
   const wrapRef = useRef<HTMLDivElement>(null)
@@ -825,7 +825,7 @@ function DailyTrend({ models, daily, t, colorForModel, panelRef }: { models: Gro
   return (
     <section className={css.section}>
       <div className={css.sectionHead}>
-        <h3 className={css.sectionTitle}>{t('dailyTrend')}</h3>
+        <h3 className={css.sectionTitle}>{t(granularity === 'hour' ? 'hourlyTrend' : 'dailyTrend')}</h3>
         {trendCapped && <span className={css.trendNote}>{t('trendLimited').replace('{n}', String(view.trimN))}</span>}
       </div>
       <div className={css.chartWrap} ref={wrapRef}>
@@ -879,7 +879,7 @@ function DailyTrend({ models, daily, t, colorForModel, panelRef }: { models: Gro
                   onMouseLeave={() => setTip(null)}
                 />
                 {(i % labelEvery === 0 || i === n - 1) && (
-                  <text className={css.axis} x={padL + barHalf + i * step} y={H - 8} textAnchor="middle">{shortDay(d.day)}</text>
+                  <text className={css.axis} x={padL + barHalf + i * step} y={H - 8} textAnchor="middle">{bucketAxisLabel(d.day, granularity)}</text>
                 )}
               </g>
             )
@@ -899,7 +899,7 @@ function DailyTrend({ models, daily, t, colorForModel, panelRef }: { models: Gro
         </svg>
         {tip && (
           <ChartTip anchor={tip.anchor} panelRef={panelRef}>
-            <div className={css.tipTitle}>{tip.day}</div>
+            <div className={css.tipTitle}>{bucketTitle(tip.day, granularity)}</div>
             <div>{t('total')}: {formatTokens(tip.total)}</div>
             {legendModels.filter((m) => tip.byModel[m] !== undefined).map((m) => (
               <div key={m} className={css.tipRow}><i className={css.legendSwatch} style={{ background: colorForModel(m) }} />{m === OTHER_MODEL ? t('other') : m}: {formatTokens(tip.byModel[m]!)}</div>

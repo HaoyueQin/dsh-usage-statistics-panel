@@ -4,6 +4,8 @@
  */
 import { describe, expect, it } from 'vitest'
 import {
+  bucketAxisLabel,
+  bucketTitle,
   cacheRate,
   cacheRateText,
   daysBetween,
@@ -110,5 +112,23 @@ describe('smoothPath', () => {
     const d = smoothPath([{ x: 0, y: 0 }, { x: 10, y: 10 }, { x: 20, y: 0 }])
     expect(d.startsWith('M 0 0')).toBe(true)
     expect(d).toContain('C ')
+  })
+})
+
+describe('bucketAxisLabel', () => {
+  it('keeps the short date in day mode', () => {
+    expect(bucketAxisLabel('2026-10-19', 'day')).toBe('10/19')
+  })
+  it('names the day at 00:00 and the hour elsewhere', () => {
+    expect(bucketAxisLabel('2026-10-19T00', 'hour')).toBe('10/19')
+    expect(bucketAxisLabel('2026-10-19T07', 'hour')).toBe('07:00')
+    expect(bucketAxisLabel('2026-10-19T23', 'hour')).toBe('23:00')
+  })
+})
+
+describe('bucketTitle', () => {
+  it('adds the hour to the tooltip title only in hour mode', () => {
+    expect(bucketTitle('2026-10-19', 'day')).toBe('2026-10-19')
+    expect(bucketTitle('2026-10-19T07', 'hour')).toBe('2026-10-19 07:00')
   })
 })

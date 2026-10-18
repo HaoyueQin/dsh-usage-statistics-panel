@@ -498,7 +498,10 @@ function StatCards({ stats, t }: { stats: UsageStatsRange; t: Translator }) {
   const cards: Array<{ icon: typeof Coins; label: string; value: string; sm?: boolean; wrap?: boolean; hint?: string; modelRef?: boolean; sub?: string }> = [
     // The headline is provider-inclusive (uncached input + output + cached
     // tokens) — the number a provider dashboard reports for the same calls.
-    { icon: Coins, label: t('tokens'), value: formatTokens(stats.tokens), hint: t('tokensHint') },
+    // The headline is the compact K/M/B form (the number a provider dashboard
+    // shows); the exact, separator-formatted count stays underneath so the
+    // precise figure is still readable at a glance.
+    { icon: Coins, label: t('tokens'), value: formatCompact(stats.tokens), hint: t('tokensHint'), sub: formatTokens(stats.tokens) },
     { icon: MessageSquare, label: t('sessions'), value: String(stats.turns) },
     { icon: MessagesSquare, label: t('requests'), value: String(stats.requests) },
     {

@@ -115,6 +115,9 @@ describe('UsageStatsSection', () => {
     render(<UsageStatsSection {...({ t } as UsageStatsSectionProps)} />)
     await act(async () => { await new Promise((r) => { setTimeout(r, 0) }) })
     expect(screen.getByText('12,345')).toBeTruthy()
+    // The Tokens card leads with the compact form and repeats the exact count
+    // underneath, so both readings are available at once.
+    expect(screen.getByText('12.3K')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'rangePreset.7' }))
     await act(async () => { await new Promise((r) => { setTimeout(r, 0) }) })
     expect(screen.getByText('12,345')).toBeTruthy()

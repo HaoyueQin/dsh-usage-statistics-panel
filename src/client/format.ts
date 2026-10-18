@@ -19,11 +19,11 @@ export function formatTokens(n: number): string {
   return n.toLocaleString('en-US')
 }
 
-/** English-style compact (B/M/k) for axis labels and card sub-values. */
+/** English-style compact (B/M/K) for axis labels and card sub-values. */
 export function formatCompact(n: number): string {
   if (n >= 1e9) return (n / 1e9).toFixed(1) + 'B'
   if (n >= 1e6) return (n / 1e6).toFixed(1) + 'M'
-  if (n >= 1e3) return (n / 1e3).toFixed(1) + 'k'
+  if (n >= 1e3) return (n / 1e3).toFixed(1) + 'K'
   return String(n)
 }
 

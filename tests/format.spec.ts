@@ -31,8 +31,8 @@ describe('formatTokens', () => {
 })
 
 describe('formatCompact', () => {
-  it('uses k/M/B suffixes', () => {
-    expect(formatCompact(1200)).toBe('1.2k')
+  it('uses K/M/B suffixes', () => {
+    expect(formatCompact(1200)).toBe('1.2K')
     expect(formatCompact(1500000)).toBe('1.5M')
     expect(formatCompact(2500000000)).toBe('2.5B')
   })

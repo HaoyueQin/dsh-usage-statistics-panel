@@ -4,10 +4,14 @@
        glincker/thesvg (chunky rounded bars near the frame's full height, one
        colour each, no axis line — cf. chartdotjs, mixpanel); no brand's
        artwork is copied, only that composition. What this panel adds is its
-       own two signatures: the stacked token bars and the cache hit-rate curve
-       drawn over them, closed by an end dot. The three hues are the hexes the
-       project's banner uses for its first three chart colours, so the icon
-       matches the donuts and lists it opens. Bars carry a per-hue vertical
+       own two signatures: the stacked token bars and the cache hit-rate trend
+       line drawn over them as a two-bend polyline, closed by an end dot. The
+       line is a polyline, not a smooth curve, on purpose: on this 36px canvas
+       the old three-segment bezier's wiggles were only a pixel or two tall, so
+       they read as meaningless bends; two bends keep the rising trend without
+       inventing detail (issue #12). The three hues are the hexes the project's
+       banner uses for its first three chart colours, so the icon matches the
+       donuts and lists it opens. Bars carry a per-hue vertical
        gradient for depth; the ink is centred on its bounding box.
        Transparent background on purpose: the Plugins page draws its own 48px
        (card) / 40px (row) hairline frame, so a filled tile would double it.
@@ -26,7 +30,7 @@
       <stop offset="1" stop-color="#AC6835" />
     </linearGradient>
   </defs>
-  <path d="M4.3 17.6C7.7 17.6 8.5 14 12.5 14C16.5 14 17.3 10.8 21.3 10.8C24.5 10.8 26.7 9.2 29.5 9" fill="none" stroke="#4D6BFE" stroke-width="1.7" stroke-linecap="round" />
+  <path d="M4.3 17.6L12.5 14L21.3 10.8L29.5 9" fill="none" stroke="#4D6BFE" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" />
   <circle cx="29.5" cy="9" r="2.1" fill="#4D6BFE" />
   <rect x="5.7" y="18.8" width="5.6" height="10.2" rx="2.8" fill="url(#usageStatsBlue)" />
   <rect x="14.3" y="13" width="5.6" height="16" rx="2.8" fill="url(#usageStatsGreen)" />

@@ -635,15 +635,20 @@ export function heatGeometry(avail: number, startOffset: number): HeatGeometry {
     const size = (avail - HEAT_GAP) / totalWeeks - HEAT_GAP
     if (size >= HEAT_BASE) return { size, cols: HEAT_WEEKS, totalWeeks }
   }
-  const cols = Math.max(1, Math.min(baseCols, HEAT_WEEKS))
-  // Trim to the columns that fit, then grow the cells back to fill the width
-  // exactly. Holding the cells at the base size here would leave up to a whole
-  // cell of dead space on the right of a mid-width pane (measured: 15px at a
-  // 732px row), which is precisely the "always fill the width" this chart is
-  // meant to hold. `cols` was derived from `avail - GAP`, so the solved size is
-  // always at or above the base size; the floor only guards absurd widths.
-  const size = (avail - HEAT_GAP) / cols - HEAT_GAP
-  return { size: Math.max(HEAT_BASE, size), cols, totalWeeks: cols }
+  // `cols * 7` days behind a leading partial week occupy one MORE track than
+  // `cols`, and the SVG viewport is sized from the track count — so a `cols`
+  // that only fits `cols` tracks leaves the newest column outside the viewBox,
+  // clipped to a sliver at the right edge. Drop the OLDEST week in that case:
+  // one fewer week reads far better than a half-drawn newest one, and the
+  // remaining cells grow to fill the width exactly. `cols` was derived from
+  // `avail - GAP`, so the solved size stays at or above the base size; the
+  // floor only guards absurd widths.
+  const tracksFor = (c: number): number => Math.max(c, Math.ceil((c * 7 + startOffset) / 7))
+  let cols = Math.max(1, Math.min(baseCols, HEAT_WEEKS))
+  while (cols > 1 && tracksFor(cols) > baseCols) cols -= 1
+  const totalCols = tracksFor(cols)
+  const size = (avail - HEAT_GAP) / totalCols - HEAT_GAP
+  return { size: Math.max(HEAT_BASE, size), cols, totalWeeks: totalCols }
 }
 
 function Heatmap({ daily, from, to, t, panelRef }: { daily: DailyTokenUsage[]; from: string; to: string; t: Translator; panelRef: RefObject<HTMLDivElement | null> }) {

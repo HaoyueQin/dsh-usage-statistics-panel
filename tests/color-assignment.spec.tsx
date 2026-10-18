@@ -44,6 +44,7 @@ const range: UsageStatsRange = {
   activeDays: 2,
   topModel: 'm01',
   topProvider: 'p1',
+  granularity: 'day',
   daily: [
     { day: '2026-08-01', total: 770, byModel: { m11: 10, m02: 400, m07: 100, m05: 200, m09: 60 }, byProvider: { p1: 700, p2: 70 }, requests: 1, turns: 1, cacheHit: 400, cacheMiss: 100 },
     { day: '2026-08-02', total: 1270, byModel: { m01: 450, m04: 250, m03: 300, m06: 150, m08: 80, m10: 40 }, byProvider: { p1: 1150, p3: 120 }, requests: 1, turns: 1, cacheHit: 400, cacheMiss: 100 },

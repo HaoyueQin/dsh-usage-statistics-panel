@@ -184,3 +184,63 @@ describe('aggregateSamples', () => {
     expect(out.models).toEqual([])
   })
 })
+
+describe('aggregateSamples (hour granularity)', () => {
+  it('emits 24 empty buckets for one day', () => {
+    const out = aggregateSamples([], { from: '2026-08-02', to: '2026-08-02' }, 'hour')
+    expect(out.granularity).toBe('hour')
+    expect(out.daily).toHaveLength(24)
+    expect(out.daily[0]!.day).toBe('2026-08-02T00')
+    expect(out.daily[23]!.day).toBe('2026-08-02T23')
+    expect(out.daily.every((bucket) => bucket.total === 0)).toBe(true)
+  })
+
+  it('emits 72 buckets across three days in order', () => {
+    const out = aggregateSamples([], { from: '2026-08-01', to: '2026-08-03' }, 'hour')
+    expect(out.daily).toHaveLength(72)
+    expect(out.daily[0]!.day).toBe('2026-08-01T00')
+    expect(out.daily[24]!.day).toBe('2026-08-02T00')
+    expect(out.daily[71]!.day).toBe('2026-08-03T23')
+  })
+
+  it('groups samples by hour while keeping the range totals identical', () => {
+    const samples: UsageSample[] = [
+      sample({ day: '2026-08-02', hour: '2026-08-02T09', model: 'p/m', inputTokens: 10, outputTokens: 5, cacheReadTokens: 2 }),
+      sample({ day: '2026-08-02', hour: '2026-08-02T09', model: 'p/m', inputTokens: 20, outputTokens: 1, cacheReadTokens: 3 }),
+      sample({ day: '2026-08-02', hour: '2026-08-02T10', model: 'p/m', inputTokens: 7, outputTokens: 0 }),
+      sample({ day: '2026-08-02', hour: '2026-08-02T10', turn: true }),
+    ]
+    const hours = aggregateSamples(samples, { from: '2026-08-02', to: '2026-08-02' }, 'hour')
+    const days = aggregateSamples(samples, { from: '2026-08-02', to: '2026-08-02' })
+    const at9 = hours.daily.find((bucket) => bucket.day === '2026-08-02T09')!
+    expect(at9.total).toBe(41)
+    expect(at9.byModel['p/m']).toBe(41)
+    expect(at9.cacheHit).toBe(5)
+    expect(at9.cacheMiss).toBe(30)
+    expect(hours.daily.find((bucket) => bucket.day === '2026-08-02T10')!.turns).toBe(1)
+    expect(hours.tokens).toBe(days.tokens)
+    expect(hours.requests).toBe(days.requests)
+    expect(hours.turns).toBe(days.turns)
+    expect(hours.cacheHit).toBe(days.cacheHit)
+    expect(hours.activeDays).toBe(1)
+  })
+
+  it('counts active days by date prefix, not by hour bucket', () => {
+    const samples = [
+      sample({ day: '2026-08-01', hour: '2026-08-01T23', model: 'p/m', inputTokens: 1 }),
+      sample({ day: '2026-08-02', hour: '2026-08-02T00', model: 'p/m', inputTokens: 1 }),
+    ]
+    const out = aggregateSamples(samples, { from: '2026-08-01', to: '2026-08-02' }, 'hour')
+    expect(out.activeDays).toBe(2)
+  })
+
+  it('ignores samples without an hour key in hour mode', () => {
+    const out = aggregateSamples(
+      [sample({ day: '2026-08-02', model: 'p/m', inputTokens: 5 })],
+      { from: '2026-08-02', to: '2026-08-02' },
+      'hour',
+    )
+    expect(out.tokens).toBe(0)
+    expect(out.daily).toHaveLength(24)
+  })
+})

@@ -198,6 +198,9 @@ describe('UsageCollector.backfill', () => {
       seenSessions: async () => new Set(state.seen),
       liveSequences: async () => new Map<string, number>(),
       markSeenSessions: async (ids: Iterable<string>) => { const arr = [...ids]; state.marked.push(arr); for (const id of arr) state.seen.add(id) },
+      markHoursLiveSequences: async () => { },
+      markHoursSeenSessions: async () => { },
+      markHoursReady: async () => { },
       markLiveSequences: async () => {},
       count: async () => preRows,
       record: async (sample: Record<string, unknown>) => { state.recorded.push(sample) },
@@ -263,7 +266,10 @@ describe('UsageCollector.backfill', () => {
         seenSessions: async () => new Set(seenAcrossBoots),
         liveSequences: async () => new Map(liveSeqAcrossBoots),
         markSeenSessions: async (ids: Iterable<string>) => { for (const id of ids) seenAcrossBoots.add(id) },
-        markLiveSequences: async (entries: Iterable<readonly [string, number]>) => { for (const [id, seq] of entries) if (!liveSeqAcrossBoots.has(id)) liveSeqAcrossBoots.set(id, seq) },
+        markHoursLiveSequences: async () => { },
+      markHoursSeenSessions: async () => { },
+      markHoursReady: async () => { },
+      markLiveSequences: async (entries: Iterable<readonly [string, number]>) => { for (const [id, seq] of entries) if (!liveSeqAcrossBoots.has(id)) liveSeqAcrossBoots.set(id, seq) },
         count: async () => recorded.length,
         record: async (sample: Record<string, unknown>) => { recorded.push(sample) },
       } as unknown as ConstructorParameters<typeof UsageCollector>[1] & { recorded: Array<Record<string, unknown>> }
@@ -318,7 +324,10 @@ describe('UsageCollector.backfill', () => {
         liveSequences: async () => new Map(liveSeqAcrossBoots),
         markSeenSessions: async (ids: Iterable<string>) => { for (const id of ids) seenAcrossBoots.add(id) },
         // Earliest-wins, like the real UsageStore merge.
-        markLiveSequences: async (entries: Iterable<readonly [string, number]>) => {
+        markHoursLiveSequences: async () => { },
+      markHoursSeenSessions: async () => { },
+      markHoursReady: async () => { },
+      markLiveSequences: async (entries: Iterable<readonly [string, number]>) => {
           for (const [id, seq] of entries) {
             const prev = liveSeqAcrossBoots.get(id)
             if (prev === undefined || seq < prev) liveSeqAcrossBoots.set(id, seq)
@@ -396,6 +405,9 @@ describe('UsageCollector live attribution', () => {
       seenSessions: async () => new Set<string>(),
       liveSequences: async () => new Map<string, number>(),
       markSeenSessions: async (ids: Iterable<string>) => { for (const _ of ids) {} },
+      markHoursLiveSequences: async () => { },
+      markHoursSeenSessions: async () => { },
+      markHoursReady: async () => { },
       markLiveSequences: async () => {},
       count: async () => recorded.length,
       record: async (sample: Record<string, unknown>) => { recorded.push(sample) },
@@ -512,6 +524,9 @@ describe('live attribution without request/context (the (unknown) regression)', 
       seenSessions: async () => new Set<string>(),
       liveSequences: async () => new Map<string, number>(),
       markSeenSessions: async (ids: Iterable<string>) => { for (const _ of ids) {} },
+      markHoursLiveSequences: async () => { },
+      markHoursSeenSessions: async () => { },
+      markHoursReady: async () => { },
       markLiveSequences: async () => {},
       count: async () => recorded.length,
       record: async (sample: Record<string, unknown>) => { recorded.push(sample) },
@@ -610,6 +625,9 @@ describe('cursor-write failures are observational too', () => {
       seenSessions: async () => new Set<string>(),
       liveSequences: async () => new Map<string, number>(),
       markSeenSessions: async () => {},
+      markHoursLiveSequences: async () => { },
+      markHoursSeenSessions: async () => { },
+      markHoursReady: async () => { },
       markLiveSequences: async () => { cursorWrites++; throw new Error('degraded cursor') },
       count: async () => 0,
       record: async () => {},
@@ -636,6 +654,9 @@ describe('backfill attribution and the seq-partitioned cursor', () => {
       seenSessions: async () => new Set<string>(backfilled),
       liveSequences: async () => new Map(Object.entries(live).map(([k, v]) => [k, v] as [string, number])),
       markSeenSessions: async (ids: Iterable<string>) => { marked.push([...ids]) },
+      markHoursLiveSequences: async () => { },
+      markHoursSeenSessions: async () => { },
+      markHoursReady: async () => { },
       markLiveSequences: async () => {},
       count: async () => recorded.length,
       record: async (sample: Record<string, unknown>) => { recorded.push(sample) },
@@ -771,6 +792,9 @@ describe('live recording never escapes a rejection', () => {
       seenSessions: async () => new Set<string>(),
       liveSequences: async () => new Map<string, number>(),
       markSeenSessions: async () => {},
+      markHoursLiveSequences: async () => { },
+      markHoursSeenSessions: async () => { },
+      markHoursReady: async () => { },
       markLiveSequences: async () => {},
       count: async () => 0,
       record: async () => { throw new Error('degraded') },
@@ -811,6 +835,9 @@ describe('UsageCollector auxiliary calls (llm/stream)', () => {
       seenSessions: async () => new Set<string>(),
       liveSequences: async () => new Map<string, number>(),
       markSeenSessions: async () => {},
+      markHoursLiveSequences: async () => { },
+      markHoursSeenSessions: async () => { },
+      markHoursReady: async () => { },
       markLiveSequences: async () => {},
       count: async () => recorded.length,
       record: async (sample: Record<string, unknown>) => { recorded.push(sample) },
@@ -895,5 +922,108 @@ describe('UsageCollector auxiliary calls (llm/stream)', () => {
     expect(store.recorded[0]!.request).toBe(true)
     expect(store.recorded[0]!.inputTokens).toBe(40)
     expect(store.recorded[0]!.model).toBe('deepseek/deepseek-flash')
+  })
+})
+
+describe('UsageCollector hour history', () => {
+  const hourEvents = [
+    { type: 'step/start', seq: 0, time: T, data: { turn: 1, step: 1 } },
+    { type: 'assistant/message', seq: 1, time: T, data: { turn: 1, step: 1, usage: { inputTokens: 10, outputTokens: 5 }, message: { source: { provider: 'p', model: 'm1' } } } },
+  ]
+
+  function hourStore(init: { daySeen?: string[]; hoursSeen?: string[] } = {}) {
+    const state = {
+      days: [] as Array<Record<string, unknown>>,
+      hours: [] as Array<Record<string, unknown>>,
+      hoursReady: false,
+      hourMarked: [] as string[][],
+    }
+    const store = {
+      seenSessions: async () => new Set(init.daySeen ?? []),
+      hoursSeenSessions: async () => new Set(init.hoursSeen ?? []),
+      liveSequences: async () => new Map<string, number>(),
+      hoursLiveSequences: async () => new Map<string, number>(),
+      markSeenSessions: async () => {},
+      markHoursSeenSessions: async (ids: Iterable<string>) => { state.hourMarked.push([...ids]) },
+      markLiveSequences: async () => {},
+      markHoursLiveSequences: async () => {},
+      markHoursReady: async () => { state.hoursReady = true },
+      hoursReady: async () => state.hoursReady,
+      hasAnyDayRows: async () => (init.daySeen?.length ?? 0) > 0,
+      record: async (sample: Record<string, unknown>) => { state.days.push(sample) },
+      recordHours: async (sample: Record<string, unknown>) => { state.hours.push(sample) },
+      count: async () => init.daySeen?.length ?? 0,
+    }
+    return { state, store }
+  }
+
+  function persistence(ids: string[]) {
+    return {
+      list: async () => ids.map((id) => ({ id })),
+      inspect: async (id: string) => ({ id, events: hourEvents }),
+    } as unknown as UsageSessionPersistence
+  }
+
+  it('replays the log into the hour table only, leaving day rows alone', async () => {
+    const { state, store } = hourStore()
+    const collector = new UsageCollector({ on: () => {} } as never, store as never)
+    await collector.backfillHours(persistence(['s1']), { list: () => [] } as never)
+    expect(state.days).toHaveLength(0)
+    expect(state.hours).toHaveLength(2) // request marker + usage
+    expect(state.hours[1]!.hour).toBe('2026-08-02T12')
+    expect(state.hourMarked).toEqual([['s1']])
+    expect(state.hoursReady).toBe(true)
+  })
+
+  it('skips a session the hour cursor already holds', async () => {
+    const { state, store } = hourStore({ hoursSeen: ['s1'] })
+    const collector = new UsageCollector({ on: () => {} } as never, store as never)
+    await collector.backfillHours(persistence(['s1']), { list: () => [] } as never)
+    expect(state.hours).toHaveLength(0)
+    expect(state.hoursReady).toBe(true)
+  })
+
+  it('does not claim a complete hour history from a full day-cursor pass', async () => {
+    // The upgrade shape: the day cursor already holds s1, so the 'all' pass
+    // has no target. It must leave hoursReady off for the hour pass.
+    const { state, store } = hourStore({ daySeen: ['s1'] })
+    const collector = new UsageCollector({ on: () => {} } as never, store as never)
+    await collector.backfill(persistence(['s1']), { list: () => [] } as never)
+    expect(state.days).toHaveLength(0)
+    expect(state.hoursReady).toBe(false)
+  })
+
+  it('claims a complete hour history from a first-install pass', async () => {
+    const { state, store } = hourStore()
+    const collector = new UsageCollector({ on: () => {} } as never, store as never)
+    await collector.backfill(persistence(['s1']), { list: () => [] } as never)
+    expect(state.days).toHaveLength(2)
+    expect(state.hoursReady).toBe(true)
+  })
+
+  it('writes the hour live boundary on the same tick as the day boundary', async () => {
+    const { ctx, listeners } = captureCtx()
+    const live: Array<[string, number]> = []
+    const store = {
+      seenSessions: async () => new Set<string>(),
+      hoursSeenSessions: async () => new Set<string>(),
+      liveSequences: async () => new Map<string, number>(),
+      hoursLiveSequences: async () => new Map<string, number>(),
+      markSeenSessions: async () => {},
+      markHoursSeenSessions: async () => {},
+      markLiveSequences: async () => {},
+      markHoursLiveSequences: async (entries: Iterable<readonly [string, number]>) => { for (const entry of entries) live.push([entry[0], entry[1]]) },
+      markHoursReady: async () => {},
+      hoursReady: async () => false,
+      hasAnyDayRows: async () => false,
+      record: async () => {},
+      recordHours: async () => {},
+      count: async () => 0,
+    }
+    const collector = new UsageCollector(ctx as never, store as never)
+    collector.start()
+    emit(listeners, 'session/event', { id: 'A' }, { type: 'step/start', seq: 3, time: T, data: { turn: 1, step: 1 } })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(live).toEqual([['A', 3]])
   })
 })

@@ -24,8 +24,8 @@ import type {
 // Pure date/model-ref helpers live in the shared (host+client, zero-dep)
 // module; imported for local use AND re-exported so the host-side import
 // surface is unchanged.
-import { dayKey, daysInRange, providerOf } from './shared.ts'
-export { dayKey, daysInRange, providerOf }
+import { dayKey, daysInRange, hourKey, providerOf } from './shared.ts'
+export { dayKey, daysInRange, hourKey, providerOf }
 
 /**
  * One atomic usage sample from a completed model call (or one completed
@@ -39,6 +39,9 @@ export { dayKey, daysInRange, providerOf }
  */
 export interface UsageSample {
   day: string // local calendar day the call completed
+  /** Local calendar-hour key ("YYYY-MM-DDTHH"). Live and backfill samples
+   *  always carry it; the aggregate's day-mode series ignores it. */
+  hour?: string
   model?: string // canonical "provider/model"
   inputTokens: number
   outputTokens: number
@@ -53,15 +56,48 @@ export interface RangeFilter {
   to: string // inclusive day key
 }
 
-/** Aggregate the samples intersecting [from, to]. Missing days yield zero
+/** Data granularity of the trend series: per local day, or per local hour
+ *  for the short-range presets. */
+export type Granularity = 'day' | 'hour'
+
+/** The bucket keys covering [from, to]: one per day, or 24 per day in hour
+ *  mode (empty buckets included, so the chart keeps a full timeline). */
+function bucketsInRange(from: string, to: string, granularity: Granularity): string[] {
+  const days = daysInRange(from, to)
+  if (granularity === 'day') return days
+  const out: string[] = []
+  for (const day of days) {
+    for (let hour = 0; hour < 24; hour++) out.push(`${day}T${String(hour).padStart(2, '0')}`)
+  }
+  return out
+}
+
+/** The bucket a sample belongs to, or null when it falls outside the window
+ *  (or carries no hour in hour mode). Hour keys are fixed-width, so plain
+ *  string comparison is chronological. */
+function bucketOf(sample: UsageSample, from: string, to: string, granularity: Granularity): string | null {
+  if (granularity === 'day') {
+    return sample.day >= from && sample.day <= to ? sample.day : null
+  }
+  const hour = sample.hour
+  if (hour === undefined) return null
+  return hour >= `${from}T00` && hour <= `${to}T23` ? hour : null
+}
+
+/** Aggregate the samples intersecting [from, to]. Missing buckets yield zero
  *  entries so the trend chart shows the full timeline. */
-export function aggregateSamples(samples: Iterable<UsageSample>, filter: RangeFilter): UsageStatsRange {
+export function aggregateSamples(
+  samples: Iterable<UsageSample>,
+  filter: RangeFilter,
+  granularity: Granularity = 'day',
+): UsageStatsRange {
   const from = filter.from
   const to = filter.to
-  const days = daysInRange(from, to)
+  const buckets = bucketsInRange(from, to, granularity)
   const out: UsageStatsRange = {
     from,
     to,
+    granularity,
     tokens: 0,
     requests: 0,
     turns: 0,
@@ -77,21 +113,22 @@ export function aggregateSamples(samples: Iterable<UsageSample>, filter: RangeFi
   const modelTotals = new Map<string, number>()
   const providerTotals = new Map<string, number>()
   const active = new Set<string>()
-  // Per-day accumulation (the reasonix dayTotals): the stacked trend chart
-  // reads daily.byModel / daily.byProvider, so every token-bearing sample
-  // must land in its day's map — not just in the range totals.
-  const dayByModel = new Map<string, Map<string, number>>()
-  const dayTotals = new Map<string, number>()
-  const dayRequests = new Map<string, number>()
-  const dayTurns = new Map<string, number>()
-  const dayCacheHit = new Map<string, number>()
-  const dayCacheMiss = new Map<string, number>()
+  // Per-bucket accumulation (the reasonix dayTotals): the stacked trend chart
+  // reads the bucket's byModel / byProvider, so every token-bearing sample
+  // must land in its bucket's map — not just in the range totals.
+  const bucketByModel = new Map<string, Map<string, number>>()
+  const bucketTotals = new Map<string, number>()
+  const bucketRequests = new Map<string, number>()
+  const bucketTurns = new Map<string, number>()
+  const bucketCacheHit = new Map<string, number>()
+  const bucketCacheMiss = new Map<string, number>()
 
   for (const sample of samples) {
-    if (sample.day < from || sample.day > to) continue
+    const bucket = bucketOf(sample, from, to, granularity)
+    if (bucket === null) continue
     if (sample.turn) {
       out.turns++
-      dayTurns.set(sample.day, (dayTurns.get(sample.day) ?? 0) + 1)
+      bucketTurns.set(bucket, (bucketTurns.get(bucket) ?? 0) + 1)
       continue
     }
     // Provider-inclusive headline (dashboard parity): every bucket the
@@ -107,7 +144,7 @@ export function aggregateSamples(samples: Iterable<UsageSample>, filter: RangeFi
       // counted here and again through the token accounting below — the two
       // count different things, so neither doubles the other.
       out.requests++
-      dayRequests.set(sample.day, (dayRequests.get(sample.day) ?? 0) + 1)
+      bucketRequests.set(bucket, (bucketRequests.get(bucket) ?? 0) + 1)
       if (total <= 0) continue
     }
     out.tokens += total
@@ -120,24 +157,27 @@ export function aggregateSamples(samples: Iterable<UsageSample>, filter: RangeFi
     const model = sample.model && sample.model !== '' ? sample.model : '(unknown)'
     modelTotals.set(model, (modelTotals.get(model) ?? 0) + total)
     providerTotals.set(providerOf(model), (providerTotals.get(providerOf(model)) ?? 0) + total)
-    active.add(sample.day)
+    // Active days stay a day metric even in hour mode: the key's date prefix
+    // is the day the bucket belongs to.
+    active.add(bucket.slice(0, 10))
 
-    let byModel = dayByModel.get(sample.day)
+    let byModel = bucketByModel.get(bucket)
     if (!byModel) {
       byModel = new Map()
-      dayByModel.set(sample.day, byModel)
+      bucketByModel.set(bucket, byModel)
     }
     byModel.set(model, (byModel.get(model) ?? 0) + total)
-    dayTotals.set(sample.day, (dayTotals.get(sample.day) ?? 0) + total)
-    dayCacheHit.set(sample.day, (dayCacheHit.get(sample.day) ?? 0) + sample.cacheReadTokens)
-    dayCacheMiss.set(sample.day, (dayCacheMiss.get(sample.day) ?? 0) + sample.inputTokens + sample.cacheWriteTokens)
+    bucketTotals.set(bucket, (bucketTotals.get(bucket) ?? 0) + total)
+    bucketCacheHit.set(bucket, (bucketCacheHit.get(bucket) ?? 0) + sample.cacheReadTokens)
+    bucketCacheMiss.set(bucket, (bucketCacheMiss.get(bucket) ?? 0) + sample.inputTokens + sample.cacheWriteTokens)
   }
 
   out.activeDays = active.size
 
-  // Daily series: emit every day of the range; inactive days carry zero totals.
-  for (const day of days) {
-    const byModel = dayByModel.get(day)
+  // Bucket series: emit every bucket of the range; inactive buckets carry
+  // zero totals.
+  for (const bucket of buckets) {
+    const byModel = bucketByModel.get(bucket)
     const byModelObj: Record<string, number> = {}
     if (byModel) {
       for (const [m, v] of byModel) byModelObj[m] = v
@@ -147,14 +187,14 @@ export function aggregateSamples(samples: Iterable<UsageSample>, filter: RangeFi
       byProviderObj[providerOf(m)] = (byProviderObj[providerOf(m)] ?? 0) + byModelObj[m]!
     }
     out.daily.push({
-      day,
-      total: dayTotals.get(day) ?? 0,
+      day: bucket,
+      total: bucketTotals.get(bucket) ?? 0,
       byModel: byModelObj,
       byProvider: byProviderObj,
-      requests: dayRequests.get(day) ?? 0,
-      turns: dayTurns.get(day) ?? 0,
-      cacheHit: dayCacheHit.get(day) ?? 0,
-      cacheMiss: dayCacheMiss.get(day) ?? 0,
+      requests: bucketRequests.get(bucket) ?? 0,
+      turns: bucketTurns.get(bucket) ?? 0,
+      cacheHit: bucketCacheHit.get(bucket) ?? 0,
+      cacheMiss: bucketCacheMiss.get(bucket) ?? 0,
     })
   }
 

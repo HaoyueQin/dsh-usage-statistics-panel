@@ -68,6 +68,21 @@ export function shortDay(day: string): string {
   return `${Number(m)}/${Number(d)}`
 }
 
+/** X-axis label for a trend bucket key. Day mode keeps the short date; hour
+ *  mode names the day at 00:00 (so a three-day span keeps its day boundaries
+ *  readable) and the hour everywhere else. */
+export function bucketAxisLabel(key: string, granularity: 'day' | 'hour'): string {
+  if (granularity === 'day') return shortDay(key)
+  const hour = key.slice(11, 13)
+  return hour === '00' ? shortDay(key.slice(0, 10)) : `${hour}:00`
+}
+
+/** Tooltip title for a trend bucket key: the date in day mode, date + hour
+ *  in hour mode. */
+export function bucketTitle(key: string, granularity: 'day' | 'hour'): string {
+  return granularity === 'hour' ? `${key.slice(0, 10)} ${key.slice(11, 13)}:00` : key
+}
+
 /** model refs are "provider/model"; a bare model name has no slash.
  *  (Re-exported from ../shared.ts at the top of this file.) */
 

@@ -35,12 +35,15 @@ llm/stream 瀑布 (purpose='session-title')       ← 不在会话日志中，�
 
 ### store.ts — 持久化
 
-使用 storage-domain 的 `usage_history` 域，单表 `days`：
+使用 storage-domain 的 `usage_history` 域，两张表：
 
-- key：`YYYY-MM-DD|provider|model`
-- value：`{ day, provider, model, inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens, requests, turns, lastSeen }`
-- 写入走 `KvTable.update()`（按 key 原子读改写队列），并发 turn 不交错
+- `days`：key `YYYY-MM-DD|provider|model`；value `{ day, provider, model, inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens, requests, turns, lastSeen }`
+- `hours`：key `YYYY-MM-DDTHH|provider|model`；value 同形，首字段为 `hour`（本地小时，补零）
+- 写入走 `KvTable.update()`（按 key 原子读改写队列），并发 turn 不交错；实时样本同时写两表（两次 update，非事务——天行成功、小时行失败只影响小时视图，不影响天视图与卡片）
+- 域名 **不升 version**：storage-domain 打开时按 spec 为缺失表补空表，升 version 反而会让旧介质 `version-mismatch`（域格式没有迁移路径）
 - 后端（web-app bundle 的 storage-json）落地 `$DSH_HOME/storages/usage_history.json`
+
+两套游标各自独立：`backfilledSessions` / `liveFirstSeq` 管天表，`hoursBackfilledSessions` / `hoursLiveFirstSeq` 管小时表，另有 `hoursReady` 记录小时历史是否已覆盖全部可重放会话。任何一次 global 写入都必须带上对方字段（整体重写，漏字段会让对方回填反复重跑）。小时表晚于天游标出现，所以升级时用独立游标重放日志、只写 `hours`，天表与天游标完全不动；升级时仍活跃的会话先按当前 `seq` 写小时水位，只重放前缀，与 reset 的切分语义一致。首次安装与重建由双写的 `'all'` 回扫顺带置位 `hoursReady`；升级场景的 `'all'` 没有目标，不得置位。
 
 Token 桶语义：`inputTokens` 是 uncached input（即缓存 miss 侧），`cacheReadTokens` 是缓存命中侧——命中率恒为 `Σhit / Σ(hit+miss)`，与 reasonix 一致，两个分母不混。
 
@@ -50,7 +53,8 @@ Token 桶语义：`inputTokens` 是 uncached input（即缓存 miss 侧），`ca
 
 翻译自 reasonix `internal/stats/query.go`：
 
-- 按日 emit 全范围（含零值日），趋势图显示完整时间轴
+- 粒度：`granularity: 'day' | 'hour'`；day 按日 emit，hour 按本地小时 emit（今日固定 24 桶、最近 3 天固定 72 桶，空桶补零）
+- `activeDays` 始终按天去重（小时键取日期前缀），小时视图的总量与天视图同口径
 - token 总计、请求数、turn 数、命中率派生、活跃天数、Top 模型/Provider
 - 模型 ref `provider/model`，裸模型名归 `default` provider
 
@@ -58,7 +62,7 @@ Token 桶语义：`inputTokens` 是 uncached input（即缓存 miss 侧），`ca
 
 `webServer.register({ kind: 'prefix', path: '/usage/api', handler })`：
 
-- `POST /usage/api/range`：`{ range, from?, to? }` → `UsageStatsRange`；custom 范围做语义日期校验（拒绝 `2026-13-45` 这类正则可过但日历不存在的形状）并限制跨度 ≤366 天（400）
+- `POST /usage/api/range`：`{ range, from?, to? }` → `UsageStatsRange`；`range` 取值 `today | 3 | 7 | 14 | 30 | 90 | custom`，`today`/`3` 读小时表并置 `granularity: 'hour'`，其余一律按天（`custom` 不做隐式粒度推断）；custom 范围做语义日期校验（拒绝 `2026-13-45` 这类正则可过但日历不存在的形状）并限制跨度 ≤366 天（400）
 - `POST /usage/api/status`：`BackfillStatus`
 - 信任围栏与 `/api` 网关同源同语义（dsh-client-connection `isTrustedApiRequest`）：① Host 头须为 loopback、本监听端自身的 bind 地址（`webServer.host`，任意端口，剥 `%zone`；未指定地址拼写一律不认），或 trust 列表中的授权（无端口条目匹配任意端口，带端口条目精确匹配 host:port）；② `sec-fetch-site: cross-site` 一律拒绝；③ 携带 Origin 时必须与 Host 同源（"null" 视为不透明 origin 拒绝；Host 放到 Origin 的 scheme 下再归一）。任一不满足即 403。
 - trust 列表与协议按宿主代际取源。`0.2.1-alpha.2` 起：`webStartup.trustedHosts`（仅 CLI 显式授权）+ `webServer.protocol`；该版还删除了 `webRuntime` 服务，并把「接受 bind 地址」独立出来。此前：`webRuntime.trustedHosts` 才是官方 fence 实际接入的那一份（`web-runtime` 行在绑定后采样局域网字面量并接上调用参数，是 `webStartup` 的超集），故这里 **webRuntime 优先、webStartup 兜底**。两个 provider 都用 `ctx.get()` 探测：直接读一个宿主未注册的服务属性会被 cordis 的 traced Context 抛错，而该抛错发生在 handler 的围栏调用里，会逃出 handler 被 webserver 兜底成空 400（本 issue 的现象）。
@@ -68,6 +72,10 @@ Token 桶语义：`inputTokens` 是 uncached input（即缓存 miss 侧），`ca
 ### index.tsx — 面板与侧栏入口注册
 
 本插件注册三个面板相关槽位：`plugins.bundle.config`（keyed，键为本 bundle 的 npm 包名）把面板渲染进插件页里该组合包的详情页；`main`（keyed，键 `usage-stats`）把它注册成一个全局主面板；`sidebar.panellist`（list，id `usage-stats`，order 30）在左侧栏「新会话」下方加一行，点击即切到该主面板。面板因此由**同一组件渲染在两处**，`UsageStatsPanelPage` 用与插件页相同的 960px 内容列包住它（模块 css 的 `.page` 镜像插件页自己的 `.page`：左右与底部内边距、前景色 token 逐条对齐——**唯顶部那 28px 例外**，它落在返回行 `.backRow` 自己的盒子上。主面板贴着窗口左上角，若把这 28px 画在滚动容器上，顶部条带就归属容器而不参与窗口拖拽；宿主的两个页面型插件 `ui-plugin-manager`（`.pageHead`/`.detailTop`）与 `ui-schedule` 出于同一原因把该内边距移到头部行。搬移前后渲染逐像素一致），两处外观一致。locale 座绑定 `usageStats` 命名空间（en/zh/zh-TW 三份字典）；面板数值格式化跟随当前语言——中文显示 亿/万（简）或 億/萬（繁），英文用 k/M/B 图表惯例。组件经 `/usage/api` fetch 数据，不直接触 ctx（返回控制是唯一例外：主面板的 `goBack` 经槽位 `inject` 传入，见下）。
+
+图标资产两处都按宿主风格校准（issue #12）：侧栏行的 `stats-icon.tsx` 用 lucide `BarChart3`，但线宽取 1.5 而非 lucide 默认的 2——24 网格缩到宿主的 16px 格，2 是 1.33px，比官方面板行（16 网格 stroke 1，`ICON_REGULAR_STROKE`）重三分之一，1.5 恰为 1px；插件卡 `icon.svg` 的命中率趋势线则改成只含两个拐点的折线（起点 + 两个拐点 + 终点），因为 36px 画布上原三段贝塞尔的起伏只剩一两像素，读作无意义的扭曲。
+
+范围选择器提供 今日 / 最近 3 天 / 7 / 14 / 30 / 90 天 / 自定义（默认 30 天）。前两者驱动小时粒度趋势：标题切到「按小时 Token 趋势」，横轴 0 点显示日期、其余显示 `HH:00`，抽稀沿用既有的 `labelEvery`；统计卡片、热力图、模型/供应商图表的口径不变，`activeDays` 始终按天去重。
 
 ### index.tsx — 主面板的返回控制
 
@@ -112,6 +120,7 @@ Token 桶语义：`inputTokens` 是 uncached input（即缓存 miss 侧），`ca
 - 回扫后的**增量**不重放旧会话（避免重复计数）；新会话实时采集并入游标，重启后不会被重放
 - 回扫跳过启动时的**活跃会话**：这些会话在插件启动前的历史 usage 不计（避免与实时流重复折叠）；其后的增量由实时监听覆盖并写入游标，重启后同样不会重放
 - 旧会话日志若无 provider usage（或日志被压缩清理），无法回溯
-- `usage_history` 域版本 1；若需迁移，bump domain version 并写迁移
+- `usage_history` 域版本 1；新增表不升版本（storage-domain 打开时按 spec 为空表补位，升版本则旧介质 `version-mismatch` 拒绝打开），只有变更既有表 schema 时才 bump 并写迁移
+- 小时历史只能由会话日志回填：日志已被清理的旧会话在小时视图（今日 / 最近 3 天）中缺失，天表与长范围视图不受影响；升级后的首次启动会跑一次只写 `hours` 的回填，面板在回填完成前可能暂时没有小时数据
 - 热力图/趋势图的 tooltip 仅鼠标触发（格子数量不适合逐格进 tab 序）；环形图分段支持键盘
 - 侧栏入口的落点是「新会话」下方的面板行：它占的是 `sidebar.panellist` 的一行，而不是能自行隐藏的按钮——面板行一旦注册就常驻（与内置的插件/技能/MCP 行一致），所以没有「显示/隐藏入口」的开关

@@ -31,9 +31,65 @@ describe('UsageStatsSection', () => {
   it('renders the toolbar with range presets and the empty state', () => {
     const props = { t } as UsageStatsSectionProps
     render(<UsageStatsSection {...props} />)
+    expect(screen.getByRole('button', { name: 'rangePreset.today' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'rangePreset.3' })).toBeTruthy()
     expect(screen.getByRole('button', { name: 'rangePreset.7' })).toBeTruthy()
     expect(screen.getByRole('button', { name: 'rangePreset.90' })).toBeTruthy()
     expect(screen.getByRole('button', { name: 'rangeCustom' })).toBeTruthy()
+  })
+
+  it('switches the trend title and axis to hourly buckets on a short range', async () => {
+    const hourBuckets = Array.from({ length: 24 }, (_, h) => {
+      const key = `2026-10-19T${String(h).padStart(2, '0')}`
+      const active = h === 9
+      return {
+        day: key,
+        total: active ? 1000 : 0,
+        byModel: active ? { 'p/m': 1000 } : {},
+        byProvider: active ? { p: 1000 } : {},
+        requests: active ? 1 : 0,
+        turns: 0,
+        cacheHit: active ? 500 : 0,
+        cacheMiss: active ? 500 : 0,
+      }
+    })
+    const DAY_RANGE = {
+      from: '2026-08-01', to: '2026-08-26', tokens: 12_345, requests: 3, turns: 2,
+      cacheHit: 9_000, cacheMiss: 3_345, activeDays: 2, topModel: 'p/m', topProvider: 'p',
+      granularity: 'day',
+      daily: ['2026-08-01', '2026-08-02'].map((day) => ({
+        day, total: 100, byModel: { 'p/m': 100 }, byProvider: { p: 100 },
+        requests: 1, turns: 0, cacheHit: 50, cacheMiss: 50,
+      })),
+      models: [{ model: 'p/m', provider: 'p', tokens: 200, percent: 100 }],
+      providers: [{ provider: 'p', tokens: 200, percent: 100 }],
+    }
+    const HOUR_RANGE = {
+      ...DAY_RANGE,
+      from: '2026-10-19', to: '2026-10-19', tokens: 1000, requests: 1, turns: 0,
+      activeDays: 1, granularity: 'hour', daily: hourBuckets,
+      models: [{ model: 'p/m', provider: 'p', tokens: 1000, percent: 100 }],
+      providers: [{ provider: 'p', tokens: 1000, percent: 100 }],
+    }
+    vi.stubGlobal('fetch', vi.fn(async (_url: string, init?: RequestInit) => {
+      const body = init?.body ? JSON.parse(init.body as string) : undefined
+      const value = body?.range === 'today' ? HOUR_RANGE : DAY_RANGE
+      return { ok: true, json: async () => ({ ok: true, value }) } as unknown as Response
+    }))
+    const width = vi.spyOn(Element.prototype, 'clientWidth', 'get').mockReturnValue(720)
+    const { container } = render(<UsageStatsSection {...({ t } as UsageStatsSectionProps)} />)
+    await act(async () => { await new Promise((r) => { setTimeout(r, 0) }) })
+    expect(screen.getByText('dailyTrend')).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('button', { name: 'rangePreset.today' }))
+    await act(async () => { await new Promise((r) => { setTimeout(r, 0) }) })
+    expect(screen.getByText('hourlyTrend')).toBeTruthy()
+    // The trend chart labels the day boundary with the date and the other
+    // ticks with their hour.
+    const axisLabels = [...container.querySelectorAll('text')].map((node) => node.textContent)
+    expect(axisLabels).toContain('10/19')
+    expect(axisLabels).toContain('02:00')
+    width.mockRestore()
   })
   it('keeps the content visible while a refresh is in flight (no blank flash)', async () => {
     const RANGE = {

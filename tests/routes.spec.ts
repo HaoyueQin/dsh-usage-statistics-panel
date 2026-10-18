@@ -25,6 +25,14 @@ describe('resolveRange', () => {
     expect(resolveRange({ range: '90' }, now).from).toBe('2026-05-23')
   })
 
+  it('preset today is the current local day', () => {
+    expect(resolveRange({ range: 'today' }, now)).toEqual({ from: '2026-08-20', to: '2026-08-20' })
+  })
+
+  it('preset 3 days covers today and the two days before', () => {
+    expect(resolveRange({ range: '3' }, now)).toEqual({ from: '2026-08-18', to: '2026-08-20' })
+  })
+
   it('custom range with valid dates', () => {
     const { from, to } = resolveRange({ range: 'custom', from: '2026-07-01', to: '2026-07-31' }, now)
     expect(from).toBe('2026-07-01')
@@ -62,18 +70,34 @@ describe('resolveRange', () => {
 
 // A tiny in-memory UsageStore stand-in so the aggregate route test can run
 // without the storage domain.
-import { aggregateRange } from '../src/routes.ts'
-import type { UsageDayRow } from '../src/store.ts'
+import { aggregateRange, granularityOf } from '../src/routes.ts'
+import type { UsageDayRow, UsageHourRow } from '../src/store.ts'
 import { readJsonBody } from '../src/wire.ts'
 import type { UsageHttpRequest, UsageHttpResponse } from '../src/context-types.ts'
 
-function memoryStore(rows: UsageDayRow[]): Parameters<typeof aggregateRange>[0] {
+function memoryStore(rows: UsageDayRow[], hourRows: UsageHourRow[] = []): Parameters<typeof aggregateRange>[0] {
   return {
     async rangeRows(from: string, to: string) {
       return rows.filter((r) => r.day >= from && r.day <= to)
     },
+    async rangeHourRows(from: string, to: string) {
+      return hourRows.filter((r) => r.hour >= `${from}T00` && r.hour <= `${to}T23`)
+    },
   } as Parameters<typeof aggregateRange>[0]
 }
+
+describe('granularityOf', () => {
+  it('reads the two short presets per hour', () => {
+    expect(granularityOf('today')).toBe('hour')
+    expect(granularityOf('3')).toBe('hour')
+  })
+
+  it('keeps every other range (including custom) per day', () => {
+    for (const range of ['7', '14', '30', '90', 'custom', '', undefined]) {
+      expect(granularityOf(range)).toBe('day')
+    }
+  })
+})
 
 describe('aggregateRange', () => {
   it('folds store rows — requests expand from the per-row count', async () => {
@@ -116,6 +140,30 @@ describe('aggregateRange', () => {
     expect(out.turns).toBe(3)
     expect(out.daily[0]!.turns).toBe(3)
     expect(out.daily[0]!.total).toBe(0)
+  })
+
+  it('reads hour rows and emits 24 buckets in hour mode', async () => {
+    const store = memoryStore([], [
+      { hour: '2026-08-02T09', provider: 'p', model: 'p/m', inputTokens: 10, outputTokens: 5, cacheReadTokens: 2, cacheWriteTokens: 0, requests: 1, turns: 1, lastSeen: 0 },
+    ])
+    const out = await aggregateRange(store, '2026-08-02', '2026-08-02', 'hour')
+    expect(out.granularity).toBe('hour')
+    expect(out.daily).toHaveLength(24)
+    const at9 = out.daily.find((bucket) => bucket.day === '2026-08-02T09')!
+    expect(at9.total).toBe(17)
+    expect(at9.requests).toBe(1)
+    expect(at9.turns).toBe(1)
+    // The day table is not consulted in hour mode.
+    expect(out.tokens).toBe(17)
+  })
+
+  it('defaults to day granularity', async () => {
+    const store = memoryStore([
+      { day: '2026-08-01', provider: 'p', model: 'p/m', inputTokens: 1, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, requests: 0, turns: 0, lastSeen: 0 },
+    ])
+    const out = await aggregateRange(store, '2026-08-01', '2026-08-01')
+    expect(out.granularity).toBe('day')
+    expect(out.daily).toHaveLength(1)
   })
 })
 

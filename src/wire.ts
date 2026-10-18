@@ -10,16 +10,18 @@
 
 import type { UsageHttpRequest, UsageHttpResponse } from './context-types.ts'
 
-/** One day's token usage and turn count in a trend series. */
+/** One bucket's token usage and turn count in a trend series. The `day`
+ *  field is the bucket key: "YYYY-MM-DD" in day mode, "YYYY-MM-DDTHH" in
+ *  hour mode (see {@link UsageStatsRange.granularity}). */
 export interface DailyTokenUsage {
-  day: string // "YYYY-MM-DD", local calendar
+  day: string // bucket key; "YYYY-MM-DD" or "YYYY-MM-DDTHH", local calendar
   total: number // provider-inclusive tokens (input+output+cache reads/writes)
   byModel: Record<string, number> // model ref -> tokens
   byProvider: Record<string, number> // provider name -> tokens
   requests: number // usage events (API calls)
   turns: number // completed turns
-  cacheHit: number // cached input tokens that day
-  cacheMiss: number // uncached input tokens that day
+  cacheHit: number // cached input tokens in the bucket
+  cacheMiss: number // uncached input tokens in the bucket
 }
 
 /** One model's aggregate within the range. */
@@ -52,6 +54,9 @@ export interface UsageStatsRange {
   topModel: string
   topProvider: string
   // Series
+  /** Bucket size of `daily`: day presets and custom ranges group per day;
+   *  the "today" / "last 3 days" presets group per local hour. */
+  granularity: 'day' | 'hour'
   daily: DailyTokenUsage[]
   models: ModelTokenUsage[]
   providers: ProviderTokenUsage[]
@@ -59,7 +64,7 @@ export interface UsageStatsRange {
 
 /** The usage statistics panel aggregate request. */
 export interface UsageStatsRequest {
-  range: string // "7" | "14" | "30" | "90" | "custom"
+  range: string // "today" | "3" | "7" | "14" | "30" | "90" | "custom"
   from?: string // "YYYY-MM-DD", custom only
   to?: string // "YYYY-MM-DD", custom only
 }

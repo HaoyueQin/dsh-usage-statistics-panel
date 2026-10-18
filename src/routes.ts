@@ -13,9 +13,10 @@
 import type { Context } from './context-types.ts'
 import type { UsageHttpRequest, UsageHttpResponse, UsageWebRoute } from './context-types.ts'
 import { UsageStore } from './store.ts'
+import type { UsageDayRow, UsageHourRow } from './store.ts'
 import { UsageCollector } from './collector.ts'
 import { aggregateSamples } from './query.ts'
-import type { UsageSample } from './query.ts'
+import type { Granularity, UsageSample } from './query.ts'
 import type { BackfillStatus, UsageStatsRange, UsageStatsRequest } from './wire.ts'
 import { UsageError, readJsonBody, writeError, writeJson } from './wire.ts'
 import { createTrustFence, type TrustFence, type TrustInputs } from './trust-fence.ts'
@@ -63,6 +64,14 @@ export function resolveRange(req: UsageStatsRequest, now = new Date()): { from: 
   }
   const toDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 0)
   switch (req.range) {
+    case 'today': {
+      return { from: day(toDate), to: day(toDate) }
+    }
+    case '3': {
+      const from = new Date(toDate)
+      from.setDate(from.getDate() - 2)
+      return { from: day(from), to: day(toDate) }
+    }
     case '7':
     case '14':
     case '30':
@@ -101,18 +110,34 @@ export function resolveRange(req: UsageStatsRequest, now = new Date()): { from: 
   }
 }
 
+/** The trend granularity a range preset asks for: the two short presets read
+ *  per hour, everything else (including custom) per day. */
+export function granularityOf(range: string | undefined): Granularity {
+  return range === 'today' || range === '3' ? 'hour' : 'day'
+}
+
 /** Build the aggregate for a range from the store rows. The per-row request
  *  and turn counts are yielded lazily as markers, so no intermediate array
  *  is materialized regardless of range size. */
-export async function aggregateRange(store: UsageStore, from: string, to: string): Promise<UsageStatsRange> {
-  const rows = await store.rangeRows(from, to)
+export async function aggregateRange(
+  store: UsageStore,
+  from: string,
+  to: string,
+  granularity: Granularity = 'day',
+): Promise<UsageStatsRange> {
+  const rows: Array<UsageDayRow | UsageHourRow> = granularity === 'hour'
+    ? await store.rangeHourRows(from, to)
+    : await store.rangeRows(from, to)
   const samples = (function* (): Generator<UsageSample> {
     for (const row of rows) {
+      const hour = 'hour' in row ? row.hour : undefined
+      const day = hour === undefined ? (row as UsageDayRow).day : hour.slice(0, 10)
       // Any real token traffic makes the row a token sample — including a
       // pure-cache call whose uncached input and output are both zero.
       if (row.inputTokens + row.outputTokens + row.cacheReadTokens + row.cacheWriteTokens > 0) {
         yield {
-          day: row.day,
+          day,
+          hour,
           model: row.model,
           inputTokens: row.inputTokens,
           outputTokens: row.outputTokens,
@@ -123,14 +148,14 @@ export async function aggregateRange(store: UsageStore, from: string, to: string
       // Requests live on the row as a count (one per provider call, tokens or
       // not); expand them into request markers for the shared aggregator.
       for (let i = 0; i < row.requests; i++) {
-        yield { day: row.day, model: row.model, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, request: true }
+        yield { day, hour, model: row.model, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, request: true }
       }
       for (let i = 0; i < row.turns; i++) {
-        yield { day: row.day, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, turn: true }
+        yield { day, hour, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, turn: true }
       }
     }
   })()
-  return aggregateSamples(samples, { from, to })
+  return aggregateSamples(samples, { from, to }, granularity)
 }
 
 /** Build the single fenced prefix route serving the /usage/api JSON RPC.
@@ -154,7 +179,7 @@ export function buildUsageRoute(ctx: Context, deps: RoutesDeps): UsageWebRoute {
       if (method === 'POST' && path === '/usage/api/range') {
         const body = (await readJsonBody(req)) as Partial<UsageStatsRequest>
         const { from, to } = resolveRange(body as UsageStatsRequest)
-        const stats = await aggregateRange(deps.store, from, to)
+        const stats = await aggregateRange(deps.store, from, to, granularityOf(body.range))
         writeJson(res, { ok: true, value: stats })
         return
       }

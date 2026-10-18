@@ -15,6 +15,12 @@ export function dayKey(ts: number): string {
   return `${y}-${m}-${day}`
 }
 
+/** Local calendar hour key, e.g. "2026-08-02T07" (no UTC shift). */
+export function hourKey(ts: number): string {
+  const d = new Date(ts)
+  return `${dayKey(ts)}T${String(d.getHours()).padStart(2, '0')}`
+}
+
 /** All local-calendar day keys in [from, to], inclusive. Invalid or reversed
  *  bounds yield an empty list. */
 export function daysInRange(from: string, to: string): string[] {

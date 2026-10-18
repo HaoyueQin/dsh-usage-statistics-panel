@@ -44,7 +44,7 @@ import type { Context } from './context-types.ts'
 import type { UsageSessionEvent, UsageSessionHeader, UsageSessionPersistence, UsageSessionSnapshot, UsageSessionStore } from './context-types.ts'
 import type { UsageStore } from './store.ts'
 import type { UsageSample } from './query.ts'
-import { dayKey } from './query.ts'
+import { dayKey, hourKey } from './query.ts'
 
 /** A usage-bearing event shape we extract from the session log. */
 interface UsageEventData {
@@ -168,7 +168,7 @@ export class UsageFold {
       // Every ended turn counts once (reasonix TurnDone parity): a turn ends
       // exactly once, so no dedupe key is needed. Failed turns end too, and
       // reasonix emits TurnDone regardless of the run's error.
-      return { day: dayKey(ev.time), inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, turn: true }
+      return { day: dayKey(ev.time), hour: hourKey(ev.time), inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, turn: true }
     }
     if (ev.type === 'step/start' || ev.type === 'llm/retry-started') {
       // Attribution note: agent-loop appends step/start BEFORE request/context
@@ -186,6 +186,7 @@ export class UsageFold {
       // The marker carries no tokens; the store counts it as one request.
       return {
         day: dayKey(ev.time),
+        hour: hourKey(ev.time),
         inputTokens: 0,
         outputTokens: 0,
         cacheReadTokens: 0,
@@ -227,6 +228,7 @@ export class UsageFold {
     const key = this.keyOf(ev)
     const sample: UsageSample = {
       day: dayKey(ev.time),
+      hour: hourKey(ev.time),
       inputTokens: usage2.inputTokens,
       outputTokens: usage2.outputTokens,
       cacheReadTokens: usage2.cacheReadTokens ?? 0,
@@ -287,6 +289,7 @@ export class UsageFold {
     const usage = data?.usage
     const sample: UsageSample = {
       day: dayKey(ev.time),
+      hour: hourKey(ev.time),
       inputTokens: usage?.inputTokens ?? 0,
       outputTokens: usage?.outputTokens ?? 0,
       cacheReadTokens: usage?.cacheReadTokens ?? 0,
@@ -405,7 +408,12 @@ export class UsageCollector {
       this.liveMarkBuffer.clear()
       // Same observational contract as record(): a degraded store must never
       // turn a cursor write into an unhandled rejection.
-      if (batch.length > 0) void this.store.markLiveSequences(batch).catch(() => { this.status.recordFailures++ })
+      if (batch.length > 0) {
+        void this.store.markLiveSequences(batch).catch(() => { this.status.recordFailures++ })
+        // The hour table keeps its own boundary pair; write it on the same
+        // tick so the two never drift apart.
+        void this.store.markHoursLiveSequences(batch).catch(() => { this.status.recordFailures++ })
+      }
     })
   }
 
@@ -568,6 +576,26 @@ export class UsageCollector {
    *  path uses this so disposal does not leave a fire-and-forget scan
    *  writing behind it. */
   async backfill(persistence: UsageSessionPersistence, sessions: UsageSessionStore, signal?: AbortSignal): Promise<void> {
+    await this.scan(persistence, sessions, signal, 'all')
+  }
+
+  /** The upgrade pass: replay every session the HOUR cursors have not seen,
+   *  writing only the hour rows. The day table and its cursors stay
+   *  untouched, so a user who upgraded never loses day history because a
+   *  session log was pruned. */
+  async backfillHours(persistence: UsageSessionPersistence, sessions: UsageSessionStore, signal?: AbortSignal): Promise<void> {
+    await this.scan(persistence, sessions, signal, 'hours')
+  }
+
+  /** Shared replay engine behind {@link backfill} and {@link backfillHours}.
+   *  `target` selects the cursor pair, the write function, and the cursor
+   *  the completed sessions land in. */
+  private async scan(
+    persistence: UsageSessionPersistence,
+    sessions: UsageSessionStore,
+    signal: AbortSignal | undefined,
+    target: 'all' | 'hours',
+  ): Promise<void> {
     if (this.status.running) return
     if (signal?.aborted) return
     this.status.running = true
@@ -590,9 +618,15 @@ export class UsageCollector {
         .filter((h) => typeof h?.id === 'string' && h.id !== '')
       // The cursor keeps a reboot's backfill from re-folding sessions the
       // store already saw: the fold's replace semantics dedupe within one
-      // pass only, so a full replay would double every counter.
-      const seen = await this.store.seenSessions()
-      const liveSeq = await this.store.liveSequences()
+      // pass only, so a full replay would double every counter. The hour
+      // pass uses its own pair for the same reason.
+      const seen = target === 'hours' ? await this.store.hoursSeenSessions() : await this.store.seenSessions()
+      // A pass that starts with an empty day cursor is a first install or a
+      // rebuild: it writes both tables, so its completion is also the moment
+      // the hour history becomes complete. An upgrade pass starts with a full
+      // day cursor and must NOT claim that.
+      const dayCursorWasEmpty = seen.size === 0
+      const liveSeq = target === 'hours' ? await this.store.hoursLiveSequences() : await this.store.liveSequences()
       // seen alone decides target selection: a session enters
       // backfilledSessions only after its whole replayable range was cleanly
       // folded, so selecting it again would multiply that range by the boot
@@ -604,10 +638,23 @@ export class UsageCollector {
       const concurrency = this.options.backfillConcurrency ?? 4
       let next = 0
       const completed: string[] = []
+      // Each target writes and marks its own surfaces: the upgrade pass must
+      // not touch day rows (their cursors are already advanced) and must not
+      // mark day sessions seen.
+      const writeSample = target === 'hours'
+        ? (sample: UsageSample): Promise<void> => this.store.recordHours(sample)
+        : (sample: UsageSample): Promise<void> => this.store.record(sample)
       const flushCompleted = async (): Promise<void> => {
         if (completed.length === 0) return
         const batch = completed.splice(0, completed.length)
+        if (target === 'hours') {
+          await this.store.markHoursSeenSessions(batch)
+          return
+        }
         await this.store.markSeenSessions(batch)
+        // `record()` above wrote both tables, so the hour cursor advances in
+        // the same batch.
+        await this.store.markHoursSeenSessions(batch)
       }
       const worker = async () => {
         for (;;) {
@@ -706,7 +753,7 @@ export class UsageCollector {
                 // route (compaction/summary) is not re-attributed to the
                 // session's agent-loop route.
                 if (!sample.turn && sample.model === undefined) sample.model = route || undefined
-                await this.store.record(sample)
+                await writeSample(sample)
               }
             }
             // Mark only after a clean replay, so a failed session retries on
@@ -724,6 +771,15 @@ export class UsageCollector {
       }
       await Promise.all(Array.from({ length: Math.min(concurrency, Math.max(1, targets.length)) }, worker))
       await flushCompleted()
+      // Claim the hour history only when this pass covered what it set out
+      // to cover. A first install / rebuild starts with an empty day cursor
+      // and double-writes; the upgrade pass is the hour pass itself. An
+      // aborted or erroring scan leaves the flag off, and the seen sets make
+      // the retry exact.
+      const hourPassCompleted = target === 'hours' || dayCursorWasEmpty
+      if (hourPassCompleted && !signal?.aborted && this.status.error === undefined) {
+        await this.store.markHoursReady()
+      }
     } finally {
       this.status.running = false
     }

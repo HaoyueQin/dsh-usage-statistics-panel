@@ -17,7 +17,10 @@ function memoryStore() {
     seenSessions: async () => new Set(seen),
     liveSequences: async () => new Map<string, number>(),
     markSeenSessions: async (ids: Iterable<string>) => { const a=[...ids]; marked.push(a); for (const id of a) seen.add(id); },
-    markLiveSequences: async () => {},
+    markHoursLiveSequences: async () => { },
+      markHoursSeenSessions: async () => { },
+      markHoursReady: async () => { },
+      markLiveSequences: async () => {},
     count: async () => recorded.length,
     record: async (s: Record<string, unknown>) => { recorded.push(s); },
   } as unknown as ConstructorParameters<typeof UsageCollector>[1] & { recorded: Array<Record<string, unknown>>; marked: string[][] };

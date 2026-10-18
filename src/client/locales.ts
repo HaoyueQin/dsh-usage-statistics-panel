@@ -13,6 +13,8 @@ export type UsageStatsKey =
   | 'nav'
   | 'back'
   | 'range'
+  | 'rangePreset.today'
+  | 'rangePreset.3'
   | 'rangePreset.7'
   | 'rangePreset.14'
   | 'rangePreset.30'
@@ -42,6 +44,7 @@ export type UsageStatsKey =
   | 'heatLess'
   | 'heatMore'
   | 'dailyTrend'
+  | 'hourlyTrend'
   | 'trendLimited'
   | 'modelUsage'
   | 'providerUsage'
@@ -78,6 +81,8 @@ export const en: Record<UsageStatsKey, string> = {
   nav: 'Usage statistics',
   back: 'Back',
   range: 'Time range',
+  'rangePreset.today': 'Today',
+  'rangePreset.3': 'Last 3 days',
   'rangePreset.7': 'Last 7 days',
   'rangePreset.14': 'Last 14 days',
   'rangePreset.30': 'Last 30 days',
@@ -107,6 +112,7 @@ export const en: Record<UsageStatsKey, string> = {
   heatLess: 'Less',
   heatMore: 'More',
   dailyTrend: 'Daily token trend',
+  hourlyTrend: 'Hourly token trend',
   trendLimited: 'Showing the latest {n} days',
   modelUsage: 'Model usage',
   providerUsage: 'Provider usage',
@@ -144,6 +150,8 @@ export const zh: Record<UsageStatsKey, string> = {
   nav: '使用统计',
   back: '返回',
   range: '时间范围',
+  'rangePreset.today': '今日',
+  'rangePreset.3': '最近 3 天',
   'rangePreset.7': '最近 7 天',
   'rangePreset.14': '最近 14 天',
   'rangePreset.30': '最近 30 天',
@@ -173,6 +181,7 @@ export const zh: Record<UsageStatsKey, string> = {
   heatLess: '较少',
   heatMore: '较多',
   dailyTrend: '按天 Token 趋势',
+  hourlyTrend: '按小时 Token 趋势',
   trendLimited: '仅显示最近 {n} 天',
   modelUsage: '模型用量',
   providerUsage: '各供应商用量',
@@ -210,6 +219,8 @@ export const zhTW: Record<UsageStatsKey, string> = {
   nav: '使用統計',
   back: '返回',
   range: '時間範圍',
+  'rangePreset.today': '今日',
+  'rangePreset.3': '最近 3 天',
   'rangePreset.7': '最近 7 天',
   'rangePreset.14': '最近 14 天',
   'rangePreset.30': '最近 30 天',
@@ -239,6 +250,7 @@ export const zhTW: Record<UsageStatsKey, string> = {
   heatLess: '較少',
   heatMore: '較多',
   dailyTrend: '每日 Token 趨勢',
+  hourlyTrend: '每小時 Token 趨勢',
   trendLimited: '僅顯示最近 {n} 天',
   modelUsage: '模型用量',
   providerUsage: '各供應商用量',

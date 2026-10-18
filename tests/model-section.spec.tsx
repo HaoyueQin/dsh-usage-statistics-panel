@@ -36,6 +36,7 @@ const range: UsageStatsRange = {
   activeDays: 2,
   topModel: 'm01',
   topProvider: 'p1',
+  granularity: 'day',
   daily: [],
   models: Array.from({ length: 11 }, (_, i) => ({
     model: `m${String(i + 1).padStart(2, '0')}`,

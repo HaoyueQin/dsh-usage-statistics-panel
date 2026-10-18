@@ -38,6 +38,7 @@ const range: UsageStatsRange = {
   activeDays: 2,
   topModel: 'pb/m3',
   topProvider: 'pa',
+  granularity: 'day',
   daily: [
     { day: '2026-08-01', total: 580, byModel: { 'pa/m1': 300, 'pb/m3': 280 }, byProvider: { pa: 300, pb: 280 }, requests: 1, turns: 1, cacheHit: 400, cacheMiss: 100 },
     { day: '2026-08-02', total: 1000, byModel: { 'pb/m3': 120, 'pc/m4': 300, 'pa/m2': 200, 'pd/m5': 200, 'pe/m6': 100, 'pf/m7': 50, 'pg/m8': 30 }, byProvider: { pa: 200, pb: 120, pc: 300, pd: 200, pe: 100, pf: 50, pg: 30 }, requests: 1, turns: 1, cacheHit: 400, cacheMiss: 100 },

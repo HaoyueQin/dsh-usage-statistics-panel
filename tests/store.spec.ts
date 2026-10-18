@@ -4,42 +4,53 @@
  * on their own row, and rangeRows filters by day.
  */
 import { describe, expect, it } from 'vitest'
-import { UsageStore, dayRowKey, type UsageDayRow } from '../src/store.ts'
+import { UsageStore, dayRowKey, type UsageDayRow, type UsageHourRow } from '../src/store.ts'
 import type { UsageDomain, UsageKvTable, UsageStorageDomain } from '../src/context-types.ts'
 
 function memoryDomain(): UsageStorageDomain {
   return memoryDomainWith(new Map())
 }
 
-/** A storage-domain stand-in whose table starts with `records` and whose
- *  global starts at `globalValue` (mirroring an absent cursor). */
-function memoryDomainWith(
-  records: Map<string, UsageDayRow>,
-  globalValue?: { backfilledSessions: string[]; liveFirstSeq?: Record<string, number> },
-): UsageStorageDomain {
-  const table: UsageKvTable<string, UsageDayRow> = {
+/** One in-memory table mirroring the real KvTable contract (update requires
+ *  an existing record, so the store's seed-and-retry path is exercised). */
+function memoryTable<V>(records: Map<string, V>, name: string): UsageKvTable<string, V> {
+  return {
     get: (k) => records.get(k),
-    entries: () => records.entries() as IterableIterator<[string, UsageDayRow]>,
+    entries: () => records.entries() as IterableIterator<[string, V]>,
     keys: () => records.keys() as IterableIterator<string>,
     get size() { return records.size },
     delete: async (k) => records.delete(k),
     put: async (k, v) => { records.set(k, v) },
     update: async (k, fn) => {
-      // Mirror the real storage-domain KvTable.update contract: it requires
-      // an existing record and throws otherwise (the store retries by
-      // seeding the row with put()).
       const cur = records.get(k)
       if (cur === undefined) {
-        throw new Error(`domain 'usage_history' table 'days' has no record '${k}' to update`)
+        throw new Error(`domain 'usage_history' table '${name}' has no record '${k}' to update`)
       }
       const next = fn(cur)
       records.set(k, next)
       return next
     },
   }
+}
+
+/** A storage-domain stand-in whose tables start with the given records and
+ *  whose global starts at `globalValue` (mirroring an absent cursor). */
+function memoryDomainWith(
+  records: Map<string, UsageDayRow>,
+  globalValue?: {
+    backfilledSessions: string[]
+    liveFirstSeq?: Record<string, number>
+    hoursBackfilledSessions?: string[]
+    hoursLiveFirstSeq?: Record<string, number>
+    hoursReady?: boolean
+  },
+  hourRecords: Map<string, UsageHourRow> = new Map(),
+): UsageStorageDomain {
+  const dayTable = memoryTable(records, 'days')
+  const hourTable = memoryTable(hourRecords, 'hours')
   const state = { global: globalValue }
   const domain: UsageDomain = {
-    table: () => table as UsageKvTable<string, unknown>,
+    table: (name: string) => (name === 'hours' ? hourTable : dayTable) as UsageKvTable<string, unknown>,
     global: {
       get: () => state.global,
       set: async (value) => { state.global = value as typeof globalValue },
@@ -311,5 +322,100 @@ describe('UsageStore', () => {
     expect(await store.count()).toBe(0)
     expect(await store.seenSessions()).toEqual(new Set())
     expect((await store.liveSequences()).get('s9')).toBe(7)
+  })
+
+  it('writes the day and hour rows together when the sample carries an hour', async () => {
+    const store = new UsageStore(memoryDomain())
+    await store.record({ day: '2026-08-01', hour: '2026-08-01T07', model: 'deepseek/deepseek-chat', inputTokens: 100, outputTokens: 50, cacheReadTokens: 40, cacheWriteTokens: 0 })
+    const days = await store.rangeRows('2026-08-01', '2026-08-01')
+    const hours = await store.rangeHourRows('2026-08-01', '2026-08-01')
+    expect(days).toHaveLength(1)
+    expect(hours).toHaveLength(1)
+    expect(hours[0]!.hour).toBe('2026-08-01T07')
+    expect(hours[0]!.inputTokens).toBe(100)
+    expect(hours[0]!.outputTokens).toBe(50)
+    expect(hours[0]!.cacheReadTokens).toBe(40)
+    expect(hours[0]!.requests).toBe(0)
+  })
+
+  it('recordHours leaves the day table untouched', async () => {
+    const store = new UsageStore(memoryDomain())
+    await store.recordHours({ day: '2026-08-01', hour: '2026-08-01T07', model: 'm', inputTokens: 5, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 })
+    expect(await store.count()).toBe(0)
+    const hours = await store.rangeHourRows('2026-08-01', '2026-08-01')
+    expect(hours).toHaveLength(1)
+    expect(hours[0]!.inputTokens).toBe(5)
+  })
+
+  it('requires an hour key for recordHours', async () => {
+    const store = new UsageStore(memoryDomain())
+    await expect(store.recordHours({ day: '2026-08-01', model: 'm', inputTokens: 1, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 }))
+      .rejects.toThrow(/needs sample\.hour/)
+  })
+
+  it('rangeHourRows filters by the inclusive day window', async () => {
+    const store = new UsageStore(memoryDomain())
+    await store.recordHours({ day: '2026-08-01', hour: '2026-08-01T23', model: 'm', inputTokens: 1, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 })
+    await store.recordHours({ day: '2026-08-02', hour: '2026-08-02T00', model: 'm', inputTokens: 1, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 })
+    const rows = await store.rangeHourRows('2026-08-01', '2026-08-01')
+    expect(rows.map((r) => r.hour)).toEqual(['2026-08-01T23'])
+  })
+
+  it('keeps the hour cursors when a day cursor write lands', async () => {
+    const records = new Map<string, UsageDayRow>()
+    const store = new UsageStore(memoryDomainWith(records, {
+      backfilledSessions: [],
+      hoursBackfilledSessions: ['h1'],
+      hoursLiveFirstSeq: { h2: 4 },
+      hoursReady: true,
+    }))
+    await store.markSeenSessions(['s1'])
+    await store.markLiveSequences([['s2', 7]])
+    expect(await store.seenSessions()).toEqual(new Set(['s1']))
+    expect(await store.hoursSeenSessions()).toEqual(new Set(['h1']))
+    expect((await store.hoursLiveSequences()).get('h2')).toBe(4)
+    expect(await store.hoursReady()).toBe(true)
+  })
+
+  it('keeps the day cursors when an hour cursor write lands', async () => {
+    const records = new Map<string, UsageDayRow>()
+    const store = new UsageStore(memoryDomainWith(records, {
+      backfilledSessions: ['s1'],
+      liveFirstSeq: { s2: 3 },
+    }))
+    await store.markHoursSeenSessions(['h1'])
+    await store.markHoursLiveSequences([['h2', 5]])
+    await store.markHoursReady()
+    expect(await store.seenSessions()).toEqual(new Set(['s1']))
+    expect((await store.liveSequences()).get('s2')).toBe(3)
+    expect(await store.hoursSeenSessions()).toEqual(new Set(['h1']))
+    expect((await store.hoursLiveSequences()).get('h2')).toBe(5)
+    expect(await store.hoursReady()).toBe(true)
+  })
+
+  it('reset() clears both tables and both cursor pairs', async () => {
+    const records = new Map<string, UsageDayRow>()
+    const hours = new Map<string, UsageHourRow>()
+    const store = new UsageStore(memoryDomainWith(records, {
+      backfilledSessions: ['s1'],
+      hoursBackfilledSessions: ['h1'],
+      hoursLiveFirstSeq: { h2: 2 },
+      hoursReady: true,
+    }, hours))
+    await store.record({ day: '2026-08-01', hour: '2026-08-01T07', model: 'm', inputTokens: 5, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 })
+    expect(await store.rangeHourRows('2026-08-01', '2026-08-01')).toHaveLength(1)
+    await store.reset(new Map([['s9', 7]]))
+    expect(await store.count()).toBe(0)
+    expect(await store.rangeHourRows('2026-08-01', '2026-08-01')).toHaveLength(0)
+    expect(await store.hoursSeenSessions()).toEqual(new Set())
+    expect((await store.hoursLiveSequences()).get('s9')).toBe(7)
+    expect(await store.hoursReady()).toBe(false)
+  })
+
+  it('reports whether the day table has rows', async () => {
+    const empty = new UsageStore(memoryDomain())
+    expect(await empty.hasAnyDayRows()).toBe(false)
+    await empty.record({ day: '2026-08-01', model: 'm', inputTokens: 1, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 })
+    expect(await empty.hasAnyDayRows()).toBe(true)
   })
 })

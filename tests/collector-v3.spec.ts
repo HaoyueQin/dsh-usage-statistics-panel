@@ -27,7 +27,10 @@ function memoryStore(): Store {
     seenSessions: async () => new Set<string>(),
     liveSequences: async () => new Map<string, number>(),
     markSeenSessions: async () => {},
-    markLiveSequences: async () => {},
+    markHoursLiveSequences: async () => { },
+      markHoursSeenSessions: async () => { },
+      markHoursReady: async () => { },
+      markLiveSequences: async () => {},
     count: async () => recorded.length,
     record: async (s: Record<string, unknown>) => { recorded.push(s); },
   } as unknown as Store;

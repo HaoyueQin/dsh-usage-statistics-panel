@@ -55,14 +55,15 @@ const fade = (from, to) => `<animate attributeName="opacity" dur="6.4s" repeatCo
 const COPY = {
   zh: {
     newSession: '新会话',
-    rows: ['插件', '技能', 'MCP'],
+    rows: ['插件', '自动化任务'],
     mine: '使用统计',
     workspace: '工作区',
     workspaceName: 'dsh-usage-stats…',
-    presets: ['最近 7 天', '最近 14 天', '最近 30 天', '最近 90 天'],
+    presets: ['今日', '最近 3 天', '最近 7 天', '最近 14 天', '最近 30 天', '最近 90 天'],
     refresh: '刷新',
+    rebuild: '重建统计',
     cards: [
-      { label: 'Tokens 用量', value: '4.51B' },
+      { label: 'Tokens 用量', value: '4.51B', sub: '4,510,000,000 tokens' },
       { label: '平均缓存命中率', value: '97.8%', sub: '4.41B 缓存命中' },
       { label: '最常用模型', value: 'deepseek-v4-pro', sub: 'deepseek' },
     ],
@@ -81,14 +82,15 @@ const COPY = {
   },
   en: {
     newSession: 'New Session',
-    rows: ['Plugins', 'Skills', 'MCP'],
+    rows: ['Plugins', 'Automations'],
     mine: 'Usage statistics',
     workspace: 'Workspace',
     workspaceName: 'dsh-usage-stats…',
-    presets: ['7 days', '14 days', '30 days', '90 days'],
+    presets: ['Today', '3 days', '7 days', '14 days', '30 days', '90 days'],
     refresh: 'Refresh',
+    rebuild: 'Rebuild',
     cards: [
-      { label: 'Tokens used', value: '4.51B' },
+      { label: 'Tokens used', value: '4.51B', sub: '4,510,000,000 tokens' },
       { label: 'Avg cache hit rate', value: '97.8%', sub: '4.41B cached' },
       { label: 'Top model', value: 'deepseek-v4-pro', sub: 'deepseek' },
     ],
@@ -136,19 +138,25 @@ function sidebar(c) {
   return parts.join('\n')
 }
 
-/** Toolbar: the range presets with the third one selected, plus Refresh. */
+/** Toolbar: the six range presets with "last 30 days" selected, then Refresh
+ *  and the rebuild action the panel grew in 0.3.0. */
 function toolbar(c) {
   const parts = []
-  parts.push(`<rect x="${MAIN_X}" y="30" width="300" height="28" rx="8" fill="#F6F8FA" stroke="${CARD_LINE}"/>`)
-  const widths = [64, 70, 70, 70]
-  let x = MAIN_X
+  const glyph = (ch) => (/[\u4e00-\u9fff]/.test(ch) ? 10 : ch === ' ' ? 3 : 6)
+  const textW = (label) => [...label].reduce((w, ch) => w + glyph(ch), 0)
+  const widths = c.presets.map((label) => Math.round(textW(label) + 12))
+  const band = widths.reduce((sum, w) => sum + w + 2, 2)
+  parts.push(`<rect x="${MAIN_X}" y="30" width="${band}" height="28" rx="8" fill="#F6F8FA" stroke="${CARD_LINE}"/>`)
+  let x = MAIN_X + 2
   c.presets.forEach((label, i) => {
-    const active = i === 2
-    if (active) parts.push(`<rect x="${x + 2}" y="32" width="${widths[i]}" height="24" rx="6" fill="#FFF" stroke="${LINE}"/>`)
-    parts.push(`<text x="${x + 2 + widths[i] / 2}" y="47.5" font-size="10.5" text-anchor="middle" fill="${active ? INK : INK_2}"${active ? ' font-weight="600"' : ''}>${label}</text>`)
+    const active = label === '最近 30 天' || label === '30 days'
+    if (active) parts.push(`<rect x="${x}" y="32" width="${widths[i]}" height="24" rx="6" fill="#FFF" stroke="${LINE}"/>`)
+    parts.push(`<text x="${x + widths[i] / 2}" y="47.5" font-size="10.5" text-anchor="middle" fill="${active ? INK : INK_2}"${active ? ' font-weight="600"' : ''}>${label}</text>`)
     x += widths[i] + 2
   })
-  parts.push(`<text x="${MAIN_R}" y="47.5" font-size="11" text-anchor="end" fill="${INK_2}">${c.refresh}</text>`)
+  const rebuildW = Math.round(textW(c.rebuild))
+  parts.push(`<text x="${MAIN_R}" y="47.5" font-size="11" text-anchor="end" fill="${INK_2}">${c.rebuild}</text>`)
+  parts.push(`<text x="${MAIN_R - rebuildW - 16}" y="47.5" font-size="11" text-anchor="end" fill="${INK_2}">${c.refresh}</text>`)
   return `<g>${fade(0.25, 0.875)}\n${parts.join('\n')}\n</g>`
 }
 

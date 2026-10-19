@@ -18,9 +18,9 @@
 [![Commit activity](https://img.shields.io/github/commit-activity/t/HaoyueQin/dsh-usage-statistics-panel)](https://github.com/HaoyueQin/dsh-usage-statistics-panel/graphs/commit-activity)
 [![Last commit](https://img.shields.io/github/last-commit/HaoyueQin/dsh-usage-statistics-panel)](https://github.com/HaoyueQin/dsh-usage-statistics-panel/commits)
 
-DSH web 插件的用量统计面板：按天 Token 趋势、GitHub 风格活跃热力图、缓存命中率曲线、按模型与按供应商两种用量拆分（环形占比图 + 明细列表），作为**插件**页中本插件的独立页面，并在左侧栏提供独立入口。
+DSH web 插件的用量统计面板：按天 / 按小时的 Token 趋势、GitHub 风格活跃热力图、缓存命中率曲线、按模型与按供应商两种用量拆分（环形占比图 + 明细列表），作为**插件**页中本插件的独立页面，并在左侧栏提供独立入口。
 
-所有图表均为手绘 SVG，不依赖图表库；配色使用 GitHub Primer 的 data-viz 双套色板（模型前 10 名、供应商前 5 名各取一个等级色，其余归入灰色 "Other" 桶），并随 DSH 主题自适应。
+所有图表均为手绘 SVG，不依赖图表库；配色是固定的 rank 色板（`--dsw-chart-1..10` 给模型前 10 名、`--dsw-provider-1..5` 给供应商前 5 名，其余归入灰色 "Other" 桶），暗色主题下整体提亮，随 DSH 主题自适应。
 
 <p align="center">
   <img src="docs/demo-zh.svg" alt="demo：左侧栏「使用统计」行点亮后，面板依次展开工具栏、卡片、热力图、趋势图与模型环形占比图" width="720">
@@ -29,7 +29,7 @@ DSH web 插件的用量统计面板：按天 Token 趋势、GitHub 风格活跃�
 ## 预览
 
 <p align="center">
-  <img src="docs/images/panel-overview.png" alt="面板概览：汇总卡片、活跃热力图与按天 Token 趋势" width="720">
+  <img src="docs/images/panel-overview.png" alt="面板概览：工具栏、汇总卡片、活跃热力图与按天 Token 趋势" width="720">
 </p>
 
 <p align="center">
@@ -42,10 +42,10 @@ DSH web 插件的用量统计面板：按天 Token 趋势、GitHub 风格活跃�
 
 ## 功能
 
-- **时间范围**：最近 7 / 14 / 30 / 90 天，或自定义起止日期
-- **汇总卡片**：Token 用量、会话数量（完成的 turn）、请求数量、活跃天数、平均缓存命中率、最常用模型
+- **时间范围**：今日、最近 3 / 7 / 14 / 30 / 90 天，或自定义起止日期；今日与最近 3 天按小时汇总，其余按天
+- **汇总卡片**：Token 用量（K/M/B 紧凑主值，下方带 `tokens` 单位的精确值）、会话数量（完成的 turn）、请求数量、活跃天数、平均缓存命中率（附缓存命中绝对量）、最常用模型
 - **52 周活跃热力图**：每日 token 用量的 GitHub 风格色阶，悬停查看当天明细；数据窗口固定为一年，列数随可用宽度自适应（窄窗口显示较少周数），图表始终左右撑满
-- **按天 Token 趋势**：堆叠柱状图叠加平滑的缓存命中率曲线（Catmull-Rom 样条），悬停查看各模型拆分；宽度随容器自适应，始终左右撑满
+- **Token 趋势**：堆叠柱状图叠加平滑的缓存命中率曲线（Catmull-Rom 样条），今日 / 最近 3 天按小时分桶、其余按天，悬停查看各模型拆分；宽度随容器自适应，始终左右撑满
 - **模型用量**：环形占比图 + 明细列表，前 10 名模型分色，其余折叠为可展开的 "Other" 明细；圆环直径随可用宽度在 200–280px 间自适应，并与右侧清单垂直居中
 - **供应商用量**：同一结构上移一层——前 5 名供应商分色（独立色板），其余归入灰色 "Other"；悬停任一侧联动另一侧，圆环悬停显示该供应商的全部模型用量；每行可展开该供应商的模型明细，"Other" 展开被折叠的供应商、其下再展开各自的模型（展开不影响圆环尺寸）
 - **底部信息栏增强**：面板底部可开启"精确缓存命中率"（会话底部信息栏的缓存命中率以两位小数显示，如 85.25%）、"会话 Token 明细"（底部信息栏显示总 Token、输入、输入（命中缓存）、输入（未命中缓存）与输出 Token，替代默认的"输入/输出"两项）与"流式吞吐速度"（输出过程中速度读数随每个增量实时刷新为估算值，某一步结束后回到会话累计的精确值；估算以 DeepSeek 公布的字符密度为先验，再用本会话已结算步骤的实测字符/Token 比率校准，读数取最近 2 秒内实际观测到的 Token 增量并做平滑（单帧抖动不会传导到显示），UI 迟发的积压不会被计入，一步中途静默时保持最后一次读数而不是回落到会话平均值）；开关位于"使用统计"面板底部，三个开关同款样式，切换即时生效
@@ -62,7 +62,7 @@ dsh plugin --profile <name> add dsh-usage-statistics-panel@latest
 
 插件挂载后有两个入口：左侧栏 **新会话** 下方的 **使用统计** 行（一眼可达），或在 **插件** 页里进入 **已安装** → `usage-statistics-panel` 的详情页（卡片与详情页的标题、描述、图标取自本包的 `locale/*.json` 与 `icon.svg`，随界面语言在简体 / 繁体 / 英文之间切换；完整包名仍在该详情页以代码行列出）。两处渲染的是同一个面板；**独立面板左上角有返回按钮**，点击即回到进入它之前的界面（会话、插件页或其它面板）。
 
-**兼容性**：本插件支持 DeepSeek Harness `>= 0.1.7-rc.1`；开发依赖对齐宿主 `0.1.7-rc.2`，并已在**正式版 `0.2.0-rc.2`** 与**预发布 `0.2.1-alpha.2`** 两个隔离实例上实测（面板出数、围栏四种路径）。V3 / V4 会话日志兼容由单测覆盖（V4 自 `0.2.0-rc.2` 起就是发布格式，`assistant/message.data.usage` 等采集点字段两版一致），历史回扫双路径（`0.1.2-rc.1` 的 `list`+`inspect` 与 `0.1.3-alpha.*` 起的 `list`+`open`+分页 `read`+`close`）保留。
+**兼容性**：本插件支持 DeepSeek Harness `>= 0.1.7-rc.1`；开发依赖对齐宿主 `0.1.7-rc.2`，并已在**正式版 `0.2.0-rc.2`**、**预发布 `0.2.1-alpha.2`** 与 **`0.2.1-rc.2`** 三个隔离实例上实测（面板出数、围栏四种路径）。V3 / V4 会话日志兼容由单测覆盖（V4 自 `0.2.0-rc.2` 起就是发布格式，`assistant/message.data.usage` 等采集点字段两版一致），历史回扫双路径（`0.1.2-rc.1` 的 `list`+`inspect` 与 `0.1.3-alpha.*` 起的 `list`+`open`+分页 `read`+`close`）保留。
 
 `/usage/api` 的信任围栏也按宿主代际取源：`0.2.1-alpha.2` 起官方把显式授权移到 `webStartup`、删除 `webRuntime`，并新增「接受监听端自身 bind 地址」；此前 `webRuntime.trustedHosts`（含绑定时采样的局域网地址）才是官方围栏接入的那一份。插件按 `webRuntime` → `webStartup` 的顺序读，并始终把 `webServer.host` 当作可接受的 bind 字面量（未指定地址拼写除外），两代都与官方同语义放行/拒绝。
 
@@ -100,7 +100,7 @@ pnpm build       # tsc declarations + tsdown (host ESM + 双通道 client bundle
 ## 设计与实现
 
 - **Host 半**（`src/`）：`collector`（事件订阅 + 回扫折叠）、`store`（`usage_history` storage-domain）、`query`（范围聚合，翻译自 reasonix 的 query.go）、`routes`（`/usage/api` fenced JSON 路由，信任围栏与 `/api` 网关一致）
-- **Client 半**（`src/client/`）：`UsageStatsPanel.tsx`（手绘 SVG 图表，移植自 reasonix 面板 + Primer 配色）、`locales`（en / zh / zh-TW）、`api`（`/usage/api` fetch 封装）
+- **Client 半**（`src/client/`）：`UsageStatsPanel.tsx`（手绘 SVG 图表，移植自 reasonix 面板 + rank 色板）、`locales`（en / zh / zh-TW）、`api`（`/usage/api` fetch 封装）
 - **双通道打包**：`lib/client.js`（官方 profile 通道，bundle id = 包名）与 `lib/client-registry.js`（插件注册表通道，bundle id = manifest id）。harness 0.1.x 官方加载链只消费前者；后者为外部 registry 通道预留，当前无消费者
 - 详细设计见 [docs/design.md](docs/design.md)
 

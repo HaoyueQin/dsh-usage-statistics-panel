@@ -9,7 +9,7 @@
 <rect x="64" y="47" width="96" height="26" rx="13" fill="#4D6BFE"/>
 <text x="112" y="64.5" font-size="12" font-weight="600" letter-spacing=".8" fill="#fff" text-anchor="middle">DSH PLUGIN</text>
 <text x="64" y="111" font-size="35" font-weight="700" fill="#F0F6FC" textLength="470">DSH Usage Statistics Panel</text>
-<text x="64" y="141" font-size="15" fill="#8B949E">Daily token trends, a heatmap, and per-model / per-provider breakdowns</text>
+<text x="64" y="141" font-size="15" fill="#8B949E">Daily / hourly token trends · heatmap · model &amp; provider breakdowns</text>
 <text x="64" y="163" font-size="15" fill="#8B949E">Donuts sized to fit · fully local · its own page and rail row</text>
 <circle cx="70" cy="194" r="5" fill="#509FFF"/><circle cx="84" cy="194" r="5" fill="#6D9A73"/><circle cx="98" cy="194" r="5" fill="#D69159"/><circle cx="112" cy="194" r="5" fill="#B68CF5"/><circle cx="126" cy="194" r="5" fill="#E07DB2"/><circle cx="140" cy="194" r="5" fill="#55ADAD"/><circle cx="154" cy="194" r="5" fill="#CA7162"/><circle cx="168" cy="194" r="5" fill="#A2B15D"/><circle cx="182" cy="194" r="5" fill="#8179DE"/><circle cx="196" cy="194" r="5" fill="#E1BD5D"/>
 <text x="210" y="198.5" font-size="12" fill="#8B949E">10 model colours</text>

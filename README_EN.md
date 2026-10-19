@@ -18,9 +18,9 @@ English | [中文](README.md)
 [![Commit activity](https://img.shields.io/github/commit-activity/t/HaoyueQin/dsh-usage-statistics-panel)](https://github.com/HaoyueQin/dsh-usage-statistics-panel/graphs/commit-activity)
 [![Last commit](https://img.shields.io/github/last-commit/HaoyueQin/dsh-usage-statistics-panel)](https://github.com/HaoyueQin/dsh-usage-statistics-panel/commits)
 
-A usage statistics panel plugin for the DSH web UI: per-day token trend, a GitHub-style activity heatmap, a cache hit-rate curve, and two breakdowns — by model and by provider (donut + detail list each) — living on the plugin's own page inside the Plugins page, with its own row in the left rail.
+A usage statistics panel plugin for the DSH web UI: per-day / per-hour token trend, a GitHub-style activity heatmap, a cache hit-rate curve, and two breakdowns — by model and by provider (donut + detail list each) — living on the plugin's own page inside the Plugins page, with its own row in the left rail.
 
-All charts are hand-drawn SVG with no chart library; the palette uses GitHub Primer's data-viz two-set tokens (the top ten models and the top five providers each get a distinct rank colour, everything else collapses into a gray "Other" bucket) and adapts to the DSH theme.
+All charts are hand-drawn SVG with no chart library; colours are a fixed rank palette (`--dsw-chart-1..10` for the top ten models, `--dsw-provider-1..5` for the top five providers, everything else collapses into a gray "Other" bucket), lifted for the dark theme and tracking the DSH theme.
 
 <p align="center">
   <img src="docs/demo.svg" alt="demo: the Usage statistics row in the left rail lights up, then the panel fills in with the toolbar, cards, heatmap, trend and the model donut" width="720">
@@ -29,7 +29,7 @@ All charts are hand-drawn SVG with no chart library; the palette uses GitHub Pri
 ## Preview
 
 <p align="center">
-  <img src="docs/images/panel-overview.png" alt="Panel overview: summary cards, activity heatmap and daily token trend" width="720">
+  <img src="docs/images/panel-overview.png" alt="Panel overview: toolbar, summary cards, activity heatmap and daily token trend" width="720">
 </p>
 
 <p align="center">
@@ -42,10 +42,10 @@ All charts are hand-drawn SVG with no chart library; the palette uses GitHub Pri
 
 ## Features
 
-- **Time ranges**: last 7 / 14 / 30 / 90 days, or a custom from/to pair
-- **Summary cards**: token usage, sessions (completed turns), requests, active days, average cache hit-rate, top model
+- **Time ranges**: today, last 3 / 7 / 14 / 30 / 90 days, or a custom from/to pair; today and last 3 days bucket per hour, everything else per day
+- **Summary cards**: token usage (compact K/M/B headline with the exact count and its `tokens` unit underneath), sessions (completed turns), requests, active days, average cache hit-rate (with the absolute cached volume), top model
 - **52-week activity heatmap**: GitHub-style day cells, hover for the day's detail; the data window is a fixed year and the column count adapts to the available width (a narrow pane shows fewer weeks), so the chart always spans its container edge to edge
-- **Daily token trend**: stacked bars with a smooth cache hit-rate curve (Catmull-Rom), hover for the per-model breakdown; the plot spans the container width at any size
+- **Token trend**: stacked bars with a smooth cache hit-rate curve (Catmull-Rom), bucketed per hour for today / last 3 days and per day otherwise; hover for the per-model breakdown; the plot spans the container width at any size
 - **Model usage**: donut + detail list; the top ten models keep distinct colours, the tail collapses into an expandable "Other" row, and the ring's diameter adapts to the available width between 200 and 280px, centred against the list beside it
 - **Provider usage**: the same anatomy one dimension up — the top five providers keep distinct colours from their own palette, the tail collapses into a gray "Other" bucket, hovering either side lights the other, and the ring's hover tip lists every model that provider served. Each row expands (the Other bucket opens the providers it folded, and each of those opens its own models); expanding never resizes the ring
 - **Bottom-bar enhancements**: three switches at the bottom of the panel, all in the same framed style and applied instantly — "Precise cache hit rate" (two decimals, e.g. 85.25%), "Session token breakdown" (total, input, cached input, uncached input and output in place of the default input/output pair), and "Streaming throughput" (the speed reading refreshes to a live estimate on every stream delta and hands back to the session's exact figure once the step settles; the estimate starts from DeepSeek's published character density and is calibrated against the chars-per-token ratio measured from the session's own settled steps, and the live rate counts only the token growth actually observed inside the last 2 s and smooths it, so neither a backlog the UI delivered late nor one noisy frame moves the display, and a step that goes quiet holds its last reading instead of dropping back to the session average)
@@ -62,7 +62,7 @@ After mounting, **hard-refresh the browser** (Cmd/Ctrl+Shift+R): client-half cha
 
 Once mounted there are two ways in: the **Usage statistics** row in the left rail under New Session, or **Plugins** → **Installed** → `usage-statistics-panel` on its detail page (the card and the detail page take their title, description, and icon from this package's `locale/*.json` and `icon.svg`, following the interface language across Simplified Chinese, Traditional Chinese, and English; the full package name is still listed there as a code line). Both render the same panel. The standalone panel also carries a **back** control in its top-left corner, returning to whatever was selected before it — the Conversation, the Plugins page, or another plugin's panel.
 
-**Compatibility**: this plugin supports DeepSeek Harness `>= 0.1.7-rc.1`; dev dependencies track host `0.1.7-rc.2`, and the plugin has been exercised on isolated instances of both the **stable `0.2.0-rc.2`** and the **pre-release `0.2.1-alpha.2`** (panel data plus the four fence paths). V3 / V4 session-log compatibility is covered by unit tests (V4 has been the released format since `0.2.0-rc.2`, and the folded fields such as `assistant/message.data.usage` are identical across both). The dual-path backfill (`list`+`inspect` on `0.1.2-rc.1`, `list`+`open`+paged `read`+`close` from `0.1.3-alpha.*`) is retained.
+**Compatibility**: this plugin supports DeepSeek Harness `>= 0.1.7-rc.1`; dev dependencies track host `0.1.7-rc.2`, and the plugin has been exercised on isolated instances of the **stable `0.2.0-rc.2`**, the **pre-release `0.2.1-alpha.2`**, and **`0.2.1-rc.2`** (panel data plus the four fence paths). V3 / V4 session-log compatibility is covered by unit tests (V4 has been the released format since `0.2.0-rc.2`, and the folded fields such as `assistant/message.data.usage` are identical across both). The dual-path backfill (`list`+`inspect` on `0.1.2-rc.1`, `list`+`open`+paged `read`+`close` from `0.1.3-alpha.*`) is retained.
 
 The `/usage/api` trust fence reads its sources per host line too: from `0.2.1-alpha.2` the host moved the explicit authorities onto `webStartup`, deleted `webRuntime`, and began admitting the listener's own bind address; on the earlier lines the authoritative list is `webRuntime.trustedHosts` (the LAN literals sampled at bind time plus the invocation's authorities). The fence reads `webRuntime` then `webStartup`, and always admits `webServer.host` as a bind literal (unspecified spellings excepted), matching the official semantics on both lines.
 
@@ -98,7 +98,7 @@ pnpm build       # tsc declarations + tsdown (host ESM + dual-channel client bun
 ## Design & implementation
 
 - **Host half** (`src/`): `collector` (event subscription + backfill fold), `store` (the `usage_history` storage domain), `query` (range aggregation, a TS translation of the reasonix query.go), `routes` (the fenced `/usage/api` JSON routes, same trust fence as the `/api` gateway)
-- **Client half** (`src/client/`): `UsageStatsPanel.tsx` (hand-drawn SVG charts ported from the reasonix panel + Primer palette), `locales` (en / zh / zh-TW), `api` (the `/usage/api` fetch wrapper)
+- **Client half** (`src/client/`): `UsageStatsPanel.tsx` (hand-drawn SVG charts ported from the reasonix panel + the rank palette), `locales` (en / zh / zh-TW), `api` (the `/usage/api` fetch wrapper)
 - **Dual-channel bundles**: `lib/client.js` (official profile channel, bundle id = package name) and `lib/client-registry.js` (plugin-registry channel, bundle id = manifest id)
 - Full design notes: [docs/design.md](docs/design.md)
 

@@ -276,3 +276,121 @@ describe('rebuild action', () => {
     expect(screen.getByRole('button', { name: 'rebuild' })).toBeTruthy()
   })
 })
+
+/**
+ * The heatmap window (last year) is independent of the range preset, but its
+ * FETCH must not be: a request that dies once — a backend still booting, an
+ * auth race on first mount — leaves the grid at level-0, and before the fix
+ * nothing brought it back short of a full page reload, because `loadHeat` ran
+ * only from the mount effect while every other section healed on the next
+ * range switch. These tests pin the shared trigger chain (issue #15).
+ */
+describe('heatmap load path', () => {
+  /** A local calendar day `offset` days from today — always inside the
+   *  heatmap's 52-week window, so the year-long fetch has rows to paint. */
+  const dayAt = (offset: number): string => {
+    const d = new Date()
+    d.setDate(d.getDate() + offset)
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  }
+  const row = (day: string) => ({
+    day, total: 500, byModel: { 'p/m': 500 }, byProvider: { p: 500 },
+    requests: 1, turns: 0, cacheHit: 250, cacheMiss: 250,
+  })
+  const RANGE = {
+    from: dayAt(-2), to: dayAt(0), tokens: 1_000, requests: 2, turns: 0,
+    cacheHit: 500, cacheMiss: 500, activeDays: 2, topModel: 'p/m', topProvider: 'p',
+    granularity: 'day',
+    daily: [row(dayAt(-2)), row(dayAt(-1))],
+    models: [{ model: 'p/m', provider: 'p', tokens: 1_000, percent: 100 }],
+    providers: [{ provider: 'p', tokens: 1_000, percent: 100 }],
+  }
+
+  const ok = (value: unknown): Response =>
+    ({ ok: true, json: async () => ({ ok: true, value }) } as unknown as Response)
+  const settle = async (): Promise<void> => {
+    await act(async () => { await new Promise((r) => { setTimeout(r, 0) }) })
+  }
+  const heatCells = (container: HTMLElement): Element[] =>
+    [...container.querySelectorAll('svg[aria-label="heatmap"] rect')]
+  const blank = (cell: Element): boolean => (cell.getAttribute('class') ?? '').includes('heatLevel0')
+
+  it('re-reads the window after a failed first load, so the grid heals on the next range switch', async () => {
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
+    let heatCalls = 0
+    vi.stubGlobal('fetch', vi.fn(async (_url: string, init?: RequestInit) => {
+      const body = init?.body ? JSON.parse(init.body as string) : undefined
+      if (body?.range !== 'custom') return ok(RANGE) // the stats load
+      heatCalls += 1
+      if (heatCalls === 1) throw new TypeError('Failed to fetch') // backend not ready
+      return ok(RANGE)
+    }))
+    const { container } = render(<UsageStatsSection {...({ t } as UsageStatsSectionProps)} />)
+    await settle()
+
+    // First attempt died: every cell is blank.
+    expect(heatCells(container).length).toBeGreaterThan(0)
+    expect(heatCells(container).every(blank)).toBe(true)
+
+    fireEvent.click(screen.getByRole('button', { name: 'rangePreset.7' }))
+    await settle()
+
+    // The next stats load retries the window, and the cells paint.
+    expect(heatCalls).toBe(2)
+    expect(heatCells(container).some((cell) => !blank(cell))).toBe(true)
+    logged.mockRestore()
+  })
+
+  it('does not swallow a failed window request silently', async () => {
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
+    vi.stubGlobal('fetch', vi.fn(async (_url: string, init?: RequestInit) => {
+      const body = init?.body ? JSON.parse(init.body as string) : undefined
+      if (body?.range === 'custom') throw new TypeError('Failed to fetch')
+      return ok(RANGE)
+    }))
+    render(<UsageStatsSection {...({ t } as UsageStatsSectionProps)} />)
+    await settle()
+    expect(logged).toHaveBeenCalled()
+    logged.mockRestore()
+  })
+
+  it('reads the window exactly once per panel load, the refresh button included', async () => {
+    let heatCalls = 0
+    vi.stubGlobal('fetch', vi.fn(async (_url: string, init?: RequestInit) => {
+      const body = init?.body ? JSON.parse(init.body as string) : undefined
+      if (body?.range === 'custom') heatCalls += 1
+      return ok(RANGE)
+    }))
+    render(<UsageStatsSection {...({ t } as UsageStatsSectionProps)} />)
+    await settle()
+    expect(heatCalls).toBe(1)
+
+    fireEvent.click(screen.getByRole('button', { name: 'refresh' }))
+    await settle()
+    // The refresh already reloads the stats, and the heatmap rides that same
+    // chain — a second explicit call would double the request.
+    expect(heatCalls).toBe(2)
+  })
+
+  it('re-reads the window after a rebuild too', async () => {
+    let heatCalls = 0
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+      if (url === 'usage/api/reset') {
+        return ok({ running: false, total: 0, done: 0, scannedSessions: 0 })
+      }
+      const body = init?.body ? JSON.parse(init.body as string) : undefined
+      if (body?.range === 'custom') heatCalls += 1
+      return ok(RANGE)
+    }))
+    render(<UsageStatsSection {...({ t } as UsageStatsSectionProps)} />)
+    await settle()
+    expect(heatCalls).toBe(1)
+
+    fireEvent.click(screen.getByRole('button', { name: 'rebuild' }))
+    fireEvent.click(screen.getByRole('button', { name: 'rebuildConfirm' }))
+    await settle()
+    // The rebuild replays the store, so the year-long window must be read
+    // again on the same chain the stats reload uses.
+    expect(heatCalls).toBe(2)
+  })
+})

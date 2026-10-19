@@ -118,14 +118,15 @@ export function UsageStatsPanel({ t }: { t: Translator }): JSX.Element {
       const res = await fetchRange({ range: 'custom', from: heatWindow.from, to: heatWindow.to })
       if (heatGenRef.current !== generation) return
       setHeatDaily(res.daily)
-    } catch {
-      // The heatmap is auxiliary — a failed fetch just leaves the cells empty.
+    } catch (e) {
+      // The heatmap is auxiliary and must never block the panel, but it must
+      // not fail silently either: its window is fixed, so the first request
+      // that dies (a backend still booting, an auth race on mount) used to
+      // leave the grid at level-0 for the rest of the session. Log the
+      // failure; `load` retries the window on the next panel load.
+      console.error('[usage-stats] heatmap window request failed', e)
     }
   }, [heatWindow.from, heatWindow.to])
-
-  useEffect(() => {
-    void loadHeat()
-  }, [loadHeat])
 
   const load = useCallback(async () => {
     if (range === 'custom' && (!customFrom || !customTo)) return
@@ -140,13 +141,18 @@ export function UsageStatsPanel({ t }: { t: Translator }): JSX.Element {
       const res = await fetchRange(req)
       if (generationRef.current !== generation) return // stale response
       setStats(res)
+      // One trigger chain for both surfaces. The heatmap window does not
+      // follow `range`, so binding its fetch to the mount effect alone meant a
+      // single failed request left the grid blank until the user pressed
+      // refresh, while every other section healed on the next range switch.
+      void loadHeat()
     } catch (e) {
       if (generationRef.current !== generation) return
       setError(e instanceof UsageApiError ? e.message : String(e))
     } finally {
       if (generationRef.current === generation) setLoading(false)
     }
-  }, [range, customFrom, customTo])
+  }, [range, customFrom, customTo, loadHeat])
 
   useEffect(() => {
     void load()
@@ -178,16 +184,15 @@ export function UsageStatsPanel({ t }: { t: Translator }): JSX.Element {
     try {
       await rebuildStats()
       // The host wiped the rows and replayed the logs, so both surfaces the
-      // panel draws have to be read again: the range aggregate and the
-      // fixed-window heatmap.
+      // panel draws have to be read again — `load` re-reads the range
+      // aggregate and the heatmap window that rides on it.
       await load()
-      await loadHeat()
     } catch (e) {
       setError(e instanceof UsageApiError ? e.message : String(e))
     } finally {
       setRebuilding(false)
     }
-  }, [disarmRebuild, load, loadHeat])
+  }, [disarmRebuild, load])
 
   useEffect(() => disarmRebuild, [disarmRebuild])
 
@@ -350,7 +355,7 @@ export function UsageStatsPanel({ t }: { t: Translator }): JSX.Element {
             size="sm"
             variant="outline"
             className={css.refresh}
-            onClick={() => { void load(); void loadHeat() }}
+            onClick={() => { void load() }}
             disabled={loading}
           >
             {t('refresh')}

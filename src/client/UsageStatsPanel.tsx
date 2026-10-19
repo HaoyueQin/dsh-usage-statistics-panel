@@ -506,7 +506,7 @@ function StatCards({ stats, t }: { stats: UsageStatsRange; t: Translator }) {
     // The headline is the compact K/M/B form (the number a provider dashboard
     // shows); the exact, separator-formatted count stays underneath so the
     // precise figure is still readable at a glance.
-    { icon: Coins, label: t('tokens'), value: formatCompact(stats.tokens), hint: t('tokensHint'), sub: formatTokens(stats.tokens) },
+    { icon: Coins, label: t('tokens'), value: formatCompact(stats.tokens), hint: t('tokensHint'), sub: `${formatTokens(stats.tokens)} ${t('tokensUnit')}` },
     { icon: MessageSquare, label: t('sessions'), value: String(stats.turns) },
     { icon: MessagesSquare, label: t('requests'), value: String(stats.requests) },
     {

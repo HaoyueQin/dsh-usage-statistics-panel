@@ -30,6 +30,7 @@ export type UsageStatsKey =
   | 'loading'
   | 'tokens'
   | 'tokensHint'
+  | 'tokensUnit'
   | 'cachedTokens'
   | 'sessions'
   | 'requests'
@@ -97,6 +98,7 @@ export const en: Record<UsageStatsKey, string> = {
   rebuildHint: 'Rebuild the statistics from session logs: clear the local cache and replay every session. Use it when the figures look wrong.',
   loading: 'Loading',
   tokens: 'Token usage',
+  tokensUnit: 'tokens',
   tokensHint: 'Provider-visible total: uncached input + output + cached tokens',
   cachedTokens: 'cached',
   sessions: 'Sessions',
@@ -166,6 +168,7 @@ export const zh: Record<UsageStatsKey, string> = {
   rebuildHint: '按会话日志重建统计：清空本地统计缓存并重放全部会话。数字异常时使用。',
   loading: '加载中',
   tokens: 'Tokens 用量',
+  tokensUnit: 'tokens',
   tokensHint: '服务商总口径：未缓存输入 + 输出 + 缓存命中 token',
   cachedTokens: '缓存命中',
   sessions: '会话数量',
@@ -235,6 +238,7 @@ export const zhTW: Record<UsageStatsKey, string> = {
   rebuildHint: '依會話日誌重建統計：清空本機統計快取並重放全部會話。數字異常時使用。',
   loading: '載入中',
   tokens: 'Tokens 用量',
+  tokensUnit: 'tokens',
   tokensHint: '服務商總口徑：未快取輸入 + 輸出 + 快取命中 token',
   cachedTokens: '快取命中',
   sessions: '會話數量',

@@ -10,7 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { UsageStatsPanelPage, UsageStatsSection, type UsageStatsPanelPageProps, type UsageStatsSectionProps } from '../src/client/index.tsx'
 
-const t = ((key: string) => key) as unknown as UsageStatsSectionProps['t']
+const t = ((key: string) => (key === 'tokensUnit' ? 'tokens' : key)) as unknown as UsageStatsSectionProps['t']
 
 class ResizeObserverStub {
   observe(): void {}
@@ -114,13 +114,13 @@ describe('UsageStatsSection', () => {
     }))
     render(<UsageStatsSection {...({ t } as UsageStatsSectionProps)} />)
     await act(async () => { await new Promise((r) => { setTimeout(r, 0) }) })
-    expect(screen.getByText('12,345')).toBeTruthy()
+    expect(screen.getByText('12,345 tokens')).toBeTruthy()
     // The Tokens card leads with the compact form and repeats the exact count
     // underneath, so both readings are available at once.
     expect(screen.getByText('12.3K')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'rangePreset.7' }))
     await act(async () => { await new Promise((r) => { setTimeout(r, 0) }) })
-    expect(screen.getByText('12,345')).toBeTruthy()
+    expect(screen.getByText('12,345 tokens')).toBeTruthy()
     expect(screen.getByRole('button', { name: 'refresh' }).hasAttribute('disabled')).toBe(true)
     vi.unstubAllGlobals()
   })

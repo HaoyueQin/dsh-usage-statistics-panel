@@ -11,6 +11,34 @@
 // Shared with the host half (src/shared.ts has no Node/DOM types, so the
 // client bundle may import it at runtime).
 export { providerOf, modelNameOf, daysInRange as daysBetween } from '../shared.ts'
+import { modelNameOf } from '../shared.ts'
+
+/**
+ * Canonical model fingerprint used by the panel's merged model view.
+ *
+ * The usage store only knows the `provider/model` reference a call reported, so
+ * "the same model from another provider" can only be recognised by folding the
+ * parts of the name that providers vary. The rule is deliberately narrow:
+ *   1. drop the provider prefix (the part before the first slash);
+ *   2. strip a trailing `-free` edition tag and pure numeric build stamps
+ *      (`-1017`, `-20261017`), repeating until stable;
+ *   3. fold DeepSeek's generation segment: `deepseek-v4.1-flash` and
+ *      `deepseek-flash` both fingerprint to `deepseek-flash`.
+ * Everything else keeps its own name, so unrelated models never merge. The
+ * panel always shows the raw refs behind a merged row, so the assumption stays
+ * visible instead of silently rewriting the data.
+ */
+export function modelFingerprintOf(modelRef: string): string {
+  let name = modelNameOf(modelRef)
+  for (;;) {
+    const next = name.replace(/-free$/i, '').replace(/-\d{3,}$/, '')
+    if (next === name) break
+    name = next
+  }
+  const versioned = /^(deepseek)-v\d+(?:\.\d+)*(-.+)$/i.exec(name)
+  if (versioned) name = `${versioned[1]}${versioned[2]}`
+  return name
+}
 
 /** Exact token counts with thousands separators — no 万/亿/k/M units, the
  *  user reads the precise number (long values shrink to fit via FitText).

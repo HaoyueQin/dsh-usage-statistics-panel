@@ -29,6 +29,21 @@ describe('resolveRange', () => {
     expect(resolveRange({ range: 'today' }, now)).toEqual({ from: '2026-08-20', to: '2026-08-20' })
   })
 
+  it('preset month runs from the 1st of the current month through today', () => {
+    // August 2026 → 2026-08-01..2026-08-20, NOT the trailing 30 days ('30').
+    expect(resolveRange({ range: 'month' }, now)).toEqual({ from: '2026-08-01', to: '2026-08-20' })
+  })
+
+  it('preset month on the 1st covers that single day', () => {
+    const firstOfMonth = new Date(2026, 8, 1, 9, 0, 0)
+    expect(resolveRange({ range: 'month' }, firstOfMonth)).toEqual({ from: '2026-09-01', to: '2026-09-01' })
+  })
+
+  it('preset month starts at the 1st even when today is the last day', () => {
+    const lastOfFebruary = new Date(2026, 1, 28, 23, 0, 0)
+    expect(resolveRange({ range: 'month' }, lastOfFebruary)).toEqual({ from: '2026-02-01', to: '2026-02-28' })
+  })
+
   it('preset 3 days covers today and the two days before', () => {
     expect(resolveRange({ range: '3' }, now)).toEqual({ from: '2026-08-18', to: '2026-08-20' })
   })
@@ -93,7 +108,7 @@ describe('granularityOf', () => {
   })
 
   it('keeps every other range (including custom) per day', () => {
-    for (const range of ['7', '14', '30', '90', 'custom', '', undefined]) {
+    for (const range of ['7', '14', '30', '90', 'month', 'custom', '', undefined]) {
       expect(granularityOf(range)).toBe('day')
     }
   })

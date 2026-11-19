@@ -32,6 +32,7 @@ llm/stream 瀑布 (purpose='session-title')       ← 不在会话日志中，�
 - **游标**：实时监听把每个触达过的会话 id 合批写入持久化游标（`markSeenSessions`，microtask 合批）。这是重启安全的关键：harness 的 `SessionStore.list()` 只返回内存中活跃的会话，会话释放后其样本只存在于 store 行和持久化日志里——没有游标，下次启动的回扫会把日志重放在已记录的行上，全部翻倍。
 - **回扫**：首次启用时 `sessionPersistence.list()` 枚举全部会话（当前活跃会话除外），`inspect(id)` 读取完整事件日志（zstd 由后端内部处理），并发 4 逐会话回放——每个会话使用全新的独立 fold。单个会话读取失败不中断整体回扫（status.error 记录）；游标按批（32 个/次）串行写回，避免并发读改写丢 id。每个目标重放前复查一次存活状态：快照之后恢复活跃的会话归实时监听所有，跳过重放。
 - **旧库重建**：storage-domain 打开时（store 构造链内）检测"有行但游标为空"的 ≤0.1.1 旧库，一次性清空行让回扫重建——判定发生在任何 record/mark 之前，无顺序竞态。
+- **拆除安全**（issue #24）：`ctx.effect` 的清理器只调 `abortQuietly`——`AbortController.abort()` 会**同步**派发信号监听器，监听器抛出的异常会逃出 disposer、被 cordis 记为 fatal load failure 并把宿主带下去，而这把 abort 的唯一目的只是取消扫描。启动扫描（日回填 → 一次性小时回填）走 `runBootScan`：rejection 折叠到 `status.error`（面板已读、下次启动重试），不再成为未处理拒绝。
 
 ### store.ts — 持久化
 
@@ -62,7 +63,7 @@ Token 桶语义：`inputTokens` 是 uncached input（即缓存 miss 侧），`ca
 
 `webServer.register({ kind: 'prefix', path: '/usage/api', handler })`：
 
-- `POST /usage/api/range`：`{ range, from?, to? }` → `UsageStatsRange`；`range` 取值 `today | 3 | 7 | 14 | 30 | 90 | custom`，`today`/`3` 读小时表并置 `granularity: 'hour'`，其余一律按天（`custom` 不做隐式粒度推断）；custom 范围做语义日期校验（拒绝 `2026-13-45` 这类正则可过但日历不存在的形状）并限制跨度 ≤366 天（400）
+- `POST /usage/api/range`：`{ range, from?, to? }` → `UsageStatsRange`；`range` 取值 `today | month | 3 | 7 | 14 | 30 | 90 | custom`，`today`/`3` 读小时表并置 `granularity: 'hour'`，其余一律按天（`custom` 不做隐式粒度推断）；`month` 是本月的 1 号到今天的**日历月**，与滚动 30 天的 `30` 区分开；custom 范围做语义日期校验（拒绝 `2026-13-45` 这类正则可过但日历不存在的形状）并限制跨度 ≤366 天（400）
 - `POST /usage/api/status`：`BackfillStatus`
 - 信任围栏与 `/api` 网关同源同语义（dsh-client-connection `isTrustedApiRequest`）：① Host 头须为 loopback、本监听端自身的 bind 地址（`webServer.host`，任意端口，剥 `%zone`；未指定地址拼写一律不认），或 trust 列表中的授权（无端口条目匹配任意端口，带端口条目精确匹配 host:port）；② `sec-fetch-site: cross-site` 一律拒绝；③ 携带 Origin 时必须与 Host 同源（"null" 视为不透明 origin 拒绝；Host 放到 Origin 的 scheme 下再归一）。任一不满足即 403。
 - trust 列表与协议按宿主代际取源。`0.2.1-alpha.2` 起：`webStartup.trustedHosts`（仅 CLI 显式授权）+ `webServer.protocol`；该版还删除了 `webRuntime` 服务，并把「接受 bind 地址」独立出来。此前：`webRuntime.trustedHosts` 才是官方 fence 实际接入的那一份（`web-runtime` 行在绑定后采样局域网字面量并接上调用参数，是 `webStartup` 的超集），故这里 **webRuntime 优先、webStartup 兜底**。两个 provider 都用 `ctx.get()` 探测：直接读一个宿主未注册的服务属性会被 cordis 的 traced Context 抛错，而该抛错发生在 handler 的围栏调用里，会逃出 handler 被 webserver 兜底成空 400（本 issue 的现象）。
@@ -75,7 +76,13 @@ Token 桶语义：`inputTokens` 是 uncached input（即缓存 miss 侧），`ca
 
 图标资产两处都按宿主风格校准（issue #12）：侧栏行的 `stats-icon.tsx` 用 lucide `BarChart3`，但线宽取 1.5 而非 lucide 默认的 2——24 网格缩到宿主的 16px 格，2 是 1.33px，比官方面板行（16 网格 stroke 1，`ICON_REGULAR_STROKE`）重三分之一，1.5 恰为 1px；插件卡 `icon.svg` 的命中率趋势线则改成只含两个拐点的折线（起点 + 两个拐点 + 终点），因为 36px 画布上原三段贝塞尔的起伏只剩一两像素，读作无意义的扭曲。
 
-范围选择器提供 今日 / 最近 3 天 / 7 / 14 / 30 / 90 天 / 自定义（默认 30 天）。前两者驱动小时粒度趋势：标题切到「按小时 Token 趋势」，横轴 0 点显示日期、其余显示 `HH:00`，抽稀沿用既有的 `labelEvery`；统计卡片、热力图、模型/供应商图表的口径不变，`activeDays` 始终按天去重。
+范围选择器提供 今日 / 当月 / 最近 3 天 / 7 / 14 / 30 / 90 天 / 自定义（默认 30 天）。前两者驱动小时粒度趋势：标题切到「按小时 Token 趋势」，横轴 0 点显示日期、其余显示 `HH:00`，抽稀沿用既有的 `labelEvery`；统计卡片、热力图、模型/供应商图表的口径不变，`activeDays` 始终按天去重。**当月**在客户端按下标紧邻今日，宿主侧解析为本月 1 号至今天。
+
+### stat-dialog.ts — 锚定定位的跨代兼容
+
+两个统计胶囊各持一个 trigger 锚定的浮层，定位沿用官方 `ui-primitives` 的 `useAnchoredPosition`。`0.2.2-rc.2` 把该函数从导出面移除（符号仍在应用内部，不在模块公共面），且没有替代 hook——`useAnchoredMaxHeight` 只钳高度、不能定位——静态调用于是在每次渲染时抛 `is not a function`，`conversation.composer.dock` 槽位跟着崩（issue #25 / #24）。插件把该函数**按属性读取**（`import * as primitives` + 一次类型化取值，而不是按名导入：按名导入在最新线上连类型检查都过不去），并在**模块加载时解析一次**实现：导出仍是函数就用官方的（`0.2.2-rc.1` 及以前），否则用本地移植版 `useLocalAnchoredPosition`（同一算法：按锚点视口矩形定位、面板有真实尺寸后做视口钳制、滚动 / 缩放 / 面板尺寸变化重排）。解析放在模块作用域而不是渲染期判断，hook 顺序对 React 而言终生不变。一份构建同时服务新旧两代，`lib/types` 的类型声明按旧宿主（`0.1.7-rc.2`）编译，本地接口与官方 `AnchoredPositionOptions` 逐字段对齐。
+
+同一代沟还牵出 `store.ts` 的一处边界：`0.2.2` 线的 `@deepseek-ai/dsh-storage-domain` 把 zod 钉在精确补丁号上，而本包声明 `^4.4.3`，安装后树里出现**两份 zod**——两份的泛型互不 assignable（`toJSONSchema` 的参数逆变），但运行时校验的对象结构完全一致。所以 `defineDomain` 的 global schema 与 `domainTable` 的两张表只在交出去的那一刻转型（`DomainGlobalSchema` / `DomainRecordSchema<V>` 两个别名，取自 storage-domain 自己的签名），既不钉死自己的 zod、也不改锁文件；CI 的 `newest-surface` 任务就是拿最新线复验这两处转型仍然够用。
 
 ### index.tsx — 主面板的返回控制
 

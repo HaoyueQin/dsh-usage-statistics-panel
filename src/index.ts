@@ -54,6 +54,40 @@ export function _resetSharedStoreForTests(): void {
   delete (globalThis as unknown as Record<string, unknown>)[STORE_KEY]
 }
 
+/**
+ * Abort a controller without letting a throwing listener escape.
+ *
+ * `AbortController.abort()` dispatches the signal's listeners SYNCHRONOUSLY, so
+ * a listener that throws surfaces out of `abort()` itself. Called from a cordis
+ * disposer, that throw is reported as a FATAL host load failure — "dsh desktop
+ * host exited with 1 / DOMException [AbortError]" on every plugin reload or
+ * quit (issue #24). Cancelling the scan is all the caller wants; a listener's
+ * failure must never take the host down with the plugin.
+ * @param controller - the controller to abort, or null when nothing is in flight.
+ */
+export function abortQuietly(controller: AbortController | null): void {
+  if (controller === null) return
+  try {
+    controller.abort()
+  } catch {
+    // The scan is cancelled either way; the throw came from a listener.
+  }
+}
+
+/**
+ * Run a boot task without letting its rejection become an unhandled rejection.
+ *
+ * The boot scan (day backfill, then the one-time hour backfill) runs
+ * fire-and-forget behind this plugin's effect; before this guard a failed scan
+ * left an unhandled promise rejection behind, which cordis also treats as a
+ * load failure (issue #24).
+ * @param run - the boot sequence to run.
+ * @param onError - receives the rejection; must not throw.
+ */
+export function runBootScan(run: () => Promise<void>, onError: (error: unknown) => void): void {
+  void run().catch(onError)
+}
+
 function sharedStore(storageDomain: Context['storageDomain']): UsageStore {
   const g = globalThis as unknown as { [STORE_KEY]?: UsageStore }
   const existing = g[STORE_KEY]
@@ -103,8 +137,15 @@ export function apply(ctx: Context, config: UsageStatsConfig = {}): void {
   // rescan share this controller slot, so a rebuild cancels the scan before
   // it and fiber teardown aborts whatever is in flight.
   let scanController: AbortController | null = null
+  /** Cancel the scan in flight, if any (see {@link abortQuietly} for why the
+   *  abort is guarded). */
+  const abortScan = (): void => {
+    const controller = scanController
+    scanController = null
+    abortQuietly(controller)
+  }
   const rescan = async (): Promise<void> => {
-    scanController?.abort()
+    abortScan()
     const controller = new AbortController()
     scanController = controller
     await store.readyPromise()
@@ -192,7 +233,7 @@ export function apply(ctx: Context, config: UsageStatsConfig = {}): void {
       boundaries.set(handle.id, typeof old === 'number' ? old : -1)
     }
     await store.markHoursLiveSequences(boundaries)
-    scanController?.abort()
+    abortScan()
     const controller = new AbortController()
     scanController = controller
     await collector.backfillHours(ctx.sessionPersistence, ctx.sessions, controller.signal)
@@ -200,12 +241,22 @@ export function apply(ctx: Context, config: UsageStatsConfig = {}): void {
 
   ctx.effect(() => {
     collector.start()
-    void (async () => {
+    // The boot scan rides this effect and must not leave an unhandled
+    // rejection behind (issue #24): record the failure on the status the panel
+    // already reads — a failed pass retries on the next boot — and keep the
+    // fiber alive.
+    runBootScan(async () => {
       await rescan()
       await ensureHourHistory()
-    })()
+    }, (error: unknown) => {
+      if (collector.status.error === undefined) {
+        collector.status.error = `boot scan: ${error instanceof Error ? error.message : String(error)}`
+      }
+      const logger = (ctx as unknown as { logger?: { warn(message: unknown): void } }).logger
+      logger?.warn(error instanceof Error ? error : new Error(String(error)))
+    })
     return () => {
-      scanController?.abort()
+      abortScan()
     }
   }, 'dsh-usage-statistics-panel: collector')
 }

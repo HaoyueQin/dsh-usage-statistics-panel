@@ -67,6 +67,12 @@ export function resolveRange(req: UsageStatsRequest, now = new Date()): { from: 
     case 'today': {
       return { from: day(toDate), to: day(toDate) }
     }
+    case 'month': {
+      // The current CALENDAR month so far — the 1st through today — not the
+      // trailing 30 days the '30' preset gives (issue #23).
+      const from = new Date(toDate.getFullYear(), toDate.getMonth(), 1)
+      return { from: day(from), to: day(toDate) }
+    }
     case '3': {
       const from = new Date(toDate)
       from.setDate(from.getDate() - 2)

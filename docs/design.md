@@ -90,6 +90,7 @@ Token 桶语义：`inputTokens` 是 uncached input（即缓存 miss 侧），`ca
 - **热力图**：数据窗口固定为一年（52 周）；宽度求解优先把空余宽度用在**更多周数**上，放不下整个窗口时改裁最早的列，两种情形都精确撑满容器；5 级色阶由 brand accent 经 color-mix 派生
 - **趋势图**：堆叠柱状图按全范围用量排名着色（模型颜色逐日稳定），叠加 Catmull-Rom 命中率曲线；最窄时裁剪最早天数，超过 180 天显示提示
 - **模型图 / 供应商图**：两者同一解剖——左侧环形占比图（`Donut`）+ 右侧明细列表。模型取前 10 名分色、供应商取前 5 名分色，其余折叠为灰色 "Other"。圆环直径由所在行的实测宽度求解（`resolveDonutSize`，钳在 200–280px），既随容器变化，又保证右侧明细列表不低于它的 flex 基准宽度；圆环与其列表在同一行内**垂直居中**（`align-items: center`），列表高度从不反过来决定图表尺寸。每段可聚焦（tabIndex + role="img" + aria-label + focus/hover 出 tooltip）——分段数量有界（≤11），而热力图 ~180 个格子不适合逐格进 tab 序，故热力图与趋势图保持鼠标悬停（SVG 整体带 role="img" 标注）
+- **模型分组**：工具栏在「按来源 / 按模型」之间切换。宿主只记录 `provider/model`，合并完全在客户端派生：`modelFingerprintOf` 去掉 provider 前缀、`-free` 与纯数字构建号，并把 `deepseek-v4.1-flash` 这类版本段折到 `deepseek-flash`，再按指纹重聚合 `models` 与每日 `byModel`；被合并的行保留 `sources`（原始引用及其用量），圆环与行悬停可查。供应商区块与宿主数据完全不参与合并，选择写 localStorage
 - **展开层级**：模型区只有 "Other" 行可展开（列出被折叠的模型）；供应商区两级——排名行展开该供应商的模型，"Other" 展开被折叠的供应商（每行带该供应商的模型数），这些行再展开各自的模型。展开容器是行的**兄弟节点**且不带行类名；圆环的直径只依赖行的**宽度**，故展开任一行都不会改变图表尺寸
 - **色板**：`--dsw-chart-1..10` + `--dsw-chart-other`（模型）、`--dsw-provider-1..5` + `--dsw-provider-other`（供应商独立色板，供应商不穿模型色），light/dark 两套（CSS `@media (prefers-color-scheme)`），色值经 color-mix 向底色柔化
 

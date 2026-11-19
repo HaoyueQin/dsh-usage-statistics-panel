@@ -26,7 +26,7 @@ import type { DailyTokenUsage, ModelTokenUsage, ProviderTokenUsage, UsageStatsRa
 import { fetchRange, rebuildStats, UsageApiError } from './api.ts'
 import { ChartTip } from './ChartTip.tsx'
 import { Donut, useDonutSize, type DonutSegment } from './Donut.tsx'
-import { formatTokens, formatCompact, formatPercent, cacheRate, cacheRateText, daysBetween, localDay, indexOfDay, bucketAxisLabel, bucketTitle, providerOf, modelNameOf, smoothPath, niceTicks } from './format.ts'
+import { formatTokens, formatCompact, formatPercent, cacheRate, cacheRateText, daysBetween, localDay, indexOfDay, bucketAxisLabel, bucketTitle, providerOf, modelNameOf, modelFingerprintOf, smoothPath, niceTicks } from './format.ts'
 import type { UsageStatsKey } from './locales.ts'
 import type { UsageStatsTranslator } from './index.tsx'
 import { statsLineState } from './stats-line-state.ts'
@@ -69,7 +69,14 @@ const NO_KEYS: ReadonlySet<string> = new Set()
 /** Grouped daily rows: the top models stay individual, the tail collapses
  *  into the OTHER_MODEL bucket with the breakdown kept for tooltips. */
 type GroupedDaily = DailyTokenUsage & { otherByModel: Record<string, number> }
-type GroupedModel = ModelTokenUsage & { items?: ModelTokenUsage[] }
+type GroupedModel = ModelTokenUsage & { items?: ModelTokenUsage[]; sources?: ModelTokenUsage[] }
+/** How the model dimension is grouped: one row per raw `provider/model`
+ *  reference (the host's own view), or one row per model fingerprint with the
+ *  providers that served it folded behind the row. */
+type ModelGrouping = 'source' | 'model'
+
+/** localStorage key for the model-grouping preference. */
+const GROUPING_KEY = 'dsh-usage.grouping'
 /** A provider folded into the aggregated Other bucket, carrying the models it
  *  served so its own row can open that breakdown. */
 type FoldedProvider = ProviderTokenUsage & { models: ModelTokenUsage[] }
@@ -98,6 +105,24 @@ export function UsageStatsPanel({ t }: { t: Translator }): JSX.Element {
   const [stats, setStats] = useState<UsageStatsRange | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  // Model grouping survives reloads: the preference is a view choice, not
+  // data, so localStorage is the right home for it (no host round-trip).
+  const [grouping, setGrouping] = useState<ModelGrouping>(() => {
+    try {
+      return window.localStorage.getItem(GROUPING_KEY) === 'model' ? 'model' : 'source'
+    } catch {
+      return 'source'
+    }
+  })
+  const chooseGrouping = useCallback((next: ModelGrouping) => {
+    setGrouping(next)
+    try {
+      window.localStorage.setItem(GROUPING_KEY, next)
+    } catch {
+      // A blocked localStorage must not break the toggle; the view still
+      // changes for this session.
+    }
+  }, [])
   const generationRef = useRef(0)
   // The panel bounds the chart tooltips: a tip must never leave the panel
   // even when the hovered cell sits near its edge.
@@ -196,6 +221,45 @@ export function UsageStatsPanel({ t }: { t: Translator }): JSX.Element {
 
   useEffect(() => disarmRebuild, [disarmRebuild])
 
+  // The model dimension in the merged view: one row per fingerprint, carrying
+  // every raw `provider/model` reference that folded into it. `null` means the
+  // host's own per-source view is in force.
+  const mergedView = useMemo<{ models: ModelTokenUsage[]; daily: DailyTokenUsage[]; sources: Map<string, ModelTokenUsage[]> } | null>(() => {
+    if (!stats || grouping === 'source') return null
+    const totals = new Map<string, number>()
+    const sources = new Map<string, ModelTokenUsage[]>()
+    for (const m of stats.models) {
+      const key = modelFingerprintOf(m.model)
+      totals.set(key, (totals.get(key) ?? 0) + m.tokens)
+      const list = sources.get(key)
+      if (list === undefined) sources.set(key, [m])
+      else list.push(m)
+    }
+    const models: ModelTokenUsage[] = [...totals].map(([model, tokens]) => ({
+      model,
+      // Merged rows have no single provider; the row shows the source count
+      // instead (see ModelUsage).
+      provider: '',
+      tokens,
+      percent: stats.tokens > 0 ? (tokens / stats.tokens) * 100 : 0,
+    })).sort((a, b) => b.tokens - a.tokens)
+    const daily: DailyTokenUsage[] = stats.daily.map((d) => {
+      const byModel: Record<string, number> = {}
+      for (const [ref, tokens] of Object.entries(d.byModel)) {
+        const key = modelFingerprintOf(ref)
+        byModel[key] = (byModel[key] ?? 0) + tokens
+      }
+      return { ...d, byModel }
+    })
+    return { models, daily, sources }
+  }, [stats, grouping])
+  const viewModels = mergedView?.models ?? stats?.models ?? []
+  const viewDaily = mergedView?.daily ?? stats?.daily ?? []
+  const sourcesOf = useCallback(
+    (model: string): ModelTokenUsage[] | undefined => mergedView?.sources.get(model),
+    [mergedView],
+  )
+
   // A model's colour is its TOKEN rank (the host returns `models` sorted by
   // token volume), matching reasonix: rank 1..10 take --dsw-chart-1..10 and the
   // aggregated tail is the gray --dsw-chart-other. First-seen order would
@@ -204,18 +268,18 @@ export function UsageStatsPanel({ t }: { t: Translator }): JSX.Element {
   // `stats.models`, never in the daily walk.
   const colorForModel = useCallback((model: string): string => {
     if (model === OTHER_MODEL) return OTHER_COLOR
-    const slot = (stats?.models ?? []).findIndex((m) => m.model === model)
+    const slot = viewModels.findIndex((m) => m.model === model)
     const rank = Math.min(slot < 0 ? 0 : slot, TOP_MODELS - 1) + 1
     return `var(--dsw-chart-${rank})`
-  }, [stats])
+  }, [viewModels])
 
   // Top-10 grouping: models beyond the top ten by token volume collapse into
   // the OTHER_MODEL bucket for the bar and the daily stacks; the per-day
   // breakdown stays available for the tooltip.
   const groupedStats = useMemo<{ models: GroupedModel[]; daily: GroupedDaily[] } | null>(() => {
     if (!stats) return null
-    const top = stats.models.slice(0, TOP_MODELS)
-    const rest = stats.models.slice(TOP_MODELS)
+    const top = viewModels.slice(0, TOP_MODELS)
+    const rest = viewModels.slice(TOP_MODELS)
     const topSet = new Set(top.map((m) => m.model))
     const models: GroupedModel[] = rest.length > 0
       ? [
@@ -229,7 +293,7 @@ export function UsageStatsPanel({ t }: { t: Translator }): JSX.Element {
           },
         ]
       : top
-    const daily: GroupedDaily[] = stats.daily.map((d) => {
+    const daily: GroupedDaily[] = viewDaily.map((d) => {
       const otherByModel: Record<string, number> = {}
       const byModel: Record<string, number> = {}
       for (const [m, v] of Object.entries(d.byModel)) {
@@ -241,7 +305,7 @@ export function UsageStatsPanel({ t }: { t: Translator }): JSX.Element {
       return { ...d, byModel, otherByModel }
     })
     return { models, daily }
-  }, [stats])
+  }, [stats, viewModels, viewDaily])
 
   // Provider colours are the provider's own rank — a palette separate from the
   // model series, so a provider never wears a model's hue.
@@ -290,6 +354,18 @@ export function UsageStatsPanel({ t }: { t: Translator }): JSX.Element {
 
   const trendDaily = groupedStats?.daily ?? []
   const trendModels = groupedStats?.models ?? []
+
+  // The Top-model card follows the model dimension: in the merged view it
+  // shows the fingerprint and how many sources fed it; otherwise the raw
+  // reference's provider.
+  const topCard = viewModels[0]
+  const topCardSources = topCard ? sourcesOf(topCard.model) ?? [] : []
+  const topCardName = topCard ? topCard.model : stats?.topModel ?? ''
+  const topCardProvider = topCard
+    ? topCardSources.length > 1
+      ? t('sources', { n: topCardSources.length })
+      : providerOf(topCardSources[0]?.model ?? topCard.model)
+    : providerOf(stats?.topModel ?? '')
 
   // The rebuild button's label: its idle name, the armed confirm, or the
   // in-flight state (the ellipsis is glued on here, the way the loading
@@ -346,6 +422,30 @@ export function UsageStatsPanel({ t }: { t: Translator }): JSX.Element {
             />
           </div>
         )}
+        {/* Model grouping: the host ranks raw `provider/model` references, so
+            the same model served by several providers would otherwise occupy
+            one row and one legend entry each. "By model" folds them onto one
+            fingerprint row and keeps the sources in the hover tip. */}
+        <div className={css.group} role="group" aria-label={t('groupBy')} title={t('groupByHint')}>
+          <Button
+            size="sm"
+            variant="ghost"
+            className={clsx(css.segItem, grouping === 'source' && css.segActive)}
+            aria-pressed={grouping === 'source'}
+            onClick={() => { chooseGrouping('source') }}
+          >
+            {t('groupBySource')}
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            className={clsx(css.segItem, grouping === 'model' && css.segActive)}
+            aria-pressed={grouping === 'model'}
+            onClick={() => { chooseGrouping('model') }}
+          >
+            {t('groupByModel')}
+          </Button>
+        </div>
         {/* The two toolbar actions are one flex item, not two: the toolbar
             wraps, and a pair that wrapped apart would strand the rebuild
             button on a line of its own. The container owns the trailing auto
@@ -384,10 +484,10 @@ export function UsageStatsPanel({ t }: { t: Translator }): JSX.Element {
           refresh never blanks the whole data area. */}
       {stats && (
         <>
-          <StatCards stats={stats} t={t} />
+          <StatCards stats={stats} topModel={topCardName} topProvider={topCardProvider} t={t} />
           <Heatmap daily={heatDaily} from={heatWindow.from} to={heatWindow.to} t={t} panelRef={panelRef} />
           <DailyTrend models={trendModels} daily={trendDaily} granularity={stats?.granularity ?? 'day'} t={t} colorForModel={colorForModel} panelRef={panelRef} />
-          <ModelUsage models={trendModels} t={t} colorForModel={colorForModel} panelRef={panelRef} />
+          <ModelUsage models={trendModels} t={t} colorForModel={colorForModel} panelRef={panelRef} grouping={grouping} sourcesOf={sourcesOf} />
           <ProviderUsage providers={groupedProviders ?? []} t={t} colorForProvider={colorForProvider} panelRef={panelRef} />
           {stats.to && (
             <div className={css.foot}>
@@ -499,7 +599,7 @@ function StatsLineOptions({ t }: { t: Translator }) {
   )
 }
 
-function StatCards({ stats, t }: { stats: UsageStatsRange; t: Translator }) {
+function StatCards({ stats, topModel, topProvider, t }: { stats: UsageStatsRange; topModel: string; topProvider: string; t: Translator }) {
   const cards: Array<{ icon: typeof Coins; label: string; value: string; sm?: boolean; wrap?: boolean; hint?: string; modelRef?: boolean; sub?: string }> = [
     // The headline is provider-inclusive (uncached input + output + cached
     // tokens) — the number a provider dashboard reports for the same calls.
@@ -524,7 +624,7 @@ function StatCards({ stats, t }: { stats: UsageStatsRange; t: Translator }) {
     // between them. The model sits last because it carries the longest text —
     // the model name over its provider — and the row's end is where that has
     // the most room before FitText would have to shrink it.
-    { icon: Cpu, label: t('topModel'), value: stats.topModel || '—', hint: t('topModelHint'), modelRef: true },
+    { icon: Cpu, label: t('topModel'), value: topModel || '—', hint: t('topModelHint'), modelRef: true },
   ]
   return (
     <div className={css.cards}>
@@ -539,10 +639,10 @@ function StatCards({ stats, t }: { stats: UsageStatsRange; t: Translator }) {
             // line one, provider on line two in the muted small style — not
             // the raw "provider/model" ref.
             <div className={clsx(css.cardValue, css.cardValueSm, css.cardModelLines)}>
-              {stats.topModel ? (
+              {topModel ? (
                 <>
-                  <span className={css.modelName}>{modelNameOf(stats.topModel)}</span>
-                  <span className={css.modelProvider}>{providerOf(stats.topModel)}</span>
+                  <span className={css.modelName}>{modelNameOf(topModel)}</span>
+                  <span className={css.modelProvider}>{topProvider}</span>
                 </>
               ) : '—'}
             </div>
@@ -942,8 +1042,8 @@ function DailyTrend({ models, daily, granularity, t, colorForModel, panelRef }: 
 
 // ── Section 6: per-model ring + list ────────────────────────────────────
 
-function ModelUsage({ models, t, colorForModel, panelRef }: { models: GroupedModel[]; t: Translator; colorForModel: (m: string) => string; panelRef: RefObject<HTMLDivElement | null> }) {
-  const [tip, setTip] = useState<{ model: string; tokens: number; percent: number; anchor: Element; items?: ModelTokenUsage[] } | null>(null)
+function ModelUsage({ models, t, colorForModel, panelRef, grouping, sourcesOf }: { models: GroupedModel[]; t: Translator; colorForModel: (m: string) => string; panelRef: RefObject<HTMLDivElement | null>; grouping: ModelGrouping; sourcesOf: (m: string) => ModelTokenUsage[] | undefined }) {
+  const [tip, setTip] = useState<{ model: string; tokens: number; percent: number; anchor: Element; items?: ModelTokenUsage[]; sources?: ModelTokenUsage[] } | null>(null)
   const [hover, setHover] = useState<string | null>(null)
   const [expandedOther, setExpandedOther] = useState(false)
   // The ring's diameter follows the row's width, so the list keeps its own
@@ -965,13 +1065,20 @@ function ModelUsage({ models, t, colorForModel, panelRef }: { models: GroupedMod
   }))
   const total = models.reduce((sum, m) => sum + m.tokens, 0)
 
+  // The muted line under a model name: the provider in the per-source view,
+  // the source count (or the single folded provider) in the merged view.
+  const subtitleOf = (model: string): string => {
+    const list = grouping === 'model' ? sourcesOf(model) ?? [] : []
+    return list.length > 1 ? t('sources', { n: list.length }) : providerOf(list[0]?.model ?? model)
+  }
+
   // A ring segment and its list row drive the same highlight; only the
   // segment carries an anchor, so only it raises the tooltip.
   const highlight = (key: string | null, anchor?: Element): void => {
     setHover(key)
     const m = key === null ? undefined : models.find((x) => x.model === key)
     setTip(m !== undefined && anchor !== undefined
-      ? { model: m.model, tokens: m.tokens, percent: m.percent, anchor, items: m.items }
+      ? { model: m.model, tokens: m.tokens, percent: m.percent, anchor, items: m.items, sources: m.sources ?? sourcesOf(m.model) }
       : null)
   }
 
@@ -994,6 +1101,13 @@ function ModelUsage({ models, t, colorForModel, panelRef }: { models: GroupedMod
               <div className={css.tipTitle}>{tip.model === OTHER_MODEL ? t('other') : tip.model}</div>
               <div>{t('total')}: {formatTokens(tip.tokens)}</div>
               <div>{t('percent')}: {formatPercent(tip.percent)}</div>
+              {tip.sources && tip.sources.length > 0 && (
+                <div className={css.tipBreakdown}>
+                  {tip.sources.map((src) => (
+                    <div key={src.model} className={clsx(css.tipRow, css.tipRowOther)}><i className={css.legendSwatch} style={{ background: colorForModel(tip.model) }} />{src.model}: {formatTokens(src.tokens)}</div>
+                  ))}
+                </div>
+              )}
               {tip.items && tip.items.length > 0 && (
                 <div className={css.tipBreakdown}>
                   {tip.items.map((it) => (
@@ -1040,7 +1154,7 @@ function ModelUsage({ models, t, colorForModel, panelRef }: { models: GroupedMod
                     )}
                     {isOther ? t('other') : modelNameOf(m.model)}
                   </span>
-                  {!isOther && <span className={css.modelProvider}>{providerOf(m.model)}</span>}
+                  {!isOther && <span className={css.modelProvider}>{subtitleOf(m.model)}</span>}
                 </div>
                 <div className={css.modelValues}>
                   <span className={css.modelTokens}>{formatTokens(m.tokens)}</span>
@@ -1057,7 +1171,7 @@ function ModelUsage({ models, t, colorForModel, panelRef }: { models: GroupedMod
                     <i className={css.legendSwatch} style={{ background: OTHER_COLOR }} />
                     <div className={css.modelId}>
                       <span className={css.modelName}>{modelNameOf(it.model)}</span>
-                      <span className={css.modelProvider}>{providerOf(it.model)}</span>
+                      <span className={css.modelProvider}>{subtitleOf(it.model)}</span>
                     </div>
                     <div className={css.modelValues}>
                       <span className={css.modelTokens}>{formatTokens(it.tokens)}</span>

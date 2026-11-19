@@ -41,6 +41,11 @@ export type UsageStatsKey =
   | 'hitRateLegend'
   | 'topModel'
   | 'topModelHint'
+  | 'groupBy'
+  | 'groupBySource'
+  | 'groupByModel'
+  | 'groupByHint'
+  | 'sources'
   | 'heatmap'
   | 'heatLess'
   | 'heatMore'
@@ -110,6 +115,11 @@ export const en: Record<UsageStatsKey, string> = {
   hitRateLegend: 'Cache hit rate',
   topModel: 'Top model',
   topModelHint: 'Ranked by token volume, not call count',
+  groupBy: 'Model grouping',
+  groupBySource: 'By source',
+  groupByModel: 'By model',
+  groupByHint: 'By model merges the same model served by different providers into one row (version segment, -free and build stamps are folded away); the raw sources stay visible in the hover tip.',
+  sources: '{n} sources',
   heatmap: 'Activity heatmap',
   heatLess: 'Less',
   heatMore: 'More',
@@ -180,6 +190,11 @@ export const zh: Record<UsageStatsKey, string> = {
   hitRateLegend: '缓存命中率',
   topModel: '最常用模型',
   topModelHint: '按 token 用量排序，非调用次数',
+  groupBy: '模型分组',
+  groupBySource: '按来源',
+  groupByModel: '按模型',
+  groupByHint: '按模型：把不同供应商下的同一模型合并为一行（忽略版本段、-free 与构建号），原始来源保留在悬浮提示里。',
+  sources: '{n} 个来源',
   heatmap: '活跃热力图',
   heatLess: '较少',
   heatMore: '较多',
@@ -250,6 +265,11 @@ export const zhTW: Record<UsageStatsKey, string> = {
   hitRateLegend: '快取命中率',
   topModel: '最常用模型',
   topModelHint: '依 token 用量排序，非呼叫次數',
+  groupBy: '模型分組',
+  groupBySource: '依來源',
+  groupByModel: '依模型',
+  groupByHint: '依模型：把不同供應商下的同一模型合併為一行（忽略版本段、-free 與建置號），原始來源保留在懸浮提示裡。',
+  sources: '{n} 個來源',
   heatmap: '活躍熱力圖',
   heatLess: '較少',
   heatMore: '較多',

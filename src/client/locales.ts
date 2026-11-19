@@ -14,6 +14,7 @@ export type UsageStatsKey =
   | 'back'
   | 'range'
   | 'rangePreset.today'
+  | 'rangePreset.month'
   | 'rangePreset.3'
   | 'rangePreset.7'
   | 'rangePreset.14'
@@ -83,6 +84,7 @@ export const en: Record<UsageStatsKey, string> = {
   back: 'Back',
   range: 'Time range',
   'rangePreset.today': 'Today',
+  'rangePreset.month': 'This month',
   'rangePreset.3': 'Last 3 days',
   'rangePreset.7': 'Last 7 days',
   'rangePreset.14': 'Last 14 days',
@@ -153,6 +155,7 @@ export const zh: Record<UsageStatsKey, string> = {
   back: '返回',
   range: '时间范围',
   'rangePreset.today': '今日',
+  'rangePreset.month': '当月',
   'rangePreset.3': '最近 3 天',
   'rangePreset.7': '最近 7 天',
   'rangePreset.14': '最近 14 天',
@@ -223,6 +226,7 @@ export const zhTW: Record<UsageStatsKey, string> = {
   back: '返回',
   range: '時間範圍',
   'rangePreset.today': '今日',
+  'rangePreset.month': '本月',
   'rangePreset.3': '最近 3 天',
   'rangePreset.7': '最近 7 天',
   'rangePreset.14': '最近 14 天',

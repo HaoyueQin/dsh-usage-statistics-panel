@@ -34,7 +34,7 @@ import css from './UsageStatsPanel.module.css'
 
 type Translator = UsageStatsTranslator
 
-const RANGE_PRESETS = ['today', '3', '7', '14', '30', '90'] as const
+const RANGE_PRESETS = ['today', 'month', '3', '7', '14', '30', '90'] as const
 
 /** How long the rebuild button stays armed without a second press. */
 const REBUILD_ARM_MS = 5000

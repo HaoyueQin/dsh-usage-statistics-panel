@@ -1,8 +1,12 @@
-# Single-host regression: devDependencies pin every @deepseek-ai/* package to
-# the DSH 0.1.7-rc.2 line, so every push/PR runs the full build+test suite
-# against exactly that baseline. The peer range states the capability floor
-# only (DSH >= 0.1.7-rc.1) and is optional: it matches only the pre-release of
-# the same tuple, so the supported versions live in the README.
+# Two host lines, one build. The `test` job pins every @deepseek-ai/*
+# package to the DSH 0.1.7-rc.2 line, so it proves the FLOOR the peer range
+# promises; `newest-surface` re-points the same devDependencies at the newest
+# published line, so it proves the CEILING. The failure that second job exists
+# for is a host release dropping or reshaping a symbol this plugin imports:
+# 0.2.2-rc.2 removed `useAnchoredPosition` from the
+# @deepseek-ai/dsh-client-ui-primitives export set, and nothing here noticed
+# until a user's composer-dock slot crashed (issues #24 / #25), long after the
+# pinned job kept passing.
 name: test
 
 on:
@@ -39,4 +43,69 @@ jobs:
       # pnpm test = pnpm build && vitest run (manifest-consistency asserts the
       # built artifacts exist, same ordering as release.yml).
       - name: Test
+        run: pnpm test
+
+  newest-surface:
+    runs-on: ubuntu-latest
+    env:
+      # Single knob: bump this when a new DSH line ships. Everything below it
+      # follows the same version.
+      DSH_SURFACE: 0.2.2-rc.5
+      # cordis runs on its own version line (4.x), not the DSH one.
+      CORDIS_SURFACE: 4.1.0
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      # Rewrite ONLY this run's dependency tree: the lockfile in the repo keeps
+      # pointing at the floor line, so a release build still targets it.
+      - name: Move the official surface to the newest line
+        run: |
+          set -euo pipefail
+          target=()
+          while read -r pkg; do
+            if [ "$pkg" = "@deepseek-ai/cordis" ]; then continue; fi
+            target+=("$pkg@$DSH_SURFACE")
+          done < <(node -e "for (const n of Object.keys(require('./package.json').devDependencies)) if (n.startsWith('@deepseek-ai/')) console.log(n)")
+          pnpm add -D "${target[@]}" "@deepseek-ai/cordis@$CORDIS_SURFACE"
+
+      # The whole job is worthless if `pnpm add` quietly resolved back to the
+      # pinned line, so assert the manifest AND the installed package agree
+      # with the line this job is meant to prove.
+      - name: Assert the surface really moved
+        run: |
+          set -euo pipefail
+          node -e "
+            const pkg = require('./package.json');
+            const installed = require('./node_modules/@deepseek-ai/dsh-client-ui-primitives/package.json');
+            const declared = pkg.devDependencies['@deepseek-ai/dsh-client-ui-primitives'];
+            const want = process.env.DSH_SURFACE;
+            console.log('declared :', declared);
+            console.log('installed:', installed.version);
+            if (declared !== want || installed.version !== want) {
+              console.error('the official surface did NOT move to', want);
+              process.exit(1);
+            }
+          "
+
+      # The newest line deliberately pulls a SECOND zod copy (its
+      # dsh-storage-domain pins an exact patch while the plugin's own range
+      # allows a newer one), so the schemas are handed to storage-domain
+      # through the cast documented in src/store.ts. This step is what keeps
+      # that cast honest.
+      - name: Typecheck against the newest surface
+        run: pnpm typecheck
+
+      - name: Test against the newest surface
         run: pnpm test

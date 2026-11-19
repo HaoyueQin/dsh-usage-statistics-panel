@@ -13,10 +13,29 @@
  */
 
 import { defineDomain, domainTable } from '@deepseek-ai/dsh-storage-domain'
+import type { DomainSpec } from '@deepseek-ai/dsh-storage-domain'
 import type { UsageStorageDomain, UsageKvTable, UsageDomain } from './context-types.ts'
 import type { UsageSample } from './query.ts'
 import { providerOf } from './query.ts'
 import { z } from 'zod'
+
+/**
+ * The validator types `domainTable` / `DomainSpec` accept, named WITHOUT
+ * importing zod here.
+ *
+ * Why: `zod` is resolved twice on a current host. This package declares
+ * `^4.4.3`, and `@deepseek-ai/dsh-storage-domain` pins its own exact zod
+ * (4.6.6 on the `0.2.2` line), so the install carries two copies. Zod's
+ * generics are nominally distinct per copy — a schema built by one is not
+ * assignable to `ZodType<V>` from the other, even though both validate the
+ * same plain object at runtime (`defineDomain` only ever calls `parse`/
+ * `safeParse` on it). Rather than pinning our zod to the host's exact patch
+ * (which would break again on the next host bump) the three handoffs are cast
+ * across that boundary once, through these aliases, so the types stay
+ * independent of which copy the host resolved.
+ */
+type DomainRecordSchema<V> = Parameters<typeof domainTable<string, V>>[0]
+type DomainGlobalSchema = NonNullable<DomainSpec['global']>['schema']
 
 /** True when a KvTable.update() failure is the "no record to update" miss
  *  (the storage-domain error for an absent key) — the retry path seeds the
@@ -101,7 +120,7 @@ export const usageHistoryDomain = defineDomain({
       hoursBackfilledSessions: z.array(z.string()).optional(),
       hoursLiveFirstSeq: z.record(z.string(), z.number()).optional(),
       hoursReady: z.boolean().optional(),
-    }),
+    }) as unknown as DomainGlobalSchema,
     initial: {
       backfilledSessions: [] as string[],
       liveFirstSeq: {},
@@ -114,8 +133,8 @@ export const usageHistoryDomain = defineDomain({
   // version bump (and a bump would reject every existing store outright —
   // the domain format has no migration path).
   tables: {
-    days: domainTable<string, UsageDayRow>(usageDayRowSchema),
-    hours: domainTable<string, UsageHourRow>(usageHourRowSchema),
+    days: domainTable<string, UsageDayRow>(usageDayRowSchema as unknown as DomainRecordSchema<UsageDayRow>),
+    hours: domainTable<string, UsageHourRow>(usageHourRowSchema as unknown as DomainRecordSchema<UsageHourRow>),
   },
 })
 

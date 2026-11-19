@@ -64,7 +64,7 @@ export interface UsageStatsRange {
 
 /** The usage statistics panel aggregate request. */
 export interface UsageStatsRequest {
-  range: string // "today" | "3" | "7" | "14" | "30" | "90" | "custom"
+  range: string // "today" | "month" | "3" | "7" | "14" | "30" | "90" | "custom"
   from?: string // "YYYY-MM-DD", custom only
   to?: string // "YYYY-MM-DD", custom only
 }

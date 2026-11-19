@@ -15,14 +15,106 @@
  * one. All imports are platform externals (react + primitives), so the
  * client-bundle purity gate accepts this module.
  */
-import { useEffect, useRef, useState, type CSSProperties, type MutableRefObject } from 'react'
-import { useAnchoredPosition, useDismissOnOutsidePointer } from '@deepseek-ai/dsh-client-ui-primitives'
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type MutableRefObject, type RefObject } from 'react'
+import * as primitives from '@deepseek-ai/dsh-client-ui-primitives'
+import { useDismissOnOutsidePointer } from '@deepseek-ai/dsh-client-ui-primitives'
 
 /** Viewport margin the placement clamp keeps (the Menu portal margin). */
 const PANEL_MARGIN = 12
 
 /** Distance between the trigger's top edge and the panel's bottom. */
 const PANEL_GAP = 8
+
+/** Placement inputs, mirroring the official `AnchoredPositionOptions`. */
+export interface AnchoredPositionOptions {
+  /** Whether the floating element is mounted and should track its anchor. */
+  open: boolean
+  /** The element the panel is placed from. */
+  anchorRef: RefObject<HTMLElement | null>
+  /** The floating element, measured so the clamp uses real dimensions. */
+  panelRef: RefObject<HTMLElement | null>
+  /** Which anchor edge the panel hangs from. */
+  side?: 'top' | 'bottom'
+  /** Which anchor edge the panel lines up with. */
+  align?: 'start' | 'end'
+  /** Distance kept between the anchor edge and the panel. */
+  gap: number
+  /** Distance kept between the panel and each viewport edge. */
+  margin: number
+}
+
+type AnchoredPositionHook = (options: AnchoredPositionOptions) => CSSProperties | null
+
+/**
+ * Local port of the official `useAnchoredPosition`, kept for hosts whose
+ * primitives package no longer exports it (see {@link useAnchoredPosition}).
+ * Same algorithm, same clamps: place against the anchor's viewport rect, clamp
+ * inside the viewport once the panel has a real size, and re-place on scroll
+ * (capture phase, so nested scrollers count), resize, and panel resize.
+ */
+export function useLocalAnchoredPosition(options: AnchoredPositionOptions): CSSProperties | null {
+  const { open, anchorRef, panelRef, side = 'bottom', align = 'start', gap, margin } = options
+  const [position, setPosition] = useState<CSSProperties | null>(null)
+  useLayoutEffect(() => {
+    if (!open) {
+      setPosition(null)
+      return
+    }
+    const place = (): void => {
+      const rect = anchorRef.current?.getBoundingClientRect()
+      if (rect === undefined) return
+      const panel = panelRef.current
+      const width = panel?.offsetWidth ?? 0
+      const height = panel?.offsetHeight ?? 0
+      let left = align === 'end' ? rect.right - width : rect.left
+      let top = side === 'top' ? rect.top - gap - height : rect.bottom + gap
+      if (width > 0) left = Math.min(Math.max(left, margin), window.innerWidth - width - margin)
+      if (height > 0) top = Math.min(Math.max(top, margin), window.innerHeight - height - margin)
+      setPosition({ left, top })
+    }
+    place()
+    window.addEventListener('scroll', place, true)
+    window.addEventListener('resize', place)
+    const panel = panelRef.current
+    let observer: ResizeObserver | null = null
+    if (typeof ResizeObserver !== 'undefined' && panel !== null) {
+      observer = new ResizeObserver(place)
+      observer.observe(panel)
+    }
+    return () => {
+      observer?.disconnect()
+      window.removeEventListener('scroll', place, true)
+      window.removeEventListener('resize', place)
+    }
+  }, [open, anchorRef, panelRef, side, align, gap, margin])
+  return position
+}
+
+/**
+ * The anchored-placement hook the dialog seats call.
+ *
+ * DSH 0.2.2-rc.2 dropped `useAnchoredPosition` from the
+ * `@deepseek-ai/dsh-client-ui-primitives` exports (issues #25 and #24: the
+ * symbol survives only inside the app, not on the module's public surface),
+ * with no replacement hook — `useAnchoredMaxHeight` clamps a height and
+ * cannot position. A static call therefore threw `is not a function` on every
+ * render, crashing the `conversation.composer.dock` slot.
+ *
+ * The implementation is resolved ONCE at module load: the host's hook where the
+ * running primitives package still publishes it (every line up to 0.2.2-rc.1),
+ * the local port otherwise. Resolving at module scope — rather than choosing
+ * inside the render — keeps the hook order identical for the life of the
+ * module, so React never sees a changed hook sequence.
+ */
+const useAnchoredPosition: AnchoredPositionHook = (() => {
+  // Read the export as a PROPERTY, never as a named import: 0.2.2-rc.2 dropped
+  // it from the package's export set, so a named import would also fail the
+  // typecheck against that line even though the fallback would save it at
+  // runtime.
+  const primitives_ = primitives as unknown as { useAnchoredPosition?: AnchoredPositionHook }
+  const official = primitives_.useAnchoredPosition
+  return typeof official === 'function' ? official : useLocalAnchoredPosition
+})()
 
 /**
  * Unplaced portal panel: hidden but laid out so the clamp measures real

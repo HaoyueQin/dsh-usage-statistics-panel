@@ -32,6 +32,7 @@ describe('UsageStatsSection', () => {
     const props = { t } as UsageStatsSectionProps
     render(<UsageStatsSection {...props} />)
     expect(screen.getByRole('button', { name: 'rangePreset.today' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'rangePreset.month' })).toBeTruthy()
     expect(screen.getByRole('button', { name: 'rangePreset.3' })).toBeTruthy()
     expect(screen.getByRole('button', { name: 'rangePreset.7' })).toBeTruthy()
     expect(screen.getByRole('button', { name: 'rangePreset.90' })).toBeTruthy()
